@@ -4,6 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Monster Slayer</title>
+    <script>
+      // GitHub Pages SPA redirect receiver — must run before React mounts.
+      // Paired with public/404.html which encodes the intended path into ?p=
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var p = params.get("p");
+        if (p) {
+          var q = params.get("q");
+          var hash = window.location.hash;
+          var url =
+            window.location.pathname.replace(/\/$/, "") +
+            p.replace(/~and~/g, "&") +
+            (q ? "?" + q.replace(/~and~/g, "&") : "") +
+            hash;
+          window.history.replaceState(null, "", url);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
