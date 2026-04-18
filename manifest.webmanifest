@@ -1,6 +1,6 @@
 {
-  "name": "Monster Slayer",
-  "short_name": "Slayer",
+  "name": "Monster Slayer V1.0",
+  "short_name": "Slayer V1",
   "description": "Roam the wilds, brave towns, and cut down what lurks beyond the road.",
   "start_url": "./",
   "scope": "./",
