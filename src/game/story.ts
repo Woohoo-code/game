@@ -13,6 +13,13 @@ import type { BiomeKind, StoryStage, StoryState } from "./types";
  * that merely update counters, then re-evaluates the chapter.
  */
 
+/** One-line stakes — shown on the title screen and overworld HUD. */
+export const CAMPAIGN_TAGLINE = "Seal the breach — slay the Void Titan.";
+
+/** Slightly longer premise for tooltips and the Journal header area. */
+export const CAMPAIGN_PREMISE =
+  "The veil over Aetheria is torn. Hunt the wilds, pass the Guild's trials, and end the Void Titan before the world unravels.";
+
 export interface ChapterReward {
   gold?: number;
   xp?: number;
@@ -163,8 +170,15 @@ export function isStageComplete(stage: StoryStage, s: StoryState): boolean {
 /**
  * Shortcut that describes chapter progress for the UI (e.g. "3 / 5 monsters slain").
  */
-export function progressLabelFor(stage: StoryStage, s: StoryState, playerLevel: number): string | null {
+export function progressLabelFor(
+  stage: StoryStage,
+  s: StoryState,
+  playerLevel: number,
+  extras?: { bossDefeated?: boolean }
+): string | null {
   switch (stage) {
+    case "prologue":
+      return s.prologueSeen ? null : "Journal — dismiss the briefing, then hunt";
     case "ch1_firstHunts":
       return `${Math.min(s.monstersSlain, 5)} / 5 monsters slain`;
     case "ch2_gearUp":
@@ -176,10 +190,30 @@ export function progressLabelFor(stage: StoryStage, s: StoryState, playerLevel: 
     case "ch5_trials":
       return `${Math.min(s.uniqueSpeciesDefeated.length, 6)} / 6 species defeated`;
     case "ch6_titanAwaits":
-      return s.reachedBossArena ? "At the arena — confront the Titan" : "Seek the Void Titan";
+      if (extras?.bossDefeated) return "Void Titan defeated";
+      return s.reachedBossArena ? "At the arena — confront the Titan" : "Seek the Boss Arena in the wilds";
+    case "epilogue":
+      return s.epilogueSeen ? "Chronicle closed — thank you, Slayer" : "Journal — read the epilogue when ready";
     default:
       return null;
   }
+}
+
+/** HUD block: tagline + active chapter + objective + numeric progress. */
+export function hudCampaignGoal(
+  stage: StoryStage,
+  story: StoryState,
+  playerLevel: number,
+  bossDefeated: boolean
+): { tagline: string; chapterTitle: string; objective: string; progress: string | null } {
+  const def = STORY_CHAPTERS[stage];
+  const progress = progressLabelFor(stage, story, playerLevel, { bossDefeated });
+  return {
+    tagline: CAMPAIGN_TAGLINE,
+    chapterTitle: def.title,
+    objective: def.objective,
+    progress
+  };
 }
 
 /** Biomes not yet visited — used by the journal hint row. */

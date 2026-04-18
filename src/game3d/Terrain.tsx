@@ -31,6 +31,10 @@ function emptyAcc(): Accumulator {
 }
 
 function buildTerrainGroups(): TerrainGroup[] {
+  const tw = MAP_W;
+  const th = MAP_H;
+  const n = tw * th;
+
   // groups[kind][biome]
   const groups: Record<TerrainKind, Record<BiomeKind, Accumulator>> = {
     grass: { meadow: emptyAcc(), forest: emptyAcc(), desert: emptyAcc(), swamp: emptyAcc(), tundra: emptyAcc() },
@@ -40,15 +44,59 @@ function buildTerrainGroups(): TerrainGroup[] {
     forest: { meadow: emptyAcc(), forest: emptyAcc(), desert: emptyAcc(), swamp: emptyAcc(), tundra: emptyAcc() }
   };
 
-  for (let y = 0; y < MAP_H; y++) {
-    for (let x = 0; x < MAP_W; x++) {
-      const kind = terrainAt(x, y);
-      const biome = biomeAt(x, y);
-      const h = HEIGHT_BY_TERRAIN[kind];
+  const tGrid = new Array<TerrainKind>(n);
+  const bGrid = new Array<BiomeKind>(n);
+  for (let y = 0; y < th; y++) {
+    for (let x = 0; x < tw; x++) {
+      const i = y * tw + x;
+      tGrid[i] = terrainAt(x, y);
+      bGrid[i] = biomeAt(x, y);
+    }
+  }
+
+  const seen = new Uint8Array(n);
+  const idx = (x: number, y: number) => y * tw + x;
+
+  for (let y = 0; y < th; y++) {
+    for (let x = 0; x < tw; x++) {
+      const i = idx(x, y);
+      if (seen[i]) continue;
+
+      const kind = tGrid[i];
+      const biome = bGrid[i];
       const g = groups[kind][biome];
-      g.positions.push(x, h, y, x + 1, h, y, x + 1, h, y + 1, x, h, y + 1);
-      g.uvs.push(x, y, x + 1, y, x + 1, y + 1, x, y + 1);
+      const elev = HEIGHT_BY_TERRAIN[kind];
+
+      let w = 1;
+      while (x + w < tw) {
+        const ii = idx(x + w, y);
+        if (seen[ii] || tGrid[ii] !== kind || bGrid[ii] !== biome) break;
+        w++;
+      }
+
+      let rectH = 1;
+      while (y + rectH < th) {
+        let rowOk = true;
+        for (let dx = 0; dx < w; dx++) {
+          const ii = idx(x + dx, y + rectH);
+          if (seen[ii] || tGrid[ii] !== kind || bGrid[ii] !== biome) {
+            rowOk = false;
+            break;
+          }
+        }
+        if (!rowOk) break;
+        rectH++;
+      }
+
+      for (let dy = 0; dy < rectH; dy++) {
+        for (let dx = 0; dx < w; dx++) {
+          seen[idx(x + dx, y + dy)] = 1;
+        }
+      }
+
       const v = g.vi;
+      g.positions.push(x, elev, y, x + w, elev, y, x + w, elev, y + rectH, x, elev, y + rectH);
+      g.uvs.push(x, y, x + w, y, x + w, y + rectH, x, y + rectH);
       g.indices.push(v, v + 2, v + 1, v, v + 3, v + 2);
       g.vi = v + 4;
     }
@@ -117,7 +165,7 @@ export function Terrain() {
         }
         return (
           <mesh key={key} geometry={geometry} receiveShadow>
-            <meshStandardMaterial map={tex} color={tint} roughness={0.9} metalness={0} />
+            <meshStandardMaterial map={tex} color={tint} roughness={0.78} metalness={0.02} envMapIntensity={0.35} />
           </mesh>
         );
       })}
@@ -165,22 +213,25 @@ export function Forests() {
 
   const trees = useMemo(() => {
     const list: { x: number; y: number; scale: number; rot: number; tint: number; biome: BiomeKind }[] = [];
+    const tiles = MAP_W * MAP_H;
+    const forestStride =
+      tiles > 120_000 ? 4 : tiles > 55_000 ? 3 : tiles > 18_000 ? 2 : 1;
     for (let y = 0; y < MAP_H; y++) {
       for (let x = 0; x < MAP_W; x++) {
-        if (terrainAt(x, y) === "forest") {
-          const hash = (x * 73856093) ^ (y * 19349663);
-          const rnd = ((hash >>> 0) % 1000) / 1000;
-          const rnd2 = (((hash * 2654435761) >>> 0) % 1000) / 1000;
-          const rnd3 = (((hash ^ 0xdeadbeef) >>> 0) % 1000) / 1000;
-          list.push({
-            x: x + 0.25 + rnd * 0.5,
-            y: y + 0.25 + rnd2 * 0.5,
-            scale: 0.85 + rnd * 0.45,
-            rot: rnd2 * Math.PI * 2,
-            tint: rnd3,
-            biome: biomeAt(x, y)
-          });
-        }
+        if (terrainAt(x, y) !== "forest") continue;
+        if (forestStride > 1 && (x % forestStride !== 0 || y % forestStride !== 0)) continue;
+        const hash = (x * 73856093) ^ (y * 19349663);
+        const rnd = ((hash >>> 0) % 1000) / 1000;
+        const rnd2 = (((hash * 2654435761) >>> 0) % 1000) / 1000;
+        const rnd3 = (((hash ^ 0xdeadbeef) >>> 0) % 1000) / 1000;
+        list.push({
+          x: x + 0.25 + rnd * 0.5,
+          y: y + 0.25 + rnd2 * 0.5,
+          scale: (0.85 + rnd * 0.45) * Math.min(1.35, 0.75 + forestStride * 0.12),
+          rot: rnd2 * Math.PI * 2,
+          tint: rnd3,
+          biome: biomeAt(x, y)
+        });
       }
     }
     return list;

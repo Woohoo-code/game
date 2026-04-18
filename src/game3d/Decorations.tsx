@@ -64,6 +64,9 @@ export function GroundDecorations() {
 
   const dec = useMemo(() => {
     const out = emptyDecorations();
+    const tiles = MAP_W * MAP_H;
+    const decorStride =
+      tiles > 120_000 ? 3 : tiles > 45_000 ? 2 : 1;
 
     for (let y = 0; y < MAP_H; y++) {
       for (let x = 0; x < MAP_W; x++) {
@@ -72,6 +75,9 @@ export function GroundDecorations() {
         const h = tileHash(x, y);
 
         if (kind === "grass") {
+          if (decorStride > 1 && (x % decorStride !== 0 || y % decorStride !== 0)) {
+            continue;
+          }
           scatterForBiome(out, biome, x, y, h);
         } else if (kind === "water") {
           // Lily pads only in biomes where open water exists (skip tundra — it's iced over)
@@ -578,8 +584,11 @@ export function AmbientSparkles() {
 
   const sparkles = useMemo(() => {
     const list: { x: number; y: number; z: number; color: string }[] = [];
+    const tiles = MAP_W * MAP_H;
+    const sparkleStride = tiles > 80_000 ? 2 : 1;
     for (let ty = 0; ty < MAP_H; ty++) {
       for (let tx = 0; tx < MAP_W; tx++) {
+        if (sparkleStride > 1 && (tx % sparkleStride !== 0 || ty % sparkleStride !== 0)) continue;
         const kind = terrainAt(tx, ty);
         const biome = biomeAt(tx, ty);
         if (kind !== "water" && kind !== "forest") continue;
@@ -596,6 +605,7 @@ export function AmbientSparkles() {
             z: ty + 0.2 + h.r3 * 0.6,
             color
           });
+          if (list.length >= 3500) return list;
         }
       }
     }

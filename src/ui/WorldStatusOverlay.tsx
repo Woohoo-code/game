@@ -1,7 +1,12 @@
 import type { ReactNode } from "react";
-import { ARMOR_STATS, ITEM_DATA, WEAPON_STATS } from "../game/data";
+import { ARMOR_STATS, WEAPON_STATS, petAttackBuffForParty } from "../game/data";
 import { useGameStore } from "../game/useGameStore";
 import type { WeaponKey } from "../game/types";
+import { CAMPAIGN_PREMISE, hudCampaignGoal } from "../game/story";
+import { encounterDangerDisplayPercent } from "../game/worldMap";
+import { GAME_VERSION_LABEL } from "../version";
+import { isNightWilds, timeOfDayLabel } from "../game/worldClock";
+import { IconGold } from "./IconGold";
 
 /** HUD sword icon tints — wood earth tones, iron silver, steel blue-steel, mythril arcane teal. */
 const WEAPON_HUD_SWORD: Record<
@@ -37,11 +42,6 @@ const WEAPON_HUD_SWORD: Record<
     pommel: "#5a6ed0"
   }
 };
-
-function ItemIcon({ kind }: { kind: "potion" | "hiPotion" | "megaPotion" }) {
-  const label = kind === "potion" ? "P" : kind === "hiPotion" ? "H" : "M";
-  return <span className={`item-icon ${kind} item-icon--hud`}>{label}</span>;
-}
 
 function IconSword({ weapon }: { weapon: WeaponKey }) {
   const c = WEAPON_HUD_SWORD[weapon];
@@ -129,13 +129,27 @@ export function WorldStatusOverlay() {
   const snapshot = useGameStore();
   const weaponBonus = WEAPON_STATS[snapshot.player.weapon].attackBonus;
   const armorBonus = ARMOR_STATS[snapshot.player.armor].defenseBonus;
-  const attackPower = snapshot.player.attack + weaponBonus;
+  const petAtk = petAttackBuffForParty(snapshot.player.activePetId, snapshot.player.pets);
+  const attackPower = snapshot.player.attack + weaponBonus + petAtk;
   const defensePower = snapshot.player.defense + armorBonus;
   const xpPercent = Math.max(0, Math.min(100, Math.round((snapshot.player.xp / snapshot.player.xpToNext) * 100)));
   const playerHpPercent = Math.max(0, Math.min(100, Math.round((snapshot.player.hp / snapshot.player.maxHp) * 100)));
-  const dangerPercent = Math.min(100, Math.round(snapshot.world.encounterRate * 1000));
+  const dangerPercent = encounterDangerDisplayPercent(snapshot.world.encounterRate);
+  const wt = snapshot.world.worldTime ?? 0;
+  const tod = timeOfDayLabel(wt);
+  const nightWilds = isNightWilds(wt);
   const dangerLabel =
-    dangerPercent === 0 ? "Safe" : dangerPercent < 40 ? "Low" : dangerPercent < 80 ? "Medium" : "High";
+    dangerPercent === 0
+      ? "Safe"
+      : dangerPercent < 25
+        ? "Low"
+        : dangerPercent < 55
+          ? "Medium"
+          : dangerPercent < 80
+            ? "High"
+            : "Perilous";
+
+  const revivalDebt = snapshot.player.revivalDebtMonstersRemaining ?? 0;
 
   const w = WEAPON_STATS[snapshot.player.weapon];
   const a = ARMOR_STATS[snapshot.player.armor];
@@ -143,7 +157,8 @@ export function WorldStatusOverlay() {
   const weaponTitle = [
     w.name,
     `Equipped weapon · +${weaponBonus} attack from gear`,
-    `Total attack power: ${attackPower} (${snapshot.player.attack} base + ${weaponBonus} weapon)`
+    ...(petAtk > 0 ? [`Active pet · +${petAtk} attack (max +10)`] : []),
+    `Total attack power: ${attackPower} (${snapshot.player.attack} base + ${weaponBonus} weapon${petAtk ? ` + ${petAtk} pet` : ""})`
   ].join("\n");
 
   const armorTitle = [
@@ -152,16 +167,9 @@ export function WorldStatusOverlay() {
     `Total defense: ${defensePower} (${snapshot.player.defense} base + ${armorBonus} armor)`
   ].join("\n");
 
-  const potionTitle = (key: "potion" | "hiPotion" | "megaPotion", count: number) => {
-    const it = ITEM_DATA[key];
-    return [`${it.name} ×${count}`, `Heals ${it.healAmount} HP in battle.`, `Price when bought: ${it.price}g`].join(
-      "\n"
-    );
-  };
-
   const atkTitle = [
     `Attack power: ${attackPower}`,
-    `Base ${snapshot.player.attack} + weapon ${weaponBonus}`,
+    `Base ${snapshot.player.attack} + weapon ${weaponBonus}${petAtk ? ` + pet ${petAtk}` : ""}`,
     `Equipped: ${w.name}`
   ].join("\n");
 
@@ -174,14 +182,37 @@ export function WorldStatusOverlay() {
   const spdTitle = [`Speed: ${snapshot.player.speed}`, "Determines turn order in battle."].join("\n");
 
   const cdTitle = [
-    "Skill cooldowns (in battle)",
-    "Each skill has its own timer. After you cast a skill, only that skill is locked until it ticks down between enemy turns."
+    "Skill cooldown (in battle)",
+    "After you cast any skill, every skill shares the same lockout. It ticks down by one after each enemy turn; stronger skills apply a longer lockout when cast."
   ].join("\n");
+
+  const goldTitle = [`Gold: ${snapshot.player.gold}`, "Earned from battles and quests. Spend in shops."].join("\n");
+
+  const goal = hudCampaignGoal(
+    snapshot.story.stage,
+    snapshot.story,
+    snapshot.player.level,
+    snapshot.player.bossDefeated
+  );
+  const goalTooltip = [goal.tagline, goal.chapterTitle, goal.objective, goal.progress].filter(Boolean).join("\n");
 
   return (
     <div className="world-status-overlay" aria-label="Status">
       <div className="world-status-overlay-inner">
-        <h1 className="world-status-title">Monster Slayer</h1>
+        <h1 className="world-status-title">
+          Monster Slayer <span className="world-status-version">{GAME_VERSION_LABEL}</span>
+        </h1>
+        <p
+          className="world-time-chip"
+          title={
+            nightWilds
+              ? "Night — wild encounters are more likely and foes hit harder."
+              : "Time passes while you explore the overworld."
+          }
+        >
+          <span className="world-time-label">{tod}</span>
+          {nightWilds ? <span className="world-time-night"> · Wilds surge</span> : null}
+        </p>
         <div className="danger-meter">
           <div className="danger-meter-head">
             <strong>Danger: {dangerLabel}</strong>
@@ -191,10 +222,36 @@ export function WorldStatusOverlay() {
             <div className="danger-meter-fill" style={{ width: `${dangerPercent}%` }} />
           </div>
         </div>
+
+        {revivalDebt > 0 ? (
+          <div className="world-revival-debt" role="status" title="Clear by winning wild battles — not by fleeing.">
+            <strong>Tithe lock</strong>
+            <span>
+              {revivalDebt} monster{revivalDebt === 1 ? "" : "s"} to slay
+            </span>
+          </div>
+        ) : null}
+
+        <div className="world-goal-panel" role="region" aria-label="Current goal" title={CAMPAIGN_PREMISE}>
+          <div className="world-goal-eyebrow">Guild goal</div>
+          <p className="world-goal-tagline">{goal.tagline}</p>
+          <p className="world-goal-chapter">{goal.chapterTitle}</p>
+          <p className="world-goal-objective">{goal.objective}</p>
+          {goal.progress ? (
+            <p className="world-goal-progress" title={goalTooltip}>
+              {goal.progress}
+            </p>
+          ) : null}
+        </div>
+
         <p className="world-status-summary">
           <strong>{snapshot.player.name}</strong> — Lv {snapshot.player.level} · {snapshot.player.hp}/
-          {snapshot.player.maxHp} HP · {snapshot.player.gold}g
+          {snapshot.player.maxHp} HP
         </p>
+        <div className="world-gold-row" role="status" title={goldTitle}>
+          <IconGold size={24} className="world-gold-icon" />
+          <span className="world-gold-value">{snapshot.player.gold}</span>
+        </div>
         <div className="hp-meter">
           <div className="hp-meter-head">
             <strong>HP</strong>
@@ -218,8 +275,8 @@ export function WorldStatusOverlay() {
           </div>
         </div>
 
-        <div className="world-hud-section-label">Inventory</div>
-        <div className="world-hud-icon-row" role="group" aria-label="Inventory">
+        <div className="world-hud-section-label">Equipment</div>
+        <div className="world-hud-icon-row" role="group" aria-label="Equipment">
           <HudIconButton
             className="hud-equip-weapon"
             ariaLabel={`Equipped weapon: ${w.name}`}
@@ -230,31 +287,10 @@ export function WorldStatusOverlay() {
           <HudIconButton className="hud-equip-armor" ariaLabel={`Equipped armor: ${a.name}`} title={armorTitle}>
             <IconShield />
           </HudIconButton>
-          <HudIconButton
-            className="hud-potion"
-            ariaLabel={`${ITEM_DATA.potion.name}, ${snapshot.player.items.potion} owned`}
-            title={potionTitle("potion", snapshot.player.items.potion)}
-          >
-            <ItemIcon kind="potion" />
-            <span className="hud-qty">{snapshot.player.items.potion}</span>
-          </HudIconButton>
-          <HudIconButton
-            className="hud-potion"
-            ariaLabel={`${ITEM_DATA.hiPotion.name}, ${snapshot.player.items.hiPotion} owned`}
-            title={potionTitle("hiPotion", snapshot.player.items.hiPotion)}
-          >
-            <ItemIcon kind="hiPotion" />
-            <span className="hud-qty">{snapshot.player.items.hiPotion}</span>
-          </HudIconButton>
-          <HudIconButton
-            className="hud-potion"
-            ariaLabel={`${ITEM_DATA.megaPotion.name}, ${snapshot.player.items.megaPotion} owned`}
-            title={potionTitle("megaPotion", snapshot.player.items.megaPotion)}
-          >
-            <ItemIcon kind="megaPotion" />
-            <span className="hud-qty">{snapshot.player.items.megaPotion}</span>
-          </HudIconButton>
         </div>
+        <p className="world-hud-consumable-hint">
+          Consumables: use the hotbar (keys 1–9, 0) and the backpack button below the playfield.
+        </p>
 
         <div className="world-hud-section-label">Stats</div>
         <div className="world-hud-icon-row" role="group" aria-label="Combat stats">
@@ -269,7 +305,7 @@ export function WorldStatusOverlay() {
           </HudIconButton>
           <HudIconButton
             className="hud-stat-cd"
-            ariaLabel="Skill cooldowns (per skill, in battle)"
+            ariaLabel="Skill cooldown (shared across all skills, in battle)"
             title={cdTitle}
           >
             <IconTimer />

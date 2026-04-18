@@ -1,17 +1,104 @@
-export type ItemKey = "potion" | "hiPotion" | "megaPotion";
+export type ItemKey =
+  | "potion"
+  | "hiPotion"
+  | "megaPotion"
+  | "sipsGinseng"
+  | "berryTonic"
+  | "dewdropVial"
+  | "honeySalve"
+  | "mossDraught"
+  | "riverWater"
+  | "herbalPaste"
+  | "minersAle"
+  | "wyrmTea"
+  | "spiritBandage"
+  | "elixirLight"
+  | "sunOrchidMix"
+  | "frostleafBrew"
+  | "shadowTincture"
+  | "amberSerum"
+  | "cometDrop"
+  | "celestialNectar"
+  | "dragonBloodSap"
+  | "empressBalm"
+  | "worldTreeDew";
 export type WeaponKey = "woodSword" | "ironSword" | "steelSword" | "mythrilBlade";
 export type ArmorKey = "clothArmor" | "chainMail" | "knightArmor" | "dragonArmor";
 export type SkillKey = "spark" | "iceShard" | "thunderLance" | "meteorBreak";
 
-/** Remaining skill cooldown per ability (full turns tick down after each enemy action). */
-export type SkillCooldownMap = Record<SkillKey, number>;
+export type HairStyle =
+  | "short"
+  | "spiky"
+  | "long"
+  | "bald"
+  | "buzz"
+  | "ponytail"
+  | "curly"
+  | "sidePart"
+  | "braids"
+  | "mohawk";
 
-export type HairStyle = "short" | "spiky" | "long" | "bald";
+/** UI / migration order for hair options. */
+export const HAIR_STYLE_ORDER: readonly HairStyle[] = [
+  "short",
+  "spiky",
+  "long",
+  "bald",
+  "buzz",
+  "ponytail",
+  "curly",
+  "sidePart",
+  "braids",
+  "mohawk"
+];
+
+export const HAIR_STYLE_LABELS: Record<HairStyle, string> = {
+  short: "Short",
+  spiky: "Spiky",
+  long: "Long",
+  bald: "Bald",
+  buzz: "Buzz",
+  ponytail: "Ponytail",
+  curly: "Curly",
+  sidePart: "Side part",
+  braids: "Braids",
+  mohawk: "Mohawk"
+};
+
+export function normalizeHairStyle(value: unknown): HairStyle {
+  return HAIR_STYLE_ORDER.includes(value as HairStyle) ? (value as HairStyle) : "short";
+}
+
+export type FacialHairStyle = "none" | "stubble" | "goatee" | "shortBeard" | "fullBeard";
+
+export const FACIAL_HAIR_ORDER: readonly FacialHairStyle[] = [
+  "none",
+  "stubble",
+  "goatee",
+  "shortBeard",
+  "fullBeard"
+];
+
+export const FACIAL_HAIR_LABELS: Record<FacialHairStyle, string> = {
+  none: "Clean shaven",
+  stubble: "Stubble",
+  goatee: "Goatee",
+  shortBeard: "Short beard",
+  fullBeard: "Full beard"
+};
+
+export function normalizeFacialHair(value: unknown): FacialHairStyle {
+  return FACIAL_HAIR_ORDER.includes(value as FacialHairStyle) ? (value as FacialHairStyle) : "none";
+}
 
 export interface PlayerAppearance {
   skin: string;
   hair: string;
   hairStyle: HairStyle;
+  /** Chin / cheek facial hair; `none` hides beard meshes. */
+  facialHair: FacialHairStyle;
+  /** Beard / stubble tint (often matches hair). */
+  beardColor: string;
   outfit: string;
   pants: string;
 }
@@ -30,6 +117,8 @@ export interface PlayerState {
   weapon: WeaponKey;
   armor: ArmorKey;
   items: Record<ItemKey, number>;
+  /** Quick-use slots for keys 1–9 then 0; null = empty. Always length 10 when normalized. */
+  itemHotbar: (ItemKey | null)[];
   map: string;
   x: number;
   y: number;
@@ -41,6 +130,32 @@ export interface PlayerState {
   hasCreatedCharacter: boolean;
   /** True once the player has purchased the Town Map at a shop. One-time buy. */
   hasTownMap: boolean;
+  /** When true (and {@link hasTownMap}), the overworld compass overlay is active. */
+  townMapEquipped: boolean;
+  /** Tamed pet companions the player has collected. */
+  pets: Pet[];
+  /** The currently active pet (follows in overworld, assists in battle). Null = no pet out. */
+  activePetId: string | null;
+  /**
+   * After a knockout, each gold short of the 10g revival tithe requires one wild
+   * kill to clear. While positive, shops, inn, pets, training, and guild payouts are locked.
+   */
+  revivalDebtMonstersRemaining: number;
+}
+
+/** A tamed companion. Inherits body shape + colors from the monster species it was tamed from. */
+export interface Pet {
+  id: string;
+  name: string;
+  speciesId: string;
+  speciesName: string;
+  bodyShape: MonsterBodyShape;
+  colorPrimary: string;
+  colorAccent: string;
+  level: number;
+  /** Flat damage the pet adds to the player's basic attacks. */
+  attackBonus: number;
+  tamedAt: number;
 }
 
 /** Distinct overworld regions with their own flora, palette, and monster pools. */
@@ -92,16 +207,39 @@ export interface BattleState {
   phase: BattlePhase;
   log: string[];
   enemy: EnemyState | null;
-  skillCooldowns: SkillCooldownMap;
+  /**
+   * Shared skill lockout: after casting any skill, all skills are unusable until
+   * this hits 0 (ticks down by 1 after each enemy turn). Casting sets it from
+   * that skill's per-skill cooldown value in game data.
+   */
+  skillCooldown: number;
+  /** Flat attack from consumables used this fight; cleared when the battle ends. */
+  itemAttackBonus: number;
+  /** Flat defense from consumables used this fight; cleared when the battle ends. */
+  itemDefenseBonus: number;
 }
 
 export interface WorldState {
   inTown: boolean;
   canHeal: boolean;
   canShop: boolean;
+  /** Companion Emporium — adopt pets that add up to +10 attack while active. */
+  canPetShop: boolean;
   canTrain: boolean;
   canGuild: boolean;
   canBoss: boolean;
+  canLibrary: boolean;
+  canForge: boolean;
+  canChapel: boolean;
+  canStables: boolean;
+  canMarket: boolean;
+  /** Standing on the post-boss dimensional rift (same tile as the former arena). */
+  canVoidPortal: boolean;
+  /**
+   * When true, the boss landmark on this save's world seed is rendered as {@link BuildingKind} `voidPortal`.
+   * Cleared when crossing into a new realm.
+   */
+  voidPortalActive: boolean;
   encounterRate: number;
   /** Random encounter rolls are skipped until this hits 0 (ticks down on each wilderness tile step). */
   encounterGraceSteps: number;
@@ -109,6 +247,11 @@ export interface WorldState {
   worldSeed: number;
   /** Bumped every time the world is regenerated — used as a React render dependency. */
   worldVersion: number;
+  /**
+   * Day / night phase (any number; use fractional part as 0–1 cycle).
+   * Advances in real time while exploring; pauses in battle.
+   */
+  worldTime: number;
 }
 
 /** Shared fields for all marketplace-listed UGC creations. */

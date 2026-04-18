@@ -24,7 +24,20 @@ export const BIOME_CODE: Record<BiomeKind, number> = {
 
 export const BIOME_BY_CODE: BiomeKind[] = ["meadow", "forest", "desert", "swamp", "tundra"];
 
-export type BuildingKind = "inn" | "shop" | "train" | "guild" | "boss";
+export type BuildingKind =
+  | "inn"
+  | "shop"
+  | "train"
+  | "guild"
+  | "petShop"
+  | "boss"
+  /** Replaces the boss arena tile after the Void Titan is defeated — not generated initially. */
+  | "voidPortal"
+  | "library"
+  | "forge"
+  | "chapel"
+  | "stables"
+  | "market";
 
 export interface GeneratedBuilding {
   kind: BuildingKind;
@@ -64,12 +77,23 @@ export function randomSeed(): number {
   return (Math.random() * 0xffffffff) >>> 0;
 }
 
+/**
+ * Area multiplier vs the baseline ~52–80 × 36–54 tile worlds (1 = classic size).
+ * Per-axis scale is `sqrt(WORLD_AREA_MULTIPLIER)`. Raise later if you add streaming / LOD.
+ */
+export const WORLD_AREA_MULTIPLIER = 1;
+
+function worldAxisScale(): number {
+  return Math.sqrt(WORLD_AREA_MULTIPLIER);
+}
+
 export function generateWorld(seed: number = randomSeed()): GeneratedWorld {
   const rng = mulberry32(seed);
   const ri = (lo: number, hi: number) => Math.floor(rng() * (hi - lo + 1)) + lo;
 
-  const width = ri(52, 80);
-  const height = ri(36, 54);
+  const S = worldAxisScale();
+  const width = ri(Math.round(52 * S), Math.round(80 * S));
+  const height = ri(Math.round(36 * S), Math.round(54 * S));
   const tiles = new Uint8Array(width * height); // defaults to 0 = grass
 
   const idx = (x: number, y: number) => y * width + x;
@@ -89,7 +113,7 @@ export function generateWorld(seed: number = randomSeed()): GeneratedWorld {
     const queue: [number, number][] = [[cx, cy]];
     let placed = 0;
     let guard = 0;
-    while (queue.length && placed < target && guard++ < 4000) {
+    while (queue.length && placed < target && guard++ < Math.max(4000, Math.floor((width * height) / 20))) {
       const pop = queue.shift();
       if (!pop) break;
       const [x, y] = pop;
@@ -113,7 +137,7 @@ export function generateWorld(seed: number = randomSeed()): GeneratedWorld {
     const queue: [number, number][] = [[cx, cy]];
     let placed = 0;
     let guard = 0;
-    while (queue.length && placed < target && guard++ < 400) {
+    while (queue.length && placed < target && guard++ < Math.max(400, Math.floor((width * height) / 80))) {
       const pop = queue.shift();
       if (!pop) break;
       const [x, y] = pop;
@@ -161,10 +185,10 @@ export function generateWorld(seed: number = randomSeed()): GeneratedWorld {
   carveTown(townB);
 
   // ── 4. Buildings ────────────────────────────────────────────────────────
-  // Guaranteed: at least one inn, shop, train, guild across towns so full services exist.
+  // Guaranteed: core services (inn, shop, train, guild, pet) plus five extra town types.
   const buildings: GeneratedBuilding[] = [];
-  const townABuildingKinds: BuildingKind[] = ["inn", "shop"];
-  const townBBuildingKinds: BuildingKind[] = ["train", "guild"];
+  const townABuildingKinds: BuildingKind[] = ["inn", "shop", "library", "forge", "market"];
+  const townBBuildingKinds: BuildingKind[] = ["train", "guild", "petShop", "chapel", "stables"];
   if (rng() < 0.5) {
     townBBuildingKinds.push("inn");
   }

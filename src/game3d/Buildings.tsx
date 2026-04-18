@@ -1,4 +1,6 @@
 import { Html } from "@react-three/drei";
+import { useFrame } from "@react-three/fiber";
+import { useRef } from "react";
 import * as THREE from "three";
 import type { JSX } from "react";
 import { BUILDINGS, type BuildingKind } from "../game/worldMap";
@@ -19,7 +21,14 @@ const STYLE: Record<BuildingKind, KindStyle> = {
   shop: { height: 1.45, wallColor: "#c5b898", roof: "red", accent: "#2e4f72", bannerColor: "#2e78c2", labelColor: "#def2ff" },
   train: { height: 1.65, wallColor: "#a18cb5", roof: "slate", accent: "#6b4f8f", bannerColor: "#8658be", labelColor: "#f0e2ff" },
   guild: { height: 1.5, wallColor: "#a2b08b", roof: "slate", accent: "#486d42", bannerColor: "#5c8a46", labelColor: "#e8f6db" },
-  boss: { height: 2.1, wallColor: "#3b1d4a", roof: "gold", accent: "#3d1054", bannerColor: "#7b2bb0", labelColor: "#f1caff" }
+  petShop: { height: 1.42, wallColor: "#8fc4b4", roof: "slate", accent: "#2a6b5c", bannerColor: "#3d9a82", labelColor: "#e6fff8" },
+  boss: { height: 2.1, wallColor: "#3b1d4a", roof: "gold", accent: "#3d1054", bannerColor: "#7b2bb0", labelColor: "#f1caff" },
+  voidPortal: { height: 2.1, wallColor: "#1a3a52", roof: "slate", accent: "#44aaff", bannerColor: "#2a6aa8", labelColor: "#d8f4ff" },
+  library: { height: 1.52, wallColor: "#9aa8c0", roof: "slate", accent: "#3a4a6a", bannerColor: "#5a7aa8", labelColor: "#e8f0ff" },
+  forge: { height: 1.58, wallColor: "#6a6260", roof: "red", accent: "#8b3a28", bannerColor: "#c45c38", labelColor: "#ffe8d8" },
+  chapel: { height: 1.48, wallColor: "#d8d4cc", roof: "gold", accent: "#8a7040", bannerColor: "#d4b060", labelColor: "#fffaf0" },
+  stables: { height: 1.4, wallColor: "#a87848", roof: "thatch", accent: "#5c3a18", bannerColor: "#8b6020", labelColor: "#ffe8c8" },
+  market: { height: 1.52, wallColor: "#c9a060", roof: "red", accent: "#6a4028", bannerColor: "#b85830", labelColor: "#fff2cc" }
 };
 
 const W = 0.9;
@@ -28,10 +37,62 @@ export function Buildings() {
   useGameStore();
   return (
     <>
-      {BUILDINGS.map((b, i) => (
-        <Building key={`${b.kind}-${b.pos.x}-${b.pos.y}-${i}`} kind={b.kind} x={b.pos.x} y={b.pos.y} label={b.label} />
-      ))}
+      {BUILDINGS.map((b, i) =>
+        b.kind === "voidPortal" ? (
+          <VoidPortalBuilding key={`void-portal-${b.pos.x}-${b.pos.y}-${i}`} x={b.pos.x} y={b.pos.y} label={b.label} />
+        ) : (
+          <Building key={`${b.kind}-${b.pos.x}-${b.pos.y}-${i}`} kind={b.kind} x={b.pos.x} y={b.pos.y} label={b.label} />
+        )
+      )}
     </>
+  );
+}
+
+function VoidPortalBuilding({ x, y, label }: { x: number; y: number; label: string }) {
+  const spin = useRef<THREE.Group>(null);
+  useFrame((_, dt) => {
+    const g = spin.current;
+    if (g) g.rotation.y += dt * 0.42;
+  });
+  return (
+    <group position={[x + 0.5, 0, y + 0.5]}>
+      <mesh position={[0, 0.06, 0]} receiveShadow>
+        <cylinderGeometry args={[0.62, 0.7, 0.12, 28]} />
+        <meshStandardMaterial color="#1e2430" emissive="#0a1420" emissiveIntensity={0.35} roughness={0.92} />
+      </mesh>
+      <group ref={spin} position={[0, 0.88, 0]}>
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.52, 0.07, 14, 52]} />
+          <meshStandardMaterial
+            color="#3a9ad0"
+            emissive="#2266aa"
+            emissiveIntensity={1.05}
+            metalness={0.45}
+            roughness={0.22}
+          />
+        </mesh>
+        <mesh rotation={[Math.PI / 2, 0.35, 0.2]}>
+          <torusGeometry args={[0.34, 0.045, 12, 40]} />
+          <meshStandardMaterial
+            color="#7a48c8"
+            emissive="#402088"
+            emissiveIntensity={0.95}
+            metalness={0.5}
+            roughness={0.28}
+          />
+        </mesh>
+      </group>
+      <mesh position={[0, 0.9, 0]}>
+        <sphereGeometry args={[0.14, 12, 12]} />
+        <meshStandardMaterial color="#e8f8ff" emissive="#88ccff" emissiveIntensity={1.4} roughness={0.2} />
+      </mesh>
+      <pointLight position={[0, 1.05, 0]} intensity={1.35} distance={4.5} color="#88ddff" />
+      <Html center position={[0, 1.72, 0]} distanceFactor={10} zIndexRange={[20, 0]} pointerEvents="none">
+        <div className="building-label-3d" style={{ borderColor: "#44aacc" }}>
+          {label}
+        </div>
+      </Html>
+    </group>
   );
 }
 
@@ -108,8 +169,8 @@ function Building({ kind, x, y, label }: { kind: BuildingKind; x: number; y: num
       <Lantern position={[-0.36, 0.55, W / 2 + 0.02]} />
       <Lantern position={[0.36, 0.55, W / 2 + 0.02]} />
 
-      {/* Chimney (skip boss, which is a gateway) */}
-      {kind !== "boss" && (
+      {/* Chimney (skip boss / rift landmarks) */}
+      {kind !== "boss" && kind !== "voidPortal" && (
         <mesh position={[W / 2 - 0.2, h + 0.25, -W / 2 + 0.2]} castShadow>
           <boxGeometry args={[0.14, 0.3, 0.14]} />
           <meshStandardMaterial color="#454049" roughness={0.9} />
@@ -203,9 +264,59 @@ function KindIcon({ kind }: { kind: BuildingKind }): JSX.Element {
       return <SwordIcon />;
     case "guild":
       return <ShieldIcon />;
+    case "petShop":
+      return <PawIcon />;
     case "boss":
       return <SkullIcon />;
+    case "voidPortal":
+      return <PortalGlyph />;
+    case "library":
+      return <BookIcon />;
+    case "forge":
+      return <AnvilIcon />;
+    case "chapel":
+      return <CrossIcon />;
+    case "stables":
+      return <HorseshoeIcon />;
+    case "market":
+      return <StallIcon />;
   }
+}
+
+function PortalGlyph(): JSX.Element {
+  return (
+    <mesh rotation={[Math.PI / 2, 0, 0]}>
+      <torusGeometry args={[0.09, 0.026, 8, 22]} />
+      <meshStandardMaterial color="#9ad8ff" emissive="#4488ff" emissiveIntensity={0.75} metalness={0.35} roughness={0.3} />
+    </mesh>
+  );
+}
+
+function PawIcon(): JSX.Element {
+  return (
+    <group scale={1.05}>
+      <mesh position={[0, -0.02, 0.06]} rotation={[0.2, 0, 0]}>
+        <sphereGeometry args={[0.07, 10, 8]} />
+        <meshStandardMaterial color="#c8f0e4" roughness={0.55} />
+      </mesh>
+      <mesh position={[-0.06, -0.05, 0.02]}>
+        <sphereGeometry args={[0.035, 8, 6]} />
+        <meshStandardMaterial color="#7ab8a8" roughness={0.65} />
+      </mesh>
+      <mesh position={[0.06, -0.05, 0.02]}>
+        <sphereGeometry args={[0.035, 8, 6]} />
+        <meshStandardMaterial color="#7ab8a8" roughness={0.65} />
+      </mesh>
+      <mesh position={[-0.05, -0.08, -0.04]}>
+        <sphereGeometry args={[0.03, 8, 6]} />
+        <meshStandardMaterial color="#6aa898" roughness={0.65} />
+      </mesh>
+      <mesh position={[0.05, -0.08, -0.04]}>
+        <sphereGeometry args={[0.03, 8, 6]} />
+        <meshStandardMaterial color="#6aa898" roughness={0.65} />
+      </mesh>
+    </group>
+  );
 }
 
 function BedIcon(): JSX.Element {
@@ -293,5 +404,78 @@ function SkullIcon(): JSX.Element {
         <meshBasicMaterial color="#1a0d2a" />
       </mesh>
     </>
+  );
+}
+
+function BookIcon(): JSX.Element {
+  return (
+    <group rotation={[0.1, 0, 0]}>
+      <mesh position={[0, 0, 0]}>
+        <boxGeometry args={[0.14, 0.18, 0.04]} />
+        <meshStandardMaterial color="#4a5a78" roughness={0.65} />
+      </mesh>
+      <mesh position={[0.002, 0.002, 0.022]}>
+        <boxGeometry args={[0.1, 0.14, 0.008]} />
+        <meshStandardMaterial color="#e8e4dc" emissive="#b8c4d8" emissiveIntensity={0.12} roughness={0.8} />
+      </mesh>
+    </group>
+  );
+}
+
+function AnvilIcon(): JSX.Element {
+  return (
+    <group>
+      <mesh position={[0, -0.04, 0]}>
+        <boxGeometry args={[0.16, 0.05, 0.08]} />
+        <meshStandardMaterial color="#3a3a42" metalness={0.55} roughness={0.35} />
+      </mesh>
+      <mesh position={[0, 0.02, 0]}>
+        <boxGeometry args={[0.1, 0.08, 0.06]} />
+        <meshStandardMaterial color="#5a5a68" metalness={0.5} roughness={0.4} />
+      </mesh>
+    </group>
+  );
+}
+
+function CrossIcon(): JSX.Element {
+  return (
+    <group>
+      <mesh>
+        <boxGeometry args={[0.04, 0.2, 0.015]} />
+        <meshStandardMaterial color="#d4c8a8" metalness={0.25} roughness={0.45} />
+      </mesh>
+      <mesh rotation={[0, 0, Math.PI / 2]}>
+        <boxGeometry args={[0.04, 0.14, 0.015]} />
+        <meshStandardMaterial color="#c8b890" metalness={0.25} roughness={0.45} />
+      </mesh>
+    </group>
+  );
+}
+
+function HorseshoeIcon(): JSX.Element {
+  return (
+    <mesh rotation={[Math.PI / 2, 0, 0]}>
+      <torusGeometry args={[0.07, 0.022, 8, 16, Math.PI * 1.25]} />
+      <meshStandardMaterial color="#6a4a28" metalness={0.35} roughness={0.55} />
+    </mesh>
+  );
+}
+
+function StallIcon(): JSX.Element {
+  return (
+    <group>
+      <mesh position={[0, 0.04, 0]}>
+        <boxGeometry args={[0.2, 0.04, 0.06]} />
+        <meshStandardMaterial color="#c04030" roughness={0.65} />
+      </mesh>
+      <mesh position={[-0.06, -0.02, 0.02]}>
+        <boxGeometry args={[0.04, 0.1, 0.04]} />
+        <meshStandardMaterial color="#8a6040" roughness={0.75} />
+      </mesh>
+      <mesh position={[0.06, -0.02, 0.02]}>
+        <boxGeometry args={[0.04, 0.1, 0.04]} />
+        <meshStandardMaterial color="#8a6040" roughness={0.75} />
+      </mesh>
+    </group>
   );
 }

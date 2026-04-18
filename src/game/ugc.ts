@@ -25,8 +25,27 @@ export function initialUgc(): UgcState {
   };
 }
 
-function uid(prefix: string): string {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+const CODE_CHARS = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+function randomCodeBody(length: number): string {
+  let s = "";
+  if (globalThis.crypto?.getRandomValues) {
+    const buf = new Uint8Array(length);
+    globalThis.crypto.getRandomValues(buf);
+    for (let i = 0; i < length; i++) {
+      s += CODE_CHARS[buf[i]! % 36];
+    }
+    return s;
+  }
+  for (let i = 0; i < length; i++) {
+    s += CODE_CHARS[Math.floor(Math.random() * 36)];
+  }
+  return s;
+}
+
+/** Share / listing id — always exactly 10 characters (kind prefix + random). */
+export function makeListingCode(kind: "m" | "w" | "a" | "p"): string {
+  return kind + randomCodeBody(9);
 }
 
 export const MONSTER_BODY_SHAPES: readonly MonsterBodyShape[] = [
@@ -101,7 +120,7 @@ export function defaultArmorDraft(): Omit<UgcArmor, "id" | "createdAt" | "listed
 export function newMonster(draft: ReturnType<typeof defaultMonsterDraft>): UgcMonster {
   return {
     ...draft,
-    id: uid("mon"),
+    id: makeListingCode("m"),
     createdAt: Date.now(),
     listed: false,
     sales: 0,
@@ -112,7 +131,7 @@ export function newMonster(draft: ReturnType<typeof defaultMonsterDraft>): UgcMo
 export function newWeapon(draft: ReturnType<typeof defaultWeaponDraft>): UgcWeapon {
   return {
     ...draft,
-    id: uid("wpn"),
+    id: makeListingCode("w"),
     createdAt: Date.now(),
     listed: false,
     sales: 0,
@@ -123,7 +142,7 @@ export function newWeapon(draft: ReturnType<typeof defaultWeaponDraft>): UgcWeap
 export function newArmor(draft: ReturnType<typeof defaultArmorDraft>): UgcArmor {
   return {
     ...draft,
-    id: uid("arm"),
+    id: makeListingCode("a"),
     createdAt: Date.now(),
     listed: false,
     sales: 0,

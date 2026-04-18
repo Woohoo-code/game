@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MonsterPreview3D } from "../game3d/MonsterPreview3D";
 import { gameStore } from "../game/state";
 import { useGameStore } from "../game/useGameStore";
@@ -21,6 +21,36 @@ type Tab = "monsters" | "weapons" | "armor" | "market";
 
 export function UgcStudio({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<Tab>("monsters");
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [publishReady, setPublishReady] = useState(false);
+  const publishRef = useRef<(() => void) | null>(null);
+
+  const registerPublish = useCallback((fn: (() => void) | null) => {
+    publishRef.current = fn;
+    setPublishReady(fn != null);
+  }, []);
+
+  useEffect(() => {
+    if (tab === "market") {
+      publishRef.current = null;
+      setPublishReady(false);
+    }
+  }, [tab]);
+
+  const handleSave = async () => {
+    setSaveBusy(true);
+    try {
+      await gameStore.save();
+    } finally {
+      setSaveBusy(false);
+    }
+  };
+
+  const handlePublish = () => {
+    publishRef.current?.();
+  };
+
+  const canPublish = tab !== "market" && publishReady;
 
   return (
     <div className="ugc-modal-backdrop" role="dialog" aria-modal="true" aria-label="UGC Studio">
@@ -30,9 +60,6 @@ export function UgcStudio({ onClose }: { onClose: () => void }) {
             <h2>UGC Studio</h2>
             <p className="ugc-tagline">Design it, price it, collect 75%. (Platform keeps a 25% cut.)</p>
           </div>
-          <button type="button" className="ugc-close" onClick={onClose} aria-label="Close studio">
-            ×
-          </button>
         </header>
 
         <nav className="ugc-tabs">
@@ -51,11 +78,41 @@ export function UgcStudio({ onClose }: { onClose: () => void }) {
         </nav>
 
         <div className="ugc-body">
-          {tab === "monsters" && <MonsterStudio />}
-          {tab === "weapons" && <WeaponStudio />}
-          {tab === "armor" && <ArmorStudio />}
+          {tab === "monsters" && <MonsterStudio registerPublish={registerPublish} />}
+          {tab === "weapons" && <WeaponStudio registerPublish={registerPublish} />}
+          {tab === "armor" && <ArmorStudio registerPublish={registerPublish} />}
           {tab === "market" && <MarketTab />}
         </div>
+
+        <footer className="ugc-studio-footer">
+          <p className="ugc-studio-footer-hint">
+            <strong>Save</strong> writes your game (including UGC) to this browser. <strong>Publish</strong> adds the
+            current draft to your library — then use <strong>List for sale</strong> on a card to put it on the market.
+          </p>
+          <div className="ugc-studio-footer-actions">
+            <button type="button" className="secondary" disabled={saveBusy} onClick={() => void handleSave()}>
+              {saveBusy ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              className="primary"
+              disabled={!canPublish}
+              title={
+                tab === "market"
+                  ? "Open Monsters, Weapons, or Armor to publish a new creation."
+                  : !publishReady
+                    ? "Switch to a design tab to publish."
+                    : undefined
+              }
+              onClick={handlePublish}
+            >
+              Publish
+            </button>
+            <button type="button" className="secondary ugc-studio-exit" onClick={onClose}>
+              Exit
+            </button>
+          </div>
+        </footer>
       </div>
     </div>
   );
@@ -63,7 +120,7 @@ export function UgcStudio({ onClose }: { onClose: () => void }) {
 
 // ─── Monster Studio ──────────────────────────────────────────────────────────
 
-function MonsterStudio() {
+function MonsterStudio({ registerPublish }: { registerPublish: (fn: (() => void) | null) => void }) {
   const snapshot = useGameStore();
   const [shape, setShape] = useState<MonsterBodyShape>("slime");
   const [draft, setDraft] = useState(() => defaultMonsterDraft("slime", snapshot.player.level));
@@ -75,10 +132,14 @@ function MonsterStudio() {
 
   const update = (patch: Partial<typeof draft>) => setDraft((d) => ({ ...d, ...patch }));
 
-  const create = () => {
-    gameStore.createUgcMonster({ ...draft, bodyShape: shape });
-    setDraft(defaultMonsterDraft(shape, snapshot.player.level));
-  };
+  useEffect(() => {
+    const publish = () => {
+      gameStore.createUgcMonster({ ...draft, bodyShape: shape });
+      setDraft(defaultMonsterDraft(shape, snapshot.player.level));
+    };
+    registerPublish(publish);
+    return () => registerPublish(null);
+  }, [registerPublish, draft, shape, snapshot.player.level]);
 
   return (
     <div className="ugc-grid">
@@ -169,9 +230,7 @@ function MonsterStudio() {
           hint={`Est. sale chance: ${(saleChanceForPrice(draft.price) * 100).toFixed(0)}% per tick`}
         />
 
-        <button type="button" className="primary" onClick={create}>
-          Publish Monster
-        </button>
+        <p className="muted small ugc-draft-hint">Use <strong>Publish</strong> at the bottom of the studio to add this design to your library.</p>
       </div>
 
       <div className="ugc-library">
@@ -236,16 +295,20 @@ function MonsterCard({ monster }: { monster: UgcMonster }) {
 
 // ─── Weapon Studio ───────────────────────────────────────────────────────────
 
-function WeaponStudio() {
+function WeaponStudio({ registerPublish }: { registerPublish: (fn: (() => void) | null) => void }) {
   const snapshot = useGameStore();
   const [draft, setDraft] = useState(defaultWeaponDraft);
 
   const update = (patch: Partial<typeof draft>) => setDraft((d) => ({ ...d, ...patch }));
 
-  const create = () => {
-    gameStore.createUgcWeapon(draft);
-    setDraft(defaultWeaponDraft());
-  };
+  useEffect(() => {
+    const publish = () => {
+      gameStore.createUgcWeapon(draft);
+      setDraft(defaultWeaponDraft());
+    };
+    registerPublish(publish);
+    return () => registerPublish(null);
+  }, [registerPublish, draft]);
 
   return (
     <div className="ugc-grid">
@@ -282,9 +345,7 @@ function WeaponStudio() {
           hint={`Est. sale chance: ${(saleChanceForPrice(draft.price) * 100).toFixed(0)}% per tick`}
         />
 
-        <button type="button" className="primary" onClick={create}>
-          Forge Weapon
-        </button>
+        <p className="muted small ugc-draft-hint">Use <strong>Publish</strong> at the bottom of the studio to forge this weapon into your library.</p>
       </div>
 
       <div className="ugc-library">
@@ -340,16 +401,20 @@ function WeaponCard({ weapon }: { weapon: UgcWeapon }) {
 
 // ─── Armor Studio ────────────────────────────────────────────────────────────
 
-function ArmorStudio() {
+function ArmorStudio({ registerPublish }: { registerPublish: (fn: (() => void) | null) => void }) {
   const snapshot = useGameStore();
   const [draft, setDraft] = useState(defaultArmorDraft);
 
   const update = (patch: Partial<typeof draft>) => setDraft((d) => ({ ...d, ...patch }));
 
-  const create = () => {
-    gameStore.createUgcArmor(draft);
-    setDraft(defaultArmorDraft());
-  };
+  useEffect(() => {
+    const publish = () => {
+      gameStore.createUgcArmor(draft);
+      setDraft(defaultArmorDraft());
+    };
+    registerPublish(publish);
+    return () => registerPublish(null);
+  }, [registerPublish, draft]);
 
   return (
     <div className="ugc-grid">
@@ -386,9 +451,7 @@ function ArmorStudio() {
           hint={`Est. sale chance: ${(saleChanceForPrice(draft.price) * 100).toFixed(0)}% per tick`}
         />
 
-        <button type="button" className="primary" onClick={create}>
-          Craft Armor
-        </button>
+        <p className="muted small ugc-draft-hint">Use <strong>Publish</strong> at the bottom of the studio to add this armor to your library.</p>
       </div>
 
       <div className="ugc-library">
@@ -535,8 +598,9 @@ function MarketTab() {
         </section>
       )}
 
-      <p className="muted small">
-        Tip: lower prices sell more often per market tick (~6s). Higher prices earn more per sale but move slower.
+        <p className="muted small">
+        Tip: lower prices sell more often per market tick (~6s). Higher prices earn more per sale but move slower. New
+        items are added from the Monsters / Weapons / Armor tabs with <strong>Publish</strong>, then listed here.
       </p>
     </div>
   );

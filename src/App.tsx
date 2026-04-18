@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 import Phaser from "phaser";
 import { GameScene } from "./game/GameScene";
+import { isLanGuest, sendGuestMove } from "./coop/lanCoop";
+import { useLanCoopRole } from "./coop/useLanCoopRole";
 import { inputController, type MoveDirection } from "./game/inputController";
 import { gameStore } from "./game/state";
+import { CAMPAIGN_TAGLINE } from "./game/story";
+import { GAME_VERSION_LABEL } from "./version";
 import { useGameStore } from "./game/useGameStore";
 import { Overworld3D } from "./game3d/Overworld3D";
 import { CharacterCreation } from "./ui/CharacterCreation";
 import { TownCompass } from "./ui/TownCompass";
 import { UgcStudio } from "./ui/UgcStudio";
 import { BattleOverlay } from "./ui/BattleOverlay";
+import { PetsPanel } from "./ui/PetsPanel";
 import { PlayfieldActionOverlays } from "./ui/PlayfieldActionOverlays";
 import { WorldStatusOverlay } from "./ui/WorldStatusOverlay";
 import {
@@ -18,12 +23,30 @@ import {
   StoryIntroModal,
   useStoryOverlays
 } from "./ui/Journal";
+import { MobileFullscreenButton } from "./ui/MobileFullscreenButton";
+import { InventoryBar } from "./ui/InventoryBar";
 
 /**
  * Feature flag for the 3D prototype overworld.
  * Set to `false` to fall back to the Phaser 2D overworld that lives on the 2d-baseline branch/tag.
  */
 const USE_3D_OVERWORLD = true;
+
+/** Viewport wide enough for the larger hotbar layout (compact bar still shows below this). */
+const DESKTOP_INVENTORY_MQ = "(min-width: 1024px)";
+
+function useDesktopInventoryBar(): boolean {
+  const [wide, setWide] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia(DESKTOP_INVENTORY_MQ).matches : false
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(DESKTOP_INVENTORY_MQ);
+    const fn = () => setWide(mq.matches);
+    mq.addEventListener("change", fn);
+    return () => mq.removeEventListener("change", fn);
+  }, []);
+  return wide;
+}
 
 type Screen = "title" | "create" | "play";
 
@@ -62,10 +85,18 @@ function useRoute() {
 function DirButton({ dir, label, className }: { dir: MoveDirection; label: string; className?: string }) {
   const press = (event: PointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
+    if (isLanGuest()) {
+      sendGuestMove(dir, true);
+      return;
+    }
     inputController.setPressed(dir, true);
   };
   const release = (event: PointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
+    if (isLanGuest()) {
+      sendGuestMove(dir, false);
+      return;
+    }
     inputController.setPressed(dir, false);
   };
 
@@ -85,10 +116,16 @@ function DirButton({ dir, label, className }: { dir: MoveDirection; label: strin
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("title");
+  /** Shown on the title screen when Load Save fails (event log is not visible there). */
+  const [titleNotice, setTitleNotice] = useState<{ text: string; error: boolean } | null>(null);
+  const [transferPaste, setTransferPaste] = useState("");
   const [journalOpen, setJournalOpen] = useState(false);
+  const [petsOpen, setPetsOpen] = useState(false);
   const gameRef = useRef<Phaser.Game | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const snapshot = useGameStore();
+  const lanRole = useLanCoopRole();
+  const desktopInventory = useDesktopInventoryBar();
   const overlays = useStoryOverlays();
   const { path, navigate } = useRoute();
 
@@ -112,6 +149,11 @@ export default function App() {
   // overlay on the very first frame (no flash of title screen).
   const effectiveScreen: Screen =
     ugcOpen && snapshot.player.hasCreatedCharacter ? "play" : screen;
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-app-screen", effectiveScreen);
+    return () => document.documentElement.removeAttribute("data-app-screen");
+  }, [effectiveScreen]);
 
   const openUgc = useCallback(() => navigate("/ugc"), [navigate]);
   const closeUgc = useCallback(() => navigate("/"), [navigate]);
@@ -143,6 +185,7 @@ export default function App() {
   }, [screen]);
 
   const handlePlay = () => {
+    setTitleNotice(null);
     if (snapshot.player.hasCreatedCharacter) {
       setScreen("play");
     } else {
@@ -151,33 +194,149 @@ export default function App() {
   };
 
   const handleLoad = async () => {
+    setTitleNotice(null);
     const loaded = await gameStore.load();
     if (loaded) {
       setScreen("play");
+    } else {
+      setTitleNotice({
+        text: "No save found in this browser. Start with New hero, or paste a transfer line from another device.",
+        error: true
+      });
+    }
+  };
+
+  const handleTitleExportTransfer = async () => {
+    setTitleNotice(null);
+    const ok = await gameStore.exportTransferCode();
+    setTitleNotice({
+      text: ok
+        ? "Copied one transfer line to the clipboard. On the other device, paste that entire line below and tap Import transfer. (A 10-digit key appears in the line for your notes.)"
+        : "Could not copy — allow clipboard access for this site, or use Copy transfer from inside the game.",
+      error: !ok
+    });
+  };
+
+  const handleTitleImportTransfer = async () => {
+    setTitleNotice(null);
+    const r = await gameStore.importTransferCode(transferPaste);
+    if (r.ok) {
+      setTransferPaste("");
+      setScreen("play");
+    } else {
+      setTitleNotice({ text: r.error, error: true });
     }
   };
 
   if (effectiveScreen === "title") {
+    const hasChar = snapshot.player.hasCreatedCharacter;
     return (
-      <div className="title-screen">
+      <div className="title-screen" role="document" aria-label="Monster Slayer — sign in or start">
         <div className="title-screen-inner">
-          <h1 className="title-screen-logo">Monster Slayer</h1>
-          <p className="title-screen-tagline">Roam the wilds, brave towns, and cut down what lurks beyond the road.</p>
-          <div className="title-screen-actions">
-            <button type="button" className="title-screen-play" onClick={handlePlay}>
-              {snapshot.player.hasCreatedCharacter ? "Continue" : "New Game"}
-            </button>
-            <button type="button" className="title-screen-secondary" onClick={handleLoad}>
-              Load Save
-            </button>
+          <div className="title-screen-top-actions">
+            <MobileFullscreenButton />
           </div>
+          <h1 className="title-screen-logo">Monster Slayer</h1>
+          <p className="title-screen-version" aria-label={`Release ${GAME_VERSION_LABEL}`}>
+            {GAME_VERSION_LABEL}
+          </p>
+          <p className="title-screen-tagline">Roam the wilds, brave towns, and cut down what lurks beyond the road.</p>
+          <p className="title-screen-campaign-goal" title={CAMPAIGN_TAGLINE}>
+            {CAMPAIGN_TAGLINE}
+          </p>
+
+          <div className="title-screen-gate" role="group" aria-label="Start or restore a game">
+            <section className="title-screen-panel" aria-labelledby="title-login-heading">
+              <h2 id="title-login-heading" className="title-screen-panel-title">
+                Log in
+              </h2>
+              <p className="title-screen-panel-hint">Restore progress saved in this browser.</p>
+              <button type="button" className="title-screen-secondary title-screen-panel-btn" onClick={handleLoad}>
+                Load save
+              </button>
+              {hasChar && (
+                <>
+                  <p className="title-screen-transfer-inline-hint">
+                    <strong>Another device:</strong> copies one line with a random <strong>10-digit</strong> key plus your
+                    full save — paste that line on the other machine below.
+                  </p>
+                  <button
+                    type="button"
+                    className="title-screen-secondary title-screen-panel-btn title-screen-transfer-copy"
+                    onClick={() => void handleTitleExportTransfer()}
+                  >
+                    Copy transfer line
+                  </button>
+                </>
+              )}
+            </section>
+            <div className="title-screen-gate-divider" aria-hidden="true">
+              <span>or</span>
+            </div>
+            <section className="title-screen-panel" aria-labelledby="title-signup-heading">
+              <h2 id="title-signup-heading" className="title-screen-panel-title">
+                {hasChar ? "Continue" : "Sign up"}
+              </h2>
+              <p className="title-screen-panel-hint">
+                {hasChar
+                  ? "Resume your hero where you left off."
+                  : "Create a new hero — looks, name, then into the wilds."}
+              </p>
+              <button type="button" className="title-screen-play title-screen-panel-btn" onClick={handlePlay}>
+                {hasChar ? "Continue adventure" : "New hero"}
+              </button>
+            </section>
+          </div>
+
+          <section className="title-screen-panel title-screen-transfer" aria-labelledby="title-transfer-heading">
+            <h2 id="title-transfer-heading" className="title-screen-panel-title">
+              Import from another device
+            </h2>
+            <p className="title-screen-panel-hint">
+              Paste the <strong>entire</strong> line you copied (it begins with <code className="title-screen-code">MS1|</code> and
+              includes a 10-digit key and the save). Then import — this also writes the save in this browser.
+            </p>
+            <textarea
+              className="title-transfer-textarea"
+              rows={4}
+              value={transferPaste}
+              onChange={(e) => setTransferPaste(e.target.value)}
+              placeholder="MS1|0123456789|…"
+              spellCheck={false}
+              autoComplete="off"
+              aria-label="Paste transfer line from another device"
+            />
+            <button type="button" className="title-screen-play title-screen-panel-btn" onClick={() => void handleTitleImportTransfer()}>
+              Import transfer
+            </button>
+          </section>
+
+          {titleNotice && (
+            <p
+              className={`title-screen-feedback ${titleNotice.error ? "title-screen-feedback--err" : "title-screen-feedback--ok"}`}
+              role="status"
+            >
+              {titleNotice.text}
+            </p>
+          )}
         </div>
       </div>
     );
   }
 
   if (effectiveScreen === "create") {
-    return <CharacterCreation onDone={() => setScreen("play")} onBack={() => setScreen("title")} />;
+    return (
+      <CharacterCreation
+        onDone={() => {
+          setTitleNotice(null);
+          setScreen("play");
+        }}
+        onBack={() => {
+          setTitleNotice(null);
+          setScreen("title");
+        }}
+      />
+    );
   }
 
   const showStoryOverlays = effectiveScreen === "play";
@@ -186,6 +345,7 @@ export default function App() {
     <div className="app">
       {ugcOpen && <UgcStudio onClose={closeUgc} />}
       {journalOpen && <Journal onClose={() => setJournalOpen(false)} />}
+      {petsOpen && <PetsPanel onClose={() => setPetsOpen(false)} />}
       {showStoryOverlays && overlays.showPrologue && (
         <StoryIntroModal onDismiss={() => gameStore.dismissPrologue()} />
       )}
@@ -197,6 +357,9 @@ export default function App() {
       )}
       <div className="main-column">
         <div className="game-wrap">
+          <div className="app-mobile-fs-bar">
+            <MobileFullscreenButton />
+          </div>
           <div className="game-viewport">
             {USE_3D_OVERWORLD ? (
               <Overworld3D />
@@ -216,7 +379,11 @@ export default function App() {
               </div>
             </div>
           </div>
-          <PlayfieldActionOverlays onOpenJournal={() => setJournalOpen(true)} onOpenUgc={openUgc} />
+          <PlayfieldActionOverlays
+            onOpenJournal={() => setJournalOpen(true)}
+            onOpenUgc={openUgc}
+            onOpenPets={() => setPetsOpen(true)}
+          />
           {snapshot.battle.inBattle && <BattleOverlay />}
         </div>
       </div>
@@ -237,6 +404,23 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {effectiveScreen === "play" && (
+        <div className={desktopInventory ? "inventory-bar-desktop" : "inventory-bar-compact"}>
+          <InventoryBar
+            hotkeysBlocked={
+              lanRole === "guest" ||
+              journalOpen ||
+              petsOpen ||
+              ugcOpen ||
+              overlays.showPrologue ||
+              overlays.showEpilogue ||
+              Boolean(overlays.toastStage)
+            }
+            coopGuestLocked={lanRole === "guest"}
+          />
+        </div>
+      )}
     </div>
   );
 }

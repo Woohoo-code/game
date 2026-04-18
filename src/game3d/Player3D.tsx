@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
+import { isLanGuest } from "../coop/lanCoop";
 import { inputController } from "../game/inputController";
 import { gameStore } from "../game/state";
 import { MAP_H, MAP_W, TILE, dispatchZonesAndEncounter, isBlocked } from "../game/worldMap";
@@ -45,7 +46,7 @@ export function Player3D() {
       group.position.set(storeTileX, 0, storeTileZ);
     }
 
-    if (!snapshot.battle.inBattle) {
+    if (!snapshot.battle.inBattle && !isLanGuest()) {
       let vx = 0;
       let vz = 0;
       if (inputController.isPressed("left")) vx -= 1;
@@ -62,7 +63,7 @@ export function Player3D() {
           group.position.x = nextX;
           group.position.z = nextZ;
           if (vx !== 0 || vz !== 0) {
-            group.rotation.y = Math.atan2(vx, -vz);
+            group.rotation.y = Math.atan2(-vx, -vz);
           }
           gameStore.setPosition(nextPxX, nextPxY);
           const tx = Math.floor(nextX);

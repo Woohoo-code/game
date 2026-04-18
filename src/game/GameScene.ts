@@ -81,7 +81,14 @@ export class GameScene extends Phaser.Scene {
       shop: { sprite: "shopSprite" },
       train: { sprite: "shopSprite", tint: 0x8a6bbd },
       guild: { sprite: "innSprite", tint: 0x6b8861 },
-      boss: { sprite: "bossArenaSprite" }
+      petShop: { sprite: "shopSprite", tint: 0x4a9e86 },
+      boss: { sprite: "bossArenaSprite" },
+      voidPortal: { sprite: "bossArenaSprite", tint: 0x44ddff },
+      library: { sprite: "shopSprite", tint: 0x5a7090 },
+      forge: { sprite: "shopSprite", tint: 0x704040 },
+      chapel: { sprite: "innSprite", tint: 0xc8c0b0 },
+      stables: { sprite: "innSprite", tint: 0x8b5a32 },
+      market: { sprite: "shopSprite", tint: 0xc49a48 }
     };
 
     for (const b of BUILDINGS) {
@@ -111,13 +118,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawHardBorders(g: Phaser.GameObjects.Graphics): void {
-    const worldW = MAP_W * TILE;
-    const worldH = MAP_H * TILE;
-
-    // World edge boundary.
-    g.lineStyle(6, 0x1a1410, 1);
-    g.strokeRect(1, 1, worldW - 2, worldH - 2);
-
     // Non-walkable water borders.
     g.lineStyle(4, 0x163958, 0.95);
     for (let y = 0; y < MAP_H; y++) {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { gameStore } from "../game/state";
-import { STORY_CHAPTERS, missingBiomes, progressLabelFor } from "../game/story";
+import { CAMPAIGN_PREMISE, STORY_CHAPTERS, missingBiomes, progressLabelFor } from "../game/story";
 import type { StoryStage } from "../game/types";
 import { useGameStore } from "../game/useGameStore";
 
@@ -110,7 +110,9 @@ export function Journal({ onClose }: { onClose: () => void }) {
   const unseen = useMemo(() => missingBiomes(story.biomesVisited), [story.biomesVisited]);
   const completed = [...story.completed].reverse();
 
-  const progress = progressLabelFor(story.stage, story, level);
+  const progress = progressLabelFor(story.stage, story, level, {
+    bossDefeated: snapshot.player.bossDefeated
+  });
 
   return (
     <div className="journal-backdrop" onClick={onClose}>
@@ -118,6 +120,7 @@ export function Journal({ onClose }: { onClose: () => void }) {
         <header className="journal-header">
           <div>
             <div className="journal-eyebrow">Slayer's Journal</div>
+            <p className="journal-campaign-premise">{CAMPAIGN_PREMISE}</p>
             <h2>{active.title}</h2>
           </div>
           <button className="icon-close" onClick={onClose} aria-label="Close journal">

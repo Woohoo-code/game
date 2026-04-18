@@ -1,0 +1,11 @@
+{
+  "name": "Monster Slayer V1.0",
+  "short_name": "Slayer V1",
+  "description": "Roam the wilds, brave towns, and cut down what lurks beyond the road.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#121924",
+  "theme_color": "#121924"
+}

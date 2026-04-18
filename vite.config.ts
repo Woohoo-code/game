@@ -1,9 +1,13 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react()],
-  // GitHub Pages serves the site from /game/ (the repo name).
-  // Setting base here makes all asset URLs correct in the built output.
-  base: "/game/"
-});
+  // GitHub Pages: `/game/`. Desktop EXE (Electron file://): relative `./`.
+  base: mode === "electron" ? "./" : "/game/",
+  build: {
+    // Avoid electron build wiping the GitHub Pages `dist/` output.
+    outDir: mode === "electron" ? "dist-electron" : "dist",
+    emptyOutDir: true
+  }
+}));

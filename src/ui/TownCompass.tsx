@@ -7,7 +7,7 @@ import { TILE, nearestTown } from "../game/worldMap";
  * and touch controls (see `playfield-right-stack` in App).
  *
  * Visibility rules:
- *   - Hidden until the player buys the Town Map at any Shop (one-time purchase).
+ *   - Hidden until the player buys the Town Map and chooses Equip Map at a shop.
  *   - Hidden whenever the player is standing on a town tile (no need for it!).
  *   - Hidden during battle so it doesn't clutter the combat UI.
  *
@@ -18,8 +18,9 @@ export function TownCompass() {
   const snapshot = useGameStore();
 
   // Early-out BEFORE computing angle when we don't need to render anything.
-  const shouldRender =
-    snapshot.player.hasTownMap && !snapshot.world.inTown && !snapshot.battle.inBattle;
+  const mapOut =
+    snapshot.player.hasTownMap && (snapshot.player.townMapEquipped ?? false);
+  const shouldRender = mapOut && !snapshot.world.inTown && !snapshot.battle.inBattle;
 
   // Recompute angle on every render (cheap). `useGameStore` re-renders on every
   // emit, which includes every tile-step of movement, so the needle stays live.

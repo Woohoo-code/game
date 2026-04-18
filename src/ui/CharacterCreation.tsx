@@ -1,20 +1,26 @@
 import { useState } from "react";
 import { CharacterPreview } from "../game3d/CharacterPreview";
+import { MobileFullscreenButton } from "./MobileFullscreenButton";
 import { gameStore, defaultAppearance } from "../game/state";
 import { useGameStore } from "../game/useGameStore";
-import type { HairStyle, PlayerAppearance } from "../game/types";
+import {
+  FACIAL_HAIR_LABELS,
+  FACIAL_HAIR_ORDER,
+  HAIR_STYLE_LABELS,
+  HAIR_STYLE_ORDER,
+  normalizeFacialHair,
+  normalizeHairStyle,
+  type PlayerAppearance
+} from "../game/types";
 
 const SKIN_PRESETS = ["#f6dbbf", "#f1c9a5", "#d9a07a", "#b07550", "#8a5a3a", "#5c3b25", "#3a2418"];
 const HAIR_PRESETS = ["#141414", "#3b2b21", "#6b4b2a", "#a8743d", "#d5c07a", "#e7e2d6", "#c4453b", "#7a4de6", "#3fa8ff"];
 const OUTFIT_PRESETS = ["#3564c3", "#c3353d", "#2e8c5a", "#6a2fa3", "#d48a1f", "#1d9aa8", "#2c2f37", "#d4d6db"];
 const PANTS_PRESETS = ["#2a3550", "#3c2a1f", "#1c1f25", "#4a3e68", "#2f5030", "#6a5a36"];
 
-const HAIR_STYLES: { id: HairStyle; label: string }[] = [
-  { id: "short", label: "Short" },
-  { id: "spiky", label: "Spiky" },
-  { id: "long", label: "Long" },
-  { id: "bald", label: "Bald" }
-];
+const HAIR_STYLES = HAIR_STYLE_ORDER.map((id) => ({ id, label: HAIR_STYLE_LABELS[id] }));
+
+const FACIAL_STYLES = FACIAL_HAIR_ORDER.map((id) => ({ id, label: FACIAL_HAIR_LABELS[id] }));
 
 function Swatch({
   color,
@@ -43,9 +49,18 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
   const [name, setName] = useState(() =>
     snapshot.player.hasCreatedCharacter ? snapshot.player.name : ""
   );
-  const [appearance, setAppearance] = useState<PlayerAppearance>(
-    () => snapshot.player.appearance ?? defaultAppearance()
-  );
+  const [appearance, setAppearance] = useState<PlayerAppearance>(() => {
+    const base = defaultAppearance();
+    const a = snapshot.player.appearance;
+    if (!a) return base;
+    return {
+      ...base,
+      ...a,
+      hairStyle: normalizeHairStyle(a.hairStyle),
+      facialHair: normalizeFacialHair(a.facialHair),
+      beardColor: a.beardColor || a.hair || base.beardColor
+    };
+  });
 
   const update = (patch: Partial<PlayerAppearance>) => {
     setAppearance((a) => ({ ...a, ...patch }));
@@ -57,6 +72,8 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
       skin: pick(SKIN_PRESETS),
       hair: pick(HAIR_PRESETS),
       hairStyle: pick(HAIR_STYLES).id,
+      facialHair: pick(FACIAL_HAIR_ORDER),
+      beardColor: pick(HAIR_PRESETS),
       outfit: pick(OUTFIT_PRESETS),
       pants: pick(PANTS_PRESETS)
     });
@@ -68,11 +85,15 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
   };
 
   return (
-    <div className="character-create">
+    <div className="character-create" role="document" aria-label="Sign up — create your hero">
       <div className="character-create-inner">
         <header className="character-create-header">
-          <h1>Forge Your Hero</h1>
-          <p>Shape your look — stats are earned in the field, not in a mirror.</p>
+          <div className="character-create-header-actions">
+            <MobileFullscreenButton />
+          </div>
+          <p className="character-create-eyebrow">Sign up</p>
+          <h1>Create your hero</h1>
+          <p>Pick a name and look. Progress is saved in this browser when you use Save in town.</p>
         </header>
 
         <div className="character-create-body">
@@ -81,7 +102,13 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
             <div className="character-create-namepill">{(name || "Hero").trim()}</div>
           </div>
 
-          <div className="character-create-form">
+          <form
+            className="character-create-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              submit();
+            }}
+          >
             <label className="form-row">
               <span>Name</span>
               <input
@@ -89,6 +116,10 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
                 value={name}
                 maxLength={18}
                 placeholder="Hero"
+                autoComplete="username"
+                autoCapitalize="words"
+                enterKeyHint="done"
+                autoFocus
                 onChange={(e) => setName(e.target.value)}
               />
             </label>
@@ -150,6 +181,42 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
             </div>
 
             <div className="form-row">
+              <span>Facial hair</span>
+              <div className="pill-row">
+                {FACIAL_STYLES.map((style) => (
+                  <button
+                    key={style.id}
+                    type="button"
+                    className={`pill${appearance.facialHair === style.id ? " active" : ""}`}
+                    onClick={() => update({ facialHair: style.id })}
+                  >
+                    {style.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="form-row">
+              <span>Beard color</span>
+              <div className="swatch-row">
+                {HAIR_PRESETS.map((c) => (
+                  <Swatch
+                    key={c}
+                    color={c}
+                    active={appearance.beardColor === c}
+                    ariaLabel={`Beard ${c}`}
+                    onSelect={() => update({ beardColor: c })}
+                  />
+                ))}
+                <input
+                  type="color"
+                  value={appearance.beardColor}
+                  onChange={(e) => update({ beardColor: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="form-row">
               <span>Outfit</span>
               <div className="swatch-row">
                 {OUTFIT_PRESETS.map((c) => (
@@ -191,16 +258,16 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
 
             <div className="character-create-actions">
               <button type="button" className="secondary" onClick={onBack}>
-                Back
+                Back to log in
               </button>
               <button type="button" className="secondary" onClick={randomize}>
                 Randomize
               </button>
-              <button type="button" className="primary" onClick={submit}>
-                Start Adventure
+              <button type="submit" className="primary">
+                Start adventure
               </button>
             </div>
-          </div>
+          </form>
         </div>
       </div>
     </div>
