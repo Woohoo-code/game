@@ -6,6 +6,13 @@ import { gameStore } from "./game/state";
 import { ARMOR_STATS, ITEM_DATA, SKILL_DATA, WEAPON_STATS, getUnlockedSkills } from "./game/data";
 import { useGameStore } from "./game/useGameStore";
 import type { EnemyState, SkillKey } from "./game/types";
+import { Overworld3D } from "./game3d/Overworld3D";
+
+/**
+ * Feature flag for the 3D prototype overworld.
+ * Set to `false` to fall back to the Phaser 2D overworld that lives on the 2d-baseline branch/tag.
+ */
+const USE_3D_OVERWORLD = true;
 
 function DirButton({ dir, label }: { dir: MoveDirection; label: string }) {
   const press = (event: PointerEvent<HTMLButtonElement>) => {
@@ -107,6 +114,9 @@ export default function App() {
 
   useEffect(() => {
     if (!gameStarted) {
+      return;
+    }
+    if (USE_3D_OVERWORLD) {
       return;
     }
     if (!mountRef.current) {
@@ -249,7 +259,11 @@ export default function App() {
         </div>
 
         <div className="game-wrap">
-          <div ref={mountRef} className="phaser-mount" />
+          {USE_3D_OVERWORLD ? (
+            <Overworld3D />
+          ) : (
+            <div ref={mountRef} className="phaser-mount" />
+          )}
           <div className="touch-overlay">
             <div className="touch-pad">
               <DirButton dir="up" label="U" />

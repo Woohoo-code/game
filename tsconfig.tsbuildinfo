@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/game/gamescene.ts","./src/game/data.ts","./src/game/inputcontroller.ts","./src/game/save.ts","./src/game/state.ts","./src/game/types.ts","./src/game/usegamestore.ts","./src/game/worldmap.ts","./src/game3d/buildings.tsx","./src/game3d/overworld3d.tsx","./src/game3d/player3d.tsx","./src/game3d/terrain.tsx"],"version":"5.9.3"}

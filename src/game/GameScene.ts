@@ -1,25 +1,27 @@
 import Phaser from "phaser";
 import { inputController } from "./inputController";
 import { gameStore } from "./state";
+import {
+  BOSS_B,
+  GUILD_A,
+  GUILD_B,
+  INN_A,
+  INN_B,
+  MAP_H,
+  MAP_W,
+  SHOP_A,
+  SHOP_B,
+  TILE,
+  TRAIN_A,
+  TRAIN_B,
+  dispatchZonesAndEncounter,
+  isBlocked,
+  isRoadTile,
+  isTownTile,
+  isWaterTile
+} from "./worldMap";
 
-const TILE = 32;
-const MAP_W = 60;
-const MAP_H = 40;
-const ROAD_ENCOUNTER_RATE = 0.02;
-const GRASS_ENCOUNTER_RATE = 0.12;
 const CAMERA_ZOOM = 1.8;
-const TOWN_A = { minX: 0, maxX: 7, minY: 0, maxY: 5 };
-const TOWN_B = { minX: MAP_W - 8, maxX: MAP_W - 1, minY: MAP_H - 6, maxY: MAP_H - 1 };
-const INN_A = { x: 5, y: 3 };
-const SHOP_A = { x: 2, y: 3 };
-const INN_B = { x: MAP_W - 4, y: MAP_H - 3 };
-const SHOP_B = { x: MAP_W - 2, y: MAP_H - 3 };
-const TRAIN_A = { x: 6, y: 3 };
-const GUILD_A = { x: 1, y: 3 };
-const TRAIN_B = { x: MAP_W - 5, y: MAP_H - 3 };
-const GUILD_B = { x: MAP_W - 7, y: MAP_H - 3 };
-/** Southeast town — Void Titan arena (stand on tile to unlock UI). */
-const BOSS_B = { x: MAP_W - 6, y: MAP_H - 4 };
 
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Sprite;
@@ -61,7 +63,7 @@ export class GameScene extends Phaser.Scene {
     if (this.isDown()) vy += speed;
     const nextX = Phaser.Math.Clamp(this.player.x + vx, TILE / 2, MAP_W * TILE - TILE / 2);
     const nextY = Phaser.Math.Clamp(this.player.y + vy, TILE / 2, MAP_H * TILE - TILE / 2);
-    if (!this.blocked(nextX, nextY)) {
+    if (!isBlocked(nextX, nextY)) {
       this.player.setPosition(nextX, nextY);
       gameStore.setPosition(nextX, nextY);
       this.checkZonesAndEncounter();
@@ -127,21 +129,21 @@ export class GameScene extends Phaser.Scene {
     g.lineStyle(4, 0x163958, 0.95);
     for (let y = 0; y < MAP_H; y++) {
       for (let x = 0; x < MAP_W; x++) {
-        if (!this.isWaterTile(x, y)) {
+        if (!isWaterTile(x, y)) {
           continue;
         }
         const px = x * TILE;
         const py = y * TILE;
-        if (!this.isWaterTile(x, y - 1)) g.lineBetween(px, py, px + TILE, py);
-        if (!this.isWaterTile(x + 1, y)) g.lineBetween(px + TILE, py, px + TILE, py + TILE);
-        if (!this.isWaterTile(x, y + 1)) g.lineBetween(px, py + TILE, px + TILE, py + TILE);
-        if (!this.isWaterTile(x - 1, y)) g.lineBetween(px, py, px, py + TILE);
+        if (!isWaterTile(x, y - 1)) g.lineBetween(px, py, px + TILE, py);
+        if (!isWaterTile(x + 1, y)) g.lineBetween(px + TILE, py, px + TILE, py + TILE);
+        if (!isWaterTile(x, y + 1)) g.lineBetween(px, py + TILE, px + TILE, py + TILE);
+        if (!isWaterTile(x - 1, y)) g.lineBetween(px, py, px, py + TILE);
       }
     }
   }
 
   private drawTerrainTile(g: Phaser.GameObjects.Graphics, x: number, y: number, px: number, py: number): void {
-    if (this.isTownTile(x, y)) {
+    if (isTownTile(x, y)) {
       g.fillStyle(0xa88960, 1);
       g.fillRect(px, py, TILE - 1, TILE - 1);
       g.fillStyle(0xc9b08d, 1);
@@ -149,7 +151,7 @@ export class GameScene extends Phaser.Scene {
       g.fillRect(px + 20, py + 18, 4, 4);
       return;
     }
-    if (this.isRoadTile(x, y)) {
+    if (isRoadTile(x, y)) {
       g.fillStyle(0x8d7a5e, 1);
       g.fillRect(px, py, TILE - 1, TILE - 1);
       g.fillStyle(0xa58e6e, 1);
@@ -157,7 +159,7 @@ export class GameScene extends Phaser.Scene {
       g.fillRect(px + 18, py + 20, 5, 3);
       return;
     }
-    if (this.isWaterTile(x, y)) {
+    if (isWaterTile(x, y)) {
       g.fillStyle(0x2f5f9a, 1);
       g.fillRect(px, py, TILE - 1, TILE - 1);
       g.fillStyle(0x4c82c5, 1);
@@ -177,7 +179,7 @@ export class GameScene extends Phaser.Scene {
   private drawLandmarks(): void {
     for (let y = 2; y < MAP_H - 2; y++) {
       for (let x = 2; x < MAP_W - 2; x++) {
-        if (this.isTownTile(x, y) || this.isRoadTile(x, y) || this.isWaterTile(x, y)) {
+        if (isTownTile(x, y) || isRoadTile(x, y) || isWaterTile(x, y)) {
           continue;
         }
         const hash = (x * 73 + y * 97) % 100;
@@ -197,7 +199,7 @@ export class GameScene extends Phaser.Scene {
       [14, 28], [26, 28], [38, 28], [50, 28]
     ];
     for (const [x, y] of landmarkTrees) {
-      if (this.isTownTile(x, y) || this.isRoadTile(x, y) || this.isWaterTile(x, y)) {
+      if (isTownTile(x, y) || isRoadTile(x, y) || isWaterTile(x, y)) {
         continue;
       }
       this.add.sprite(x * TILE + TILE / 2, y * TILE + TILE / 2, "treeSprite").setScale(2);
@@ -215,7 +217,7 @@ export class GameScene extends Phaser.Scene {
 
   private makeBossArenaTexture(): void {
     if (this.textures.exists("bossArenaSprite")) return;
-    const g = this.make.graphics({ x: 0, y: 0, add: false });
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
     g.fillStyle(0x2a0d3d, 1);
     g.fillRect(2, 1, 12, 14);
     g.fillStyle(0x5a2d7a, 1);
@@ -234,7 +236,7 @@ export class GameScene extends Phaser.Scene {
 
   private makePlayerTexture(): void {
     if (this.textures.exists("playerSprite")) return;
-    const g = this.make.graphics({ x: 0, y: 0, add: false });
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
     g.fillStyle(0x2b2b2b, 1);
     g.fillRect(3, 0, 2, 2);
     g.fillStyle(0xf6d2b0, 1);
@@ -253,7 +255,7 @@ export class GameScene extends Phaser.Scene {
 
   private makeInnTexture(): void {
     if (this.textures.exists("innSprite")) return;
-    const g = this.make.graphics({ x: 0, y: 0, add: false });
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
     g.fillStyle(0x8b2e2e, 1);
     g.fillRect(0, 0, 16, 6);
     g.fillStyle(0xd8c79e, 1);
@@ -277,7 +279,7 @@ export class GameScene extends Phaser.Scene {
 
   private makeShopTexture(): void {
     if (this.textures.exists("shopSprite")) return;
-    const g = this.make.graphics({ x: 0, y: 0, add: false });
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
     g.fillStyle(0x3b5c7e, 1);
     g.fillRect(0, 0, 16, 5);
     g.fillStyle(0xc8b38a, 1);
@@ -304,7 +306,7 @@ export class GameScene extends Phaser.Scene {
 
   private makeTreeTexture(): void {
     if (this.textures.exists("treeSprite")) return;
-    const g = this.make.graphics({ x: 0, y: 0, add: false });
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
     g.fillStyle(0x2e6d2f, 1);
     g.fillRect(3, 0, 10, 6);
     g.fillRect(1, 4, 14, 7);
@@ -319,7 +321,7 @@ export class GameScene extends Phaser.Scene {
 
   private makeRockTexture(): void {
     if (this.textures.exists("rockSprite")) return;
-    const g = this.make.graphics({ x: 0, y: 0, add: false });
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
     g.fillStyle(0x7d8289, 1);
     g.fillRect(2, 6, 12, 8);
     g.fillStyle(0xa1a7b0, 1);
@@ -331,7 +333,7 @@ export class GameScene extends Phaser.Scene {
 
   private makeFlowerTexture(): void {
     if (this.textures.exists("flowerSprite")) return;
-    const g = this.make.graphics({ x: 0, y: 0, add: false });
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
     g.fillStyle(0x2d7c2d, 1);
     g.fillRect(7, 8, 2, 7);
     g.fillStyle(0xd85ba9, 1);
@@ -345,12 +347,6 @@ export class GameScene extends Phaser.Scene {
     g.destroy();
   }
 
-  private blocked(worldX: number, worldY: number): boolean {
-    const tx = Math.floor(worldX / TILE);
-    const ty = Math.floor(worldY / TILE);
-    return this.isWaterTile(tx, ty) && !this.isRoadTile(tx, ty);
-  }
-
   private checkZonesAndEncounter(): void {
     const tx = Math.floor(this.player.x / TILE);
     const ty = Math.floor(this.player.y / TILE);
@@ -358,47 +354,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.lastTile = { x: tx, y: ty };
-    const inTown = this.isTownTile(tx, ty);
-    const canHeal = (tx === INN_A.x && ty === INN_A.y) || (tx === INN_B.x && ty === INN_B.y);
-    const canShop = (tx === SHOP_A.x && ty === SHOP_A.y) || (tx === SHOP_B.x && ty === SHOP_B.y);
-    const canTrain = (tx === TRAIN_A.x && ty === TRAIN_A.y) || (tx === TRAIN_B.x && ty === TRAIN_B.y);
-    const canGuild = (tx === GUILD_A.x && ty === GUILD_A.y) || (tx === GUILD_B.x && ty === GUILD_B.y);
-    const canBoss = tx === BOSS_B.x && ty === BOSS_B.y;
-    gameStore.updateWorldZones(inTown, canHeal, canShop, canTrain, canGuild, canBoss);
-    if (inTown || this.isWaterTile(tx, ty)) {
-      gameStore.setEncounterRate(0);
-      return;
-    }
-    const encounterRate = this.isRoadTile(tx, ty) ? ROAD_ENCOUNTER_RATE : GRASS_ENCOUNTER_RATE;
-    if (gameStore.wildernessEncounterStep(encounterRate)) {
-      return;
-    }
-    if (Math.random() < encounterRate) {
-      gameStore.startEncounter();
-    }
-  }
-
-  private isTownTile(x: number, y: number): boolean {
-    const mainTown = x >= TOWN_A.minX && x <= TOWN_A.maxX && y >= TOWN_A.minY && y <= TOWN_A.maxY;
-    const southEastTown = x >= TOWN_B.minX && x <= TOWN_B.maxX && y >= TOWN_B.minY && y <= TOWN_B.maxY;
-    return mainTown || southEastTown;
-  }
-
-  private isRoadTile(x: number, y: number): boolean {
-    if (this.isTownTile(x, y)) return false;
-    const northRoad = y >= TOWN_A.maxY && y <= TOWN_A.maxY + 1 && x >= TOWN_A.maxX;
-    const southRoad = y >= TOWN_B.minY - 2 && y <= TOWN_B.minY - 1 && x <= TOWN_B.minX;
-    const spineRoad = x >= Math.floor(MAP_W / 2) - 1 && x <= Math.floor(MAP_W / 2) && y >= TOWN_A.maxY && y <= TOWN_B.minY;
-    const eastConnector = y >= Math.floor(MAP_H / 2) - 1 && y <= Math.floor(MAP_H / 2) && x >= Math.floor(MAP_W / 2) && x <= MAP_W - 8;
-    return northRoad || southRoad || spineRoad || eastConnector;
-  }
-
-  private isWaterTile(x: number, y: number): boolean {
-    const northwestLake = x >= 14 && x <= 24 && y >= 2 && y <= 8;
-    const centralLake = x >= 28 && x <= 36 && y >= 14 && y <= 22;
-    const eastLake = x >= 45 && x <= 56 && y >= 6 && y <= 12;
-    const southChannel = x >= 22 && x <= 25 && y >= 26 && y <= 36;
-    return northwestLake || centralLake || eastLake || southChannel;
+    dispatchZonesAndEncounter(tx, ty);
   }
 
   private syncFromStore(): void {
