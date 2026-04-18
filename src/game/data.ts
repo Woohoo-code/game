@@ -293,7 +293,7 @@ export const SKILL_DATA = {
   meteorBreak: { name: "Meteor Break", minLevel: 8, powerBonus: 18, cooldown: 5 }
 } as const satisfies Record<SkillKey, { name: string; minLevel: number; powerBonus: number; cooldown: number }>;
 
-const SKILL_ORDER: SkillKey[] = ["spark", "iceShard", "thunderLance", "meteorBreak"];
+export const SKILL_ORDER: SkillKey[] = ["spark", "iceShard", "thunderLance", "meteorBreak"];
 
 export function getUnlockedSkills(level: number): SkillKey[] {
   return SKILL_ORDER.filter((skill) => level >= SKILL_DATA[skill].minLevel);

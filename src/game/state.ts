@@ -1,4 +1,15 @@
-import { ARMOR_STATS, BOSS_ENEMY, ENEMIES, ITEM_DATA, ITEM_PRIORITY, SKILL_DATA, TOWN_MAP, WEAPON_STATS, getUnlockedSkills } from "./data";
+import {
+  ARMOR_STATS,
+  BOSS_ENEMY,
+  ENEMIES,
+  ITEM_DATA,
+  ITEM_PRIORITY,
+  SKILL_DATA,
+  SKILL_ORDER,
+  TOWN_MAP,
+  WEAPON_STATS,
+  getUnlockedSkills
+} from "./data";
 import { LocalSaveRepository, type SaveRepository } from "./save";
 import type {
   ArmorKey,
@@ -10,6 +21,7 @@ import type {
   ItemKey,
   PlayerAppearance,
   PlayerState,
+  SkillCooldownMap,
   SkillKey,
   StoryStage,
   StoryState,
@@ -72,12 +84,19 @@ const initialPlayer = (): PlayerState => {
   };
 };
 
+const emptySkillCooldowns = (): SkillCooldownMap => ({
+  spark: 0,
+  iceShard: 0,
+  thunderLance: 0,
+  meteorBreak: 0
+});
+
 const initialBattle = (): BattleState => ({
   inBattle: false,
   phase: "idle",
   log: ["Explore the field and watch for encounters."],
   enemy: null,
-  skillCooldown: 0
+  skillCooldowns: emptySkillCooldowns()
 });
 
 /** Tile moves on grass/road after a battle before random encounters can roll again. */
@@ -106,8 +125,13 @@ class GameStore {
     world: initialWorld(),
     eventLog: ["Reach town tiles to shop or rest at the inn."],
     ugc: initialUgc(),
-    story: initialStory()
+    story: initialStory(),
+    hasUnsavedChanges: true
   };
+
+  /** Bumps once per {@link emit}; aligned with {@link lastPersistedVersion} after save/load. */
+  private contentVersion = 0;
+  private lastPersistedVersion = -1;
 
   constructor() {
     this.startMarketTicker();
@@ -287,7 +311,7 @@ class GameStore {
       phase: this.playerSpeed() >= enemy.speed ? "playerTurn" : "enemyTurn",
       enemy,
       log: [`${enemy.name} challenges you!`],
-      skillCooldown: 0
+      skillCooldowns: emptySkillCooldowns()
     };
     this.emit();
     if (this.state.battle.phase === "enemyTurn") {
@@ -308,13 +332,15 @@ class GameStore {
         this.logEvent("Could not clear saved games.");
       }
       regenerateWorld(randomSeed());
+      this.lastPersistedVersion = -1;
       this.state = {
         player: initialPlayer(),
         battle: initialBattle(),
         world: initialWorld(),
         eventLog: ["World reset complete. A new land has risen. Saved games cleared."],
         ugc: initialUgc(),
-        story: initialStory()
+        story: initialStory(),
+        hasUnsavedChanges: true
       };
       this.emit();
     })();
@@ -424,7 +450,7 @@ class GameStore {
       phase: this.playerSpeed() >= enemy.speed ? "playerTurn" : "enemyTurn",
       enemy,
       log: [`A wild ${enemy.name} appears!`],
-      skillCooldown: 0
+      skillCooldowns: emptySkillCooldowns()
     };
     this.emit();
     if (this.state.battle.phase === "enemyTurn") {
@@ -449,8 +475,9 @@ class GameStore {
       this.emit();
       return;
     }
-    if (this.state.battle.skillCooldown > 0) {
-      this.logBattle(`Skill is on cooldown for ${this.state.battle.skillCooldown} more turn(s).`);
+    const cdForSkill = this.state.battle.skillCooldowns[skill] ?? 0;
+    if (cdForSkill > 0) {
+      this.logBattle(`${SKILL_DATA[skill].name} is on cooldown for ${cdForSkill} more turn(s).`);
       this.emit();
       return;
     }
@@ -460,7 +487,7 @@ class GameStore {
     const damage = Math.max(2, this.playerAttackPower() + skillData.powerBonus - enemy.defense + this.randomVariance());
     enemy.hp = Math.max(0, enemy.hp - damage);
     this.logBattle(`You cast ${skillData.name} for ${damage} damage.`);
-    this.state.battle.skillCooldown = skillData.cooldown;
+    this.state.battle.skillCooldowns[skill] = skillData.cooldown;
     this.afterPlayerAction();
   }
 
@@ -748,7 +775,7 @@ class GameStore {
   async save(slot = "slot1"): Promise<void> {
     await this.saveRepository.save(slot, this.state);
     this.logEvent("Game saved.");
-    this.emit();
+    this.emit(true);
   }
 
   async load(slot = "slot1"): Promise<boolean> {
@@ -758,9 +785,22 @@ class GameStore {
       this.emit();
       return false;
     }
-    this.state = loaded;
-    if (this.state.battle.skillCooldown === undefined) {
-      this.state.battle.skillCooldown = 0;
+    this.state = loaded as GameSnapshot;
+    const battleLoaded = this.state.battle as BattleState & { skillCooldown?: number };
+    if (!battleLoaded.skillCooldowns || typeof battleLoaded.skillCooldowns !== "object") {
+      battleLoaded.skillCooldowns = emptySkillCooldowns();
+    }
+    if (typeof battleLoaded.skillCooldown === "number" && battleLoaded.skillCooldown > 0) {
+      for (const k of SKILL_ORDER) {
+        battleLoaded.skillCooldowns[k] = battleLoaded.skillCooldown;
+      }
+    }
+    delete battleLoaded.skillCooldown;
+    for (const k of SKILL_ORDER) {
+      const v = battleLoaded.skillCooldowns[k];
+      if (typeof v !== "number" || !Number.isFinite(v) || v < 0) {
+        battleLoaded.skillCooldowns[k] = 0;
+      }
     }
     if (!this.state.eventLog) {
       this.state.eventLog = ["Save loaded from old format."];
@@ -864,7 +904,7 @@ class GameStore {
     this.state.world.worldVersion = activeWorldVersion;
 
     this.logEvent("Save loaded.");
-    this.emit();
+    this.emit(true);
     return true;
   }
 
@@ -910,8 +950,11 @@ class GameStore {
       return;
     }
     this.state.battle.phase = "playerTurn";
-    if (this.state.battle.skillCooldown > 0) {
-      this.state.battle.skillCooldown -= 1;
+    const cds = this.state.battle.skillCooldowns;
+    for (const k of SKILL_ORDER) {
+      if (cds[k] > 0) {
+        cds[k] -= 1;
+      }
     }
     this.emit();
   }
@@ -991,7 +1034,7 @@ class GameStore {
   private endBattle(): void {
     this.state.battle.inBattle = false;
     this.state.battle.enemy = null;
-    this.state.battle.skillCooldown = 0;
+    this.state.battle.skillCooldowns = emptySkillCooldowns();
     this.state.world.encounterGraceSteps = POST_ENCOUNTER_GRACE_STEPS;
     this.emit();
   }
@@ -1084,9 +1127,18 @@ class GameStore {
     this.emit();
   }
 
-  private emit(): void {
+  /**
+   * @param markPersisted — pass true after a successful save/load so the snapshot
+   *   matches what persistence considers current (clears {@link GameSnapshot.hasUnsavedChanges}).
+   */
+  private emit(markPersisted = false): void {
     // useSyncExternalStore compares snapshot references with Object.is.
     // Return a fresh snapshot object each emit so React always sees updates.
+    this.contentVersion++;
+    if (markPersisted) {
+      this.lastPersistedVersion = this.contentVersion;
+    }
+    const hasUnsavedChanges = this.contentVersion !== this.lastPersistedVersion;
     this.state = {
       player: {
         ...this.state.player,
@@ -1095,6 +1147,7 @@ class GameStore {
       },
       battle: {
         ...this.state.battle,
+        skillCooldowns: { ...this.state.battle.skillCooldowns },
         log: [...this.state.battle.log],
         enemy: this.state.battle.enemy ? { ...this.state.battle.enemy } : null
       },
@@ -1111,7 +1164,8 @@ class GameStore {
         biomesVisited: [...this.state.story.biomesVisited],
         uniqueSpeciesDefeated: [...this.state.story.uniqueSpeciesDefeated],
         completed: this.state.story.completed.map((c) => ({ ...c }))
-      }
+      },
+      hasUnsavedChanges
     };
     this.events.dispatchEvent(new Event("change"));
   }

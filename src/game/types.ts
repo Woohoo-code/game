@@ -3,6 +3,9 @@ export type WeaponKey = "woodSword" | "ironSword" | "steelSword" | "mythrilBlade
 export type ArmorKey = "clothArmor" | "chainMail" | "knightArmor" | "dragonArmor";
 export type SkillKey = "spark" | "iceShard" | "thunderLance" | "meteorBreak";
 
+/** Remaining skill cooldown per ability (full turns tick down after each enemy action). */
+export type SkillCooldownMap = Record<SkillKey, number>;
+
 export type HairStyle = "short" | "spiky" | "long" | "bald";
 
 export interface PlayerAppearance {
@@ -89,7 +92,7 @@ export interface BattleState {
   phase: BattlePhase;
   log: string[];
   enemy: EnemyState | null;
-  skillCooldown: number;
+  skillCooldowns: SkillCooldownMap;
 }
 
 export interface WorldState {
@@ -215,4 +218,9 @@ export interface GameSnapshot {
   eventLog: string[];
   ugc: UgcState;
   story: StoryState;
+  /**
+   * When false, persisted slot matches this snapshot (excluding the optional
+   * trailing "Game saved." line that is written on the next save).
+   */
+  hasUnsavedChanges: boolean;
 }
