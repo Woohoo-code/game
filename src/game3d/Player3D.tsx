@@ -4,6 +4,8 @@ import * as THREE from "three";
 import { inputController } from "../game/inputController";
 import { gameStore } from "../game/state";
 import { MAP_H, MAP_W, TILE, dispatchZonesAndEncounter, isBlocked } from "../game/worldMap";
+import { useGameStore } from "../game/useGameStore";
+import { CharacterModel } from "./CharacterModel";
 
 /** Phaser uses 140 px/s; 1 tile = 32 px, so this is tiles-per-second. */
 const WALK_SPEED_TILES = 140 / TILE;
@@ -18,6 +20,7 @@ export function Player3D() {
   const desiredCam = useRef(new THREE.Vector3());
   const lookTarget = useRef(new THREE.Vector3());
   const { camera } = useThree();
+  const snapshot = useGameStore();
 
   useEffect(() => {
     if (!groupRef.current) return;
@@ -85,31 +88,7 @@ export function Player3D() {
 
   return (
     <group ref={groupRef}>
-      {/* Shadow-catcher circle under the hero */}
-      <mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[0.32, 16]} />
-        <meshBasicMaterial color="#000" transparent opacity={0.28} />
-      </mesh>
-      {/* Body */}
-      <mesh position={[0, 0.35, 0]} castShadow>
-        <capsuleGeometry args={[0.22, 0.45, 4, 10]} />
-        <meshStandardMaterial color="#3564c3" roughness={0.6} />
-      </mesh>
-      {/* Head */}
-      <mesh position={[0, 0.92, 0]} castShadow>
-        <sphereGeometry args={[0.2, 18, 14]} />
-        <meshStandardMaterial color="#f6d2b0" roughness={0.6} />
-      </mesh>
-      {/* Hair tuft so facing direction is readable */}
-      <mesh position={[0, 1.05, 0]} castShadow>
-        <coneGeometry args={[0.18, 0.18, 12]} />
-        <meshStandardMaterial color="#6b4b2a" roughness={0.9} />
-      </mesh>
-      {/* Nose-direction marker (points +Z locally, so we can see facing) */}
-      <mesh position={[0, 0.92, -0.22]} castShadow>
-        <boxGeometry args={[0.08, 0.08, 0.06]} />
-        <meshStandardMaterial color="#c38264" roughness={0.9} />
-      </mesh>
+      <CharacterModel appearance={snapshot.player.appearance} showFaceMarker />
     </group>
   );
 }

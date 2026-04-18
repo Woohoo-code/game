@@ -2,20 +2,14 @@ import Phaser from "phaser";
 import { inputController } from "./inputController";
 import { gameStore } from "./state";
 import {
-  BOSS_B,
-  GUILD_A,
-  GUILD_B,
-  INN_A,
-  INN_B,
+  BUILDINGS,
+  type BuildingKind,
   MAP_H,
   MAP_W,
-  SHOP_A,
-  SHOP_B,
   TILE,
-  TRAIN_A,
-  TRAIN_B,
   dispatchZonesAndEncounter,
   isBlocked,
+  isForestTile,
   isRoadTile,
   isTownTile,
   isWaterTile
@@ -81,24 +75,23 @@ export class GameScene extends Phaser.Scene {
     }
     this.drawHardBorders(g);
     this.drawLandmarks();
-    this.add.sprite(INN_A.x * TILE + TILE / 2, INN_A.y * TILE + TILE / 2, "innSprite").setScale(2);
-    this.add.sprite(SHOP_A.x * TILE + TILE / 2, SHOP_A.y * TILE + TILE / 2, "shopSprite").setScale(2);
-    this.add.sprite(TRAIN_A.x * TILE + TILE / 2, TRAIN_A.y * TILE + TILE / 2, "shopSprite").setScale(2).setTint(0x8a6bbd);
-    this.add.sprite(GUILD_A.x * TILE + TILE / 2, GUILD_A.y * TILE + TILE / 2, "innSprite").setScale(2).setTint(0x6b8861);
-    this.add.sprite(INN_B.x * TILE + TILE / 2, INN_B.y * TILE + TILE / 2, "innSprite").setScale(2);
-    this.add.sprite(SHOP_B.x * TILE + TILE / 2, SHOP_B.y * TILE + TILE / 2, "shopSprite").setScale(2);
-    this.add.sprite(TRAIN_B.x * TILE + TILE / 2, TRAIN_B.y * TILE + TILE / 2, "shopSprite").setScale(2).setTint(0x8a6bbd);
-    this.add.sprite(GUILD_B.x * TILE + TILE / 2, GUILD_B.y * TILE + TILE / 2, "innSprite").setScale(2).setTint(0x6b8861);
-    this.add.sprite(BOSS_B.x * TILE + TILE / 2, BOSS_B.y * TILE + TILE / 2, "bossArenaSprite").setScale(2);
-    this.addBuildingMarquee(INN_A.x, INN_A.y, "INN", 0x7b2f2f);
-    this.addBuildingMarquee(SHOP_A.x, SHOP_A.y, "SHOP", 0x2e4f72);
-    this.addBuildingMarquee(TRAIN_A.x, TRAIN_A.y, "TRAIN", 0x6b4f8f);
-    this.addBuildingMarquee(GUILD_A.x, GUILD_A.y, "GUILD", 0x486d42);
-    this.addBuildingMarquee(INN_B.x, INN_B.y, "INN", 0x7b2f2f);
-    this.addBuildingMarquee(SHOP_B.x, SHOP_B.y, "SHOP", 0x2e4f72);
-    this.addBuildingMarquee(TRAIN_B.x, TRAIN_B.y, "TRAIN", 0x6b4f8f);
-    this.addBuildingMarquee(GUILD_B.x, GUILD_B.y, "GUILD", 0x486d42);
-    this.addBuildingMarquee(BOSS_B.x, BOSS_B.y, "BOSS", 0x3d1054);
+
+    const SPRITE_BY_KIND: Record<BuildingKind, { sprite: string; tint?: number }> = {
+      inn: { sprite: "innSprite" },
+      shop: { sprite: "shopSprite" },
+      train: { sprite: "shopSprite", tint: 0x8a6bbd },
+      guild: { sprite: "innSprite", tint: 0x6b8861 },
+      boss: { sprite: "bossArenaSprite" }
+    };
+
+    for (const b of BUILDINGS) {
+      const info = SPRITE_BY_KIND[b.kind];
+      const s = this.add
+        .sprite(b.pos.x * TILE + TILE / 2, b.pos.y * TILE + TILE / 2, info.sprite)
+        .setScale(2);
+      if (info.tint !== undefined) s.setTint(info.tint);
+      this.addBuildingMarquee(b.pos.x, b.pos.y, b.label, b.color);
+    }
   }
 
   private addBuildingMarquee(tileX: number, tileY: number, label: string, color: number): void {
@@ -167,6 +160,14 @@ export class GameScene extends Phaser.Scene {
       g.fillRect(px + 16, py + 18, 8, 2);
       return;
     }
+    if (isForestTile(x, y)) {
+      g.fillStyle(0x2f4a2a, 1);
+      g.fillRect(px, py, TILE - 1, TILE - 1);
+      g.fillStyle(0x3d6235, 1);
+      g.fillRect(px + 4, py + 6, 5, 5);
+      g.fillRect(px + 18, py + 18, 5, 5);
+      return;
+    }
     g.fillStyle(0x4f7b45, 1);
     g.fillRect(px, py, TILE - 1, TILE - 1);
     g.fillStyle(0x5f9054, 1);
@@ -182,27 +183,17 @@ export class GameScene extends Phaser.Scene {
         if (isTownTile(x, y) || isRoadTile(x, y) || isWaterTile(x, y)) {
           continue;
         }
-        const hash = (x * 73 + y * 97) % 100;
-        if (hash < 4) {
+        if (isForestTile(x, y)) {
           this.add.sprite(x * TILE + TILE / 2, y * TILE + TILE / 2, "treeSprite").setScale(2);
-        } else if (hash >= 4 && hash < 6) {
+          continue;
+        }
+        const hash = (x * 73 + y * 97) % 100;
+        if (hash < 3) {
           this.add.sprite(x * TILE + TILE / 2, y * TILE + TILE / 2, "rockSprite").setScale(2);
-        } else if (hash >= 6 && hash < 10) {
+        } else if (hash < 7) {
           this.add.sprite(x * TILE + TILE / 2, y * TILE + TILE / 2, "flowerSprite").setScale(2);
         }
       }
-    }
-
-    // Landmarks near roads to make navigation clearer.
-    const landmarkTrees = [
-      [14, 8], [26, 8], [38, 8], [50, 8],
-      [14, 28], [26, 28], [38, 28], [50, 28]
-    ];
-    for (const [x, y] of landmarkTrees) {
-      if (isTownTile(x, y) || isRoadTile(x, y) || isWaterTile(x, y)) {
-        continue;
-      }
-      this.add.sprite(x * TILE + TILE / 2, y * TILE + TILE / 2, "treeSprite").setScale(2);
     }
   }
 

@@ -1,42 +1,219 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
+import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { MAP_H, MAP_W, type TerrainKind, terrainAt } from "../game/worldMap";
+import type { BiomeKind } from "../game/types";
+import { MAP_H, MAP_W, type TerrainKind, biomeAt, terrainAt } from "../game/worldMap";
+import { useGameStore } from "../game/useGameStore";
+import { BIOME_TINT, getBiomeGroundTexture, getTerrainTexture } from "./textures";
 
-const COLOR_BY_TERRAIN: Record<TerrainKind, THREE.Color> = {
-  grass: new THREE.Color("#4f7b45"),
-  road: new THREE.Color("#8d7a5e"),
-  water: new THREE.Color("#2f5f9a"),
-  town: new THREE.Color("#a88960")
+/** Each terrain kind sits at a slightly different height so water dips and road rides slightly above grass. */
+const HEIGHT_BY_TERRAIN: Record<TerrainKind, number> = {
+  grass: 0,
+  road: 0.012,
+  water: -0.18,
+  town: 0.025,
+  forest: 0
 };
 
-export function Terrain() {
-  const geometry = useMemo(() => {
-    const geo = new THREE.BufferGeometry();
-    const positions: number[] = [];
-    const colors: number[] = [];
-    const indices: number[] = [];
-    let vi = 0;
-    for (let y = 0; y < MAP_H; y++) {
-      for (let x = 0; x < MAP_W; x++) {
-        const col = COLOR_BY_TERRAIN[terrainAt(x, y)].clone();
-        col.convertSRGBToLinear();
-        const h = terrainAt(x, y) === "water" ? -0.1 : 0;
-        positions.push(x, h, y, x + 1, h, y, x + 1, h, y + 1, x, h, y + 1);
-        for (let i = 0; i < 4; i++) colors.push(col.r, col.g, col.b);
-        indices.push(vi, vi + 2, vi + 1, vi, vi + 3, vi + 2);
-        vi += 4;
-      }
+const TERRAIN_RENDER_ORDER: TerrainKind[] = ["water", "grass", "forest", "road", "town"];
+const BIOME_ORDER: BiomeKind[] = ["meadow", "forest", "desert", "swamp", "tundra"];
+
+interface TerrainGroup {
+  kind: TerrainKind;
+  biome: BiomeKind;
+  geometry: THREE.BufferGeometry;
+}
+
+type Accumulator = { positions: number[]; uvs: number[]; indices: number[]; vi: number };
+
+function emptyAcc(): Accumulator {
+  return { positions: [], uvs: [], indices: [], vi: 0 };
+}
+
+function buildTerrainGroups(): TerrainGroup[] {
+  // groups[kind][biome]
+  const groups: Record<TerrainKind, Record<BiomeKind, Accumulator>> = {
+    grass: { meadow: emptyAcc(), forest: emptyAcc(), desert: emptyAcc(), swamp: emptyAcc(), tundra: emptyAcc() },
+    road: { meadow: emptyAcc(), forest: emptyAcc(), desert: emptyAcc(), swamp: emptyAcc(), tundra: emptyAcc() },
+    water: { meadow: emptyAcc(), forest: emptyAcc(), desert: emptyAcc(), swamp: emptyAcc(), tundra: emptyAcc() },
+    town: { meadow: emptyAcc(), forest: emptyAcc(), desert: emptyAcc(), swamp: emptyAcc(), tundra: emptyAcc() },
+    forest: { meadow: emptyAcc(), forest: emptyAcc(), desert: emptyAcc(), swamp: emptyAcc(), tundra: emptyAcc() }
+  };
+
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < MAP_W; x++) {
+      const kind = terrainAt(x, y);
+      const biome = biomeAt(x, y);
+      const h = HEIGHT_BY_TERRAIN[kind];
+      const g = groups[kind][biome];
+      g.positions.push(x, h, y, x + 1, h, y, x + 1, h, y + 1, x, h, y + 1);
+      g.uvs.push(x, y, x + 1, y, x + 1, y + 1, x, y + 1);
+      const v = g.vi;
+      g.indices.push(v, v + 2, v + 1, v, v + 3, v + 2);
+      g.vi = v + 4;
     }
-    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-    geo.setIndex(indices);
-    geo.computeVertexNormals();
-    return geo;
-  }, []);
+  }
+
+  const result: TerrainGroup[] = [];
+  for (const kind of TERRAIN_RENDER_ORDER) {
+    for (const biome of BIOME_ORDER) {
+      const g = groups[kind][biome];
+      if (g.positions.length === 0) continue;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(g.positions, 3));
+      geo.setAttribute("uv", new THREE.Float32BufferAttribute(g.uvs, 2));
+      geo.setIndex(g.indices);
+      geo.computeVertexNormals();
+      result.push({ kind, biome, geometry: geo });
+    }
+  }
+  return result;
+}
+
+export function Terrain() {
+  const snapshot = useGameStore();
+  const worldVersion = snapshot.world.worldVersion;
+
+  const terrainGroups = useMemo(buildTerrainGroups, [worldVersion]);
+  const waterMats = useRef<THREE.MeshStandardMaterial[]>([]);
+
+  useFrame((_, delta) => {
+    for (const mat of waterMats.current) {
+      if (!mat?.map) continue;
+      mat.map.offset.x = (mat.map.offset.x + delta * 0.03) % 1;
+      mat.map.offset.y = (mat.map.offset.y + delta * 0.018) % 1;
+    }
+  });
+
+  // Reset refs each render — we rebuild them in the map below.
+  waterMats.current = [];
 
   return (
-    <mesh geometry={geometry} receiveShadow>
-      <meshLambertMaterial vertexColors side={THREE.DoubleSide} />
-    </mesh>
+    <>
+      {terrainGroups.map(({ kind, biome, geometry }, i) => {
+        // For "grass" kind we use a biome-specific texture (sand/snow/mud/meadow/forest-floor).
+        // For other kinds we use the shared texture and tint it per biome.
+        const tex = kind === "grass" ? getBiomeGroundTexture(biome) : getTerrainTexture(kind);
+        const tint = kind === "grass" ? "#ffffff" : BIOME_TINT[biome][kind];
+        const key = `${kind}-${biome}-${i}`;
+        if (kind === "water") {
+          return (
+            <mesh key={key} geometry={geometry} receiveShadow renderOrder={1}>
+              <meshStandardMaterial
+                ref={(m) => {
+                  if (m) waterMats.current.push(m);
+                }}
+                map={tex}
+                color={tint}
+                roughness={0.35}
+                metalness={0.15}
+                transparent
+                opacity={0.94}
+                emissive={new THREE.Color("#0a1a2e")}
+                emissiveIntensity={0.25}
+              />
+            </mesh>
+          );
+        }
+        return (
+          <mesh key={key} geometry={geometry} receiveShadow>
+            <meshStandardMaterial map={tex} color={tint} roughness={0.9} metalness={0} />
+          </mesh>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * Foliage palette per biome — trees on "forest" tiles pick a per-biome base
+ * color so a forest patch in the tundra looks snow-dusted, a desert forest
+ * looks like a palm oasis, etc.
+ */
+const FOLIAGE_BY_BIOME: Record<BiomeKind, { base: THREE.Color; top: THREE.Color; trunk: THREE.Color }> = {
+  meadow: {
+    base: new THREE.Color("#3f7a3a"),
+    top: new THREE.Color("#58a04f"),
+    trunk: new THREE.Color("#4a2f1a")
+  },
+  forest: {
+    base: new THREE.Color("#2f5f32"),
+    top: new THREE.Color("#4c7f43"),
+    trunk: new THREE.Color("#3a2410")
+  },
+  desert: {
+    base: new THREE.Color("#7a955a"),
+    top: new THREE.Color("#b8c27a"),
+    trunk: new THREE.Color("#7a5a2d")
+  },
+  swamp: {
+    base: new THREE.Color("#3b4f2a"),
+    top: new THREE.Color("#5a6f30"),
+    trunk: new THREE.Color("#2e2012")
+  },
+  tundra: {
+    base: new THREE.Color("#7fa2a8"),
+    top: new THREE.Color("#e6efef"),
+    trunk: new THREE.Color("#3a3020")
+  }
+};
+
+/** Decorative tree clusters rendered on forest tiles with slight variation + biome palette. */
+export function Forests() {
+  const snapshot = useGameStore();
+  const worldVersion = snapshot.world.worldVersion;
+
+  const trees = useMemo(() => {
+    const list: { x: number; y: number; scale: number; rot: number; tint: number; biome: BiomeKind }[] = [];
+    for (let y = 0; y < MAP_H; y++) {
+      for (let x = 0; x < MAP_W; x++) {
+        if (terrainAt(x, y) === "forest") {
+          const hash = (x * 73856093) ^ (y * 19349663);
+          const rnd = ((hash >>> 0) % 1000) / 1000;
+          const rnd2 = (((hash * 2654435761) >>> 0) % 1000) / 1000;
+          const rnd3 = (((hash ^ 0xdeadbeef) >>> 0) % 1000) / 1000;
+          list.push({
+            x: x + 0.25 + rnd * 0.5,
+            y: y + 0.25 + rnd2 * 0.5,
+            scale: 0.85 + rnd * 0.45,
+            rot: rnd2 * Math.PI * 2,
+            tint: rnd3,
+            biome: biomeAt(x, y)
+          });
+        }
+      }
+    }
+    return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [worldVersion]);
+
+  return (
+    <>
+      {trees.map((t, i) => {
+        const palette = FOLIAGE_BY_BIOME[t.biome];
+        const foliageColor = palette.base.clone().multiplyScalar(0.9 + t.tint * 0.2);
+        const foliageTop = palette.top.clone().multiplyScalar(0.92 + t.tint * 0.16);
+        return (
+          <group key={i} position={[t.x, 0, t.y]} rotation={[0, t.rot, 0]} scale={t.scale}>
+            <mesh position={[0, 0.32, 0]} castShadow>
+              <cylinderGeometry args={[0.08, 0.11, 0.66, 7]} />
+              <meshStandardMaterial color={palette.trunk} roughness={0.9} />
+            </mesh>
+            <mesh position={[0, 0.92, 0]} castShadow>
+              <coneGeometry args={[0.44, 0.95, 8]} />
+              <meshStandardMaterial color={foliageColor} roughness={0.85} />
+            </mesh>
+            <mesh position={[0, 1.45, 0]} castShadow>
+              <coneGeometry args={[0.32, 0.7, 8]} />
+              <meshStandardMaterial color={foliageTop} roughness={0.85} />
+            </mesh>
+            <mesh position={[0, 1.85, 0]} castShadow>
+              <coneGeometry args={[0.22, 0.5, 8]} />
+              <meshStandardMaterial color={foliageTop} roughness={0.85} />
+            </mesh>
+          </group>
+        );
+      })}
+    </>
   );
 }

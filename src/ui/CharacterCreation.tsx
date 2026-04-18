@@ -1,0 +1,208 @@
+import { useState } from "react";
+import { CharacterPreview } from "../game3d/CharacterPreview";
+import { gameStore, defaultAppearance } from "../game/state";
+import { useGameStore } from "../game/useGameStore";
+import type { HairStyle, PlayerAppearance } from "../game/types";
+
+const SKIN_PRESETS = ["#f6dbbf", "#f1c9a5", "#d9a07a", "#b07550", "#8a5a3a", "#5c3b25", "#3a2418"];
+const HAIR_PRESETS = ["#141414", "#3b2b21", "#6b4b2a", "#a8743d", "#d5c07a", "#e7e2d6", "#c4453b", "#7a4de6", "#3fa8ff"];
+const OUTFIT_PRESETS = ["#3564c3", "#c3353d", "#2e8c5a", "#6a2fa3", "#d48a1f", "#1d9aa8", "#2c2f37", "#d4d6db"];
+const PANTS_PRESETS = ["#2a3550", "#3c2a1f", "#1c1f25", "#4a3e68", "#2f5030", "#6a5a36"];
+
+const HAIR_STYLES: { id: HairStyle; label: string }[] = [
+  { id: "short", label: "Short" },
+  { id: "spiky", label: "Spiky" },
+  { id: "long", label: "Long" },
+  { id: "bald", label: "Bald" }
+];
+
+function Swatch({
+  color,
+  active,
+  onSelect,
+  ariaLabel
+}: {
+  color: string;
+  active: boolean;
+  onSelect: () => void;
+  ariaLabel: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      className={`swatch${active ? " active" : ""}`}
+      style={{ background: color }}
+      onClick={onSelect}
+    />
+  );
+}
+
+export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBack: () => void }) {
+  const snapshot = useGameStore();
+  const [name, setName] = useState(() =>
+    snapshot.player.hasCreatedCharacter ? snapshot.player.name : ""
+  );
+  const [appearance, setAppearance] = useState<PlayerAppearance>(
+    () => snapshot.player.appearance ?? defaultAppearance()
+  );
+
+  const update = (patch: Partial<PlayerAppearance>) => {
+    setAppearance((a) => ({ ...a, ...patch }));
+  };
+
+  const randomize = () => {
+    const pick = <T,>(arr: readonly T[]): T => arr[Math.floor(Math.random() * arr.length)]!;
+    setAppearance({
+      skin: pick(SKIN_PRESETS),
+      hair: pick(HAIR_PRESETS),
+      hairStyle: pick(HAIR_STYLES).id,
+      outfit: pick(OUTFIT_PRESETS),
+      pants: pick(PANTS_PRESETS)
+    });
+  };
+
+  const submit = () => {
+    gameStore.createCharacter(name || "Hero", appearance);
+    onDone();
+  };
+
+  return (
+    <div className="character-create">
+      <div className="character-create-inner">
+        <header className="character-create-header">
+          <h1>Forge Your Hero</h1>
+          <p>Shape your look — stats are earned in the field, not in a mirror.</p>
+        </header>
+
+        <div className="character-create-body">
+          <div className="character-create-preview">
+            <CharacterPreview appearance={appearance} />
+            <div className="character-create-namepill">{(name || "Hero").trim()}</div>
+          </div>
+
+          <div className="character-create-form">
+            <label className="form-row">
+              <span>Name</span>
+              <input
+                type="text"
+                value={name}
+                maxLength={18}
+                placeholder="Hero"
+                onChange={(e) => setName(e.target.value)}
+              />
+            </label>
+
+            <div className="form-row">
+              <span>Skin</span>
+              <div className="swatch-row">
+                {SKIN_PRESETS.map((c) => (
+                  <Swatch
+                    key={c}
+                    color={c}
+                    active={appearance.skin === c}
+                    ariaLabel={`Skin ${c}`}
+                    onSelect={() => update({ skin: c })}
+                  />
+                ))}
+                <input
+                  type="color"
+                  value={appearance.skin}
+                  onChange={(e) => update({ skin: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="form-row">
+              <span>Hair color</span>
+              <div className="swatch-row">
+                {HAIR_PRESETS.map((c) => (
+                  <Swatch
+                    key={c}
+                    color={c}
+                    active={appearance.hair === c}
+                    ariaLabel={`Hair ${c}`}
+                    onSelect={() => update({ hair: c })}
+                  />
+                ))}
+                <input
+                  type="color"
+                  value={appearance.hair}
+                  onChange={(e) => update({ hair: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="form-row">
+              <span>Hair style</span>
+              <div className="pill-row">
+                {HAIR_STYLES.map((style) => (
+                  <button
+                    key={style.id}
+                    type="button"
+                    className={`pill${appearance.hairStyle === style.id ? " active" : ""}`}
+                    onClick={() => update({ hairStyle: style.id })}
+                  >
+                    {style.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="form-row">
+              <span>Outfit</span>
+              <div className="swatch-row">
+                {OUTFIT_PRESETS.map((c) => (
+                  <Swatch
+                    key={c}
+                    color={c}
+                    active={appearance.outfit === c}
+                    ariaLabel={`Outfit ${c}`}
+                    onSelect={() => update({ outfit: c })}
+                  />
+                ))}
+                <input
+                  type="color"
+                  value={appearance.outfit}
+                  onChange={(e) => update({ outfit: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="form-row">
+              <span>Pants</span>
+              <div className="swatch-row">
+                {PANTS_PRESETS.map((c) => (
+                  <Swatch
+                    key={c}
+                    color={c}
+                    active={appearance.pants === c}
+                    ariaLabel={`Pants ${c}`}
+                    onSelect={() => update({ pants: c })}
+                  />
+                ))}
+                <input
+                  type="color"
+                  value={appearance.pants}
+                  onChange={(e) => update({ pants: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="character-create-actions">
+              <button type="button" className="secondary" onClick={onBack}>
+                Back
+              </button>
+              <button type="button" className="secondary" onClick={randomize}>
+                Randomize
+              </button>
+              <button type="button" className="primary" onClick={submit}>
+                Start Adventure
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,41 +1,30 @@
 import { gameStore } from "./state";
+import type { BiomeKind } from "./types";
+import {
+  BIOME_BY_CODE,
+  TERRAIN_FOREST,
+  TERRAIN_GRASS,
+  TERRAIN_ROAD,
+  TERRAIN_TOWN,
+  TERRAIN_WATER,
+  type BuildingKind,
+  type GeneratedWorld,
+  generateWorld
+} from "./worldGen";
 
-/** World tile size in pixels. Used by the Phaser renderer and as the 3D unit size. */
+export { type BuildingKind };
+
+/** World tile size in pixels (shared by Phaser 2D + 3D unit scale). */
 export const TILE = 32;
-export const MAP_W = 60;
-export const MAP_H = 40;
 
 export const ROAD_ENCOUNTER_RATE = 0.02;
 export const GRASS_ENCOUNTER_RATE = 0.12;
+export const FOREST_ENCOUNTER_RATE = 0;
 
-export interface TileRect {
-  minX: number;
-  maxX: number;
-  minY: number;
-  maxY: number;
-}
 export interface TilePoint {
   x: number;
   y: number;
 }
-
-export const TOWN_A: TileRect = { minX: 0, maxX: 7, minY: 0, maxY: 5 };
-export const TOWN_B: TileRect = { minX: MAP_W - 8, maxX: MAP_W - 1, minY: MAP_H - 6, maxY: MAP_H - 1 };
-
-export const INN_A: TilePoint = { x: 5, y: 3 };
-export const SHOP_A: TilePoint = { x: 2, y: 3 };
-export const TRAIN_A: TilePoint = { x: 6, y: 3 };
-export const GUILD_A: TilePoint = { x: 1, y: 3 };
-
-export const INN_B: TilePoint = { x: MAP_W - 4, y: MAP_H - 3 };
-export const SHOP_B: TilePoint = { x: MAP_W - 2, y: MAP_H - 3 };
-export const TRAIN_B: TilePoint = { x: MAP_W - 5, y: MAP_H - 3 };
-export const GUILD_B: TilePoint = { x: MAP_W - 7, y: MAP_H - 3 };
-
-/** Southeast town — Void Titan arena (stand on tile to unlock UI). */
-export const BOSS_B: TilePoint = { x: MAP_W - 6, y: MAP_H - 4 };
-
-export type BuildingKind = "inn" | "shop" | "train" | "guild" | "boss";
 
 export interface BuildingPlacement {
   kind: BuildingKind;
@@ -44,86 +33,204 @@ export interface BuildingPlacement {
   pos: TilePoint;
 }
 
-export const BUILDINGS: BuildingPlacement[] = [
-  { kind: "inn", label: "INN", color: 0x7b2f2f, pos: INN_A },
-  { kind: "shop", label: "SHOP", color: 0x2e4f72, pos: SHOP_A },
-  { kind: "train", label: "TRAIN", color: 0x6b4f8f, pos: TRAIN_A },
-  { kind: "guild", label: "GUILD", color: 0x486d42, pos: GUILD_A },
-  { kind: "inn", label: "INN", color: 0x7b2f2f, pos: INN_B },
-  { kind: "shop", label: "SHOP", color: 0x2e4f72, pos: SHOP_B },
-  { kind: "train", label: "TRAIN", color: 0x6b4f8f, pos: TRAIN_B },
-  { kind: "guild", label: "GUILD", color: 0x486d42, pos: GUILD_B },
-  { kind: "boss", label: "BOSS", color: 0x3d1054, pos: BOSS_B }
-];
+const BUILDING_LABELS: Record<BuildingKind, string> = {
+  inn: "INN",
+  shop: "SHOP",
+  train: "TRAIN",
+  guild: "GUILD",
+  boss: "BOSS"
+};
+
+const BUILDING_COLORS: Record<BuildingKind, number> = {
+  inn: 0x7b2f2f,
+  shop: 0x2e4f72,
+  train: 0x6b4f8f,
+  guild: 0x486d42,
+  boss: 0x3d1054
+};
+
+// ── Mutable live bindings exposed as ES module exports ─────────────────────
+// ES module imports are live references, so consumers automatically see new
+// values whenever `regenerateWorld` reassigns these.
+
+export let MAP_W: number = 60;
+export let MAP_H: number = 40;
+export let BUILDINGS: BuildingPlacement[] = [];
+export let worldSeed: number = 0;
+/** Bumped every time the active world changes — use as a React dep / key. */
+export let worldVersion: number = 0;
+
+let activeWorld: GeneratedWorld | null = null;
+
+/** Initialise / replace the active world and update all live bindings. */
+export function regenerateWorld(seed?: number): GeneratedWorld {
+  const world = generateWorld(seed);
+  activeWorld = world;
+  MAP_W = world.width;
+  MAP_H = world.height;
+  worldSeed = world.seed;
+  worldVersion += 1;
+
+  const placements: BuildingPlacement[] = world.buildings.map((b) => ({
+    kind: b.kind,
+    label: BUILDING_LABELS[b.kind],
+    color: BUILDING_COLORS[b.kind],
+    pos: { x: b.x, y: b.y }
+  }));
+  BUILDINGS = placements;
+  return world;
+}
+
+export function getActiveWorld(): GeneratedWorld {
+  if (!activeWorld) {
+    regenerateWorld();
+  }
+  return activeWorld!;
+}
+
+export function getSpawnPixel(): { x: number; y: number } {
+  const w = getActiveWorld();
+  return { x: w.spawnX * TILE + TILE / 2, y: w.spawnY * TILE + TILE / 2 };
+}
+
+// Lazy initialisation — ensures MAP_W/MAP_H are valid as soon as any consumer imports.
+regenerateWorld();
+
+// ── Tile queries driven by the active world ────────────────────────────────
+
+function terrainCodeAt(x: number, y: number): number {
+  const world = activeWorld;
+  if (!world) return TERRAIN_WATER;
+  if (x < 0 || y < 0 || x >= world.width || y >= world.height) return TERRAIN_WATER;
+  return world.tiles[y * world.width + x];
+}
 
 export function isTownTile(x: number, y: number): boolean {
-  const mainTown = x >= TOWN_A.minX && x <= TOWN_A.maxX && y >= TOWN_A.minY && y <= TOWN_A.maxY;
-  const southEastTown = x >= TOWN_B.minX && x <= TOWN_B.maxX && y >= TOWN_B.minY && y <= TOWN_B.maxY;
-  return mainTown || southEastTown;
+  return terrainCodeAt(x, y) === TERRAIN_TOWN;
 }
 
 export function isRoadTile(x: number, y: number): boolean {
-  if (isTownTile(x, y)) return false;
-  const northRoad = y >= TOWN_A.maxY && y <= TOWN_A.maxY + 1 && x >= TOWN_A.maxX;
-  const southRoad = y >= TOWN_B.minY - 2 && y <= TOWN_B.minY - 1 && x <= TOWN_B.minX;
-  const spineRoad =
-    x >= Math.floor(MAP_W / 2) - 1 && x <= Math.floor(MAP_W / 2) && y >= TOWN_A.maxY && y <= TOWN_B.minY;
-  const eastConnector =
-    y >= Math.floor(MAP_H / 2) - 1 && y <= Math.floor(MAP_H / 2) && x >= Math.floor(MAP_W / 2) && x <= MAP_W - 8;
-  return northRoad || southRoad || spineRoad || eastConnector;
+  return terrainCodeAt(x, y) === TERRAIN_ROAD;
 }
 
 export function isWaterTile(x: number, y: number): boolean {
-  const northwestLake = x >= 14 && x <= 24 && y >= 2 && y <= 8;
-  const centralLake = x >= 28 && x <= 36 && y >= 14 && y <= 22;
-  const eastLake = x >= 45 && x <= 56 && y >= 6 && y <= 12;
-  const southChannel = x >= 22 && x <= 25 && y >= 26 && y <= 36;
-  return northwestLake || centralLake || eastLake || southChannel;
+  return terrainCodeAt(x, y) === TERRAIN_WATER;
 }
 
-export type TerrainKind = "town" | "road" | "water" | "grass";
+export function isForestTile(x: number, y: number): boolean {
+  return terrainCodeAt(x, y) === TERRAIN_FOREST;
+}
+
+export type TerrainKind = "town" | "road" | "water" | "grass" | "forest";
 
 export function terrainAt(x: number, y: number): TerrainKind {
-  if (isTownTile(x, y)) return "town";
-  if (isRoadTile(x, y)) return "road";
-  if (isWaterTile(x, y)) return "water";
-  return "grass";
-}
-
-/** World-pixel blocking test used by both renderers. */
-export function isBlocked(worldX: number, worldY: number): boolean {
-  const tx = Math.floor(worldX / TILE);
-  const ty = Math.floor(worldY / TILE);
-  return isWaterTile(tx, ty) && !isRoadTile(tx, ty);
+  const t = terrainCodeAt(x, y);
+  switch (t) {
+    case TERRAIN_TOWN:
+      return "town";
+    case TERRAIN_ROAD:
+      return "road";
+    case TERRAIN_WATER:
+      return "water";
+    case TERRAIN_FOREST:
+      return "forest";
+    case TERRAIN_GRASS:
+    default:
+      return "grass";
+  }
 }
 
 /**
- * Dispatch zone/encounter logic for the tile the player just moved onto.
+ * Find the nearest town's center tile to the given tile coordinates.
+ * Used by the in-game Town Map compass to point the player home.
+ * Returns null only if the active world has no towns (shouldn't happen).
+ */
+export function nearestTown(tx: number, ty: number): { x: number; y: number; distance: number } | null {
+  const world = activeWorld;
+  if (!world || world.towns.length === 0) return null;
+  let best = world.towns[0];
+  let bestDist = Math.hypot(best.x - tx, best.y - ty);
+  for (let i = 1; i < world.towns.length; i++) {
+    const t = world.towns[i];
+    const d = Math.hypot(t.x - tx, t.y - ty);
+    if (d < bestDist) {
+      best = t;
+      bestDist = d;
+    }
+  }
+  return { x: best.x, y: best.y, distance: bestDist };
+}
+
+/** Biome at the given tile (returns "meadow" for out-of-bounds). */
+export function biomeAt(x: number, y: number): BiomeKind {
+  const world = activeWorld;
+  if (!world) return "meadow";
+  if (x < 0 || y < 0 || x >= world.width || y >= world.height) return "meadow";
+  const code = world.biomes[y * world.width + x];
+  return BIOME_BY_CODE[code] ?? "meadow";
+}
+
+/** World-pixel blocking test used by both renderers. Water and forest block movement. */
+export function isBlocked(worldX: number, worldY: number): boolean {
+  const tx = Math.floor(worldX / TILE);
+  const ty = Math.floor(worldY / TILE);
+  const t = terrainCodeAt(tx, ty);
+  return t === TERRAIN_WATER || t === TERRAIN_FOREST;
+}
+
+/**
+ * Dispatch zone / encounter logic for the tile the player just moved onto.
  * Returns true if a random encounter was triggered so the caller can skip further movement.
  */
 export function dispatchZonesAndEncounter(tx: number, ty: number): boolean {
-  const inTown = isTownTile(tx, ty);
-  const canHeal = samePoint(tx, ty, INN_A) || samePoint(tx, ty, INN_B);
-  const canShop = samePoint(tx, ty, SHOP_A) || samePoint(tx, ty, SHOP_B);
-  const canTrain = samePoint(tx, ty, TRAIN_A) || samePoint(tx, ty, TRAIN_B);
-  const canGuild = samePoint(tx, ty, GUILD_A) || samePoint(tx, ty, GUILD_B);
-  const canBoss = samePoint(tx, ty, BOSS_B);
+  const kind = terrainAt(tx, ty);
+  const inTown = kind === "town";
+  const biome = biomeAt(tx, ty);
+
+  let canHeal = false;
+  let canShop = false;
+  let canTrain = false;
+  let canGuild = false;
+  let canBoss = false;
+  for (const b of BUILDINGS) {
+    if (b.pos.x === tx && b.pos.y === ty) {
+      switch (b.kind) {
+        case "inn":
+          canHeal = true;
+          break;
+        case "shop":
+          canShop = true;
+          break;
+        case "train":
+          canTrain = true;
+          break;
+        case "guild":
+          canGuild = true;
+          break;
+        case "boss":
+          canBoss = true;
+          break;
+      }
+    }
+  }
+
   gameStore.updateWorldZones(inTown, canHeal, canShop, canTrain, canGuild, canBoss);
-  if (inTown || isWaterTile(tx, ty)) {
+
+  // Story hooks: track biome discovery + boss arena arrival.
+  gameStore.storyNoteBiomeVisited(biome);
+  if (canBoss) gameStore.storyNoteBossArenaReached();
+
+  if (inTown || kind === "water" || kind === "forest") {
     gameStore.setEncounterRate(0);
     return false;
   }
-  const encounterRate = isRoadTile(tx, ty) ? ROAD_ENCOUNTER_RATE : GRASS_ENCOUNTER_RATE;
+  const encounterRate = kind === "road" ? ROAD_ENCOUNTER_RATE : GRASS_ENCOUNTER_RATE;
   if (gameStore.wildernessEncounterStep(encounterRate)) {
     return false;
   }
   if (Math.random() < encounterRate) {
-    gameStore.startEncounter();
+    gameStore.startEncounter(biome);
     return true;
   }
   return false;
-}
-
-function samePoint(x: number, y: number, p: TilePoint): boolean {
-  return x === p.x && y === p.y;
 }

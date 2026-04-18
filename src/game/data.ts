@@ -1,6 +1,7 @@
 import type { ArmorKey, EnemyDefinition, ItemKey, SkillKey, WeaponKey } from "./types";
 
 export const ENEMIES: EnemyDefinition[] = [
+  // ── Meadow (low level starter pool) ────────────────────────────────────
   {
     id: "slime",
     name: "Slime",
@@ -13,7 +14,8 @@ export const ENEMIES: EnemyDefinition[] = [
     minLevel: 1,
     baseWeight: 8,
     weightGrowthPerLevel: 0.1,
-    maxWeight: 12
+    maxWeight: 12,
+    biomes: ["meadow"]
   },
   {
     id: "bat",
@@ -27,7 +29,8 @@ export const ENEMIES: EnemyDefinition[] = [
     minLevel: 1,
     baseWeight: 6,
     weightGrowthPerLevel: 0.12,
-    maxWeight: 11
+    maxWeight: 11,
+    biomes: ["meadow", "forest"]
   },
   {
     id: "goblin",
@@ -41,8 +44,11 @@ export const ENEMIES: EnemyDefinition[] = [
     minLevel: 2,
     baseWeight: 4,
     weightGrowthPerLevel: 0.22,
-    maxWeight: 12
+    maxWeight: 12,
+    biomes: ["meadow", "forest", "desert"]
   },
+
+  // ── Forest biome ───────────────────────────────────────────────────────
   {
     id: "wolf",
     name: "Dire Wolf",
@@ -55,7 +61,114 @@ export const ENEMIES: EnemyDefinition[] = [
     minLevel: 4,
     baseWeight: 2,
     weightGrowthPerLevel: 0.6,
-    maxWeight: 10
+    maxWeight: 10,
+    biomes: ["forest", "meadow"]
+  },
+  {
+    id: "forestSpider",
+    name: "Forest Spider",
+    maxHp: 28,
+    attack: 10,
+    defense: 3,
+    speed: 8,
+    xpReward: 20,
+    goldReward: 16,
+    minLevel: 3,
+    baseWeight: 3.5,
+    weightGrowthPerLevel: 0.35,
+    maxWeight: 10,
+    biomes: ["forest"],
+    bodyShape: "spider",
+    customColors: { primary: "#3a2a1e", accent: "#9a2e2a" }
+  },
+  {
+    id: "caveBat",
+    name: "Cave Bat",
+    maxHp: 20,
+    attack: 9,
+    defense: 2,
+    speed: 9,
+    xpReward: 14,
+    goldReward: 11,
+    minLevel: 2,
+    baseWeight: 3,
+    weightGrowthPerLevel: 0.3,
+    maxWeight: 9,
+    biomes: ["forest", "tundra"],
+    bodyShape: "bat",
+    customColors: { primary: "#bdb4c8", accent: "#5f5578" }
+  },
+
+  // ── Desert biome ───────────────────────────────────────────────────────
+  {
+    id: "sandScorpion",
+    name: "Sand Scorpion",
+    maxHp: 38,
+    attack: 14,
+    defense: 6,
+    speed: 7,
+    xpReward: 28,
+    goldReward: 24,
+    minLevel: 3,
+    baseWeight: 3,
+    weightGrowthPerLevel: 0.4,
+    maxWeight: 10,
+    biomes: ["desert"],
+    bodyShape: "scorpion",
+    customColors: { primary: "#d6a64c", accent: "#6f3a1a" }
+  },
+  {
+    id: "sandDrake",
+    name: "Dune Drake",
+    maxHp: 70,
+    attack: 22,
+    defense: 10,
+    speed: 9,
+    xpReward: 58,
+    goldReward: 48,
+    minLevel: 8,
+    baseWeight: 0.8,
+    weightGrowthPerLevel: 0.85,
+    maxWeight: 7,
+    biomes: ["desert"],
+    bodyShape: "drake",
+    customColors: { primary: "#c49a4a", accent: "#5a3b1a" }
+  },
+
+  // ── Swamp biome ────────────────────────────────────────────────────────
+  {
+    id: "bogSlime",
+    name: "Bog Slime",
+    maxHp: 26,
+    attack: 7,
+    defense: 3,
+    speed: 3,
+    xpReward: 14,
+    goldReward: 11,
+    minLevel: 2,
+    baseWeight: 5,
+    weightGrowthPerLevel: 0.15,
+    maxWeight: 11,
+    biomes: ["swamp"],
+    bodyShape: "slime",
+    customColors: { primary: "#5a7030", accent: "#2a2a10" }
+  },
+  {
+    id: "bogHag",
+    name: "Bog Hag",
+    maxHp: 46,
+    attack: 16,
+    defense: 8,
+    speed: 8,
+    xpReward: 40,
+    goldReward: 34,
+    minLevel: 5,
+    baseWeight: 1.6,
+    weightGrowthPerLevel: 0.55,
+    maxWeight: 8,
+    biomes: ["swamp"],
+    bodyShape: "goblin",
+    customColors: { primary: "#4f5f36", accent: "#2a2415" }
   },
   {
     id: "wraith",
@@ -67,10 +180,49 @@ export const ENEMIES: EnemyDefinition[] = [
     xpReward: 36,
     goldReward: 32,
     minLevel: 6,
-    baseWeight: 1.2,
-    weightGrowthPerLevel: 0.75,
-    maxWeight: 8
+    baseWeight: 1.4,
+    weightGrowthPerLevel: 0.7,
+    maxWeight: 8,
+    biomes: ["swamp", "tundra"]
   },
+
+  // ── Tundra biome ───────────────────────────────────────────────────────
+  {
+    id: "frostWolf",
+    name: "Frost Wolf",
+    maxHp: 40,
+    attack: 14,
+    defense: 6,
+    speed: 10,
+    xpReward: 32,
+    goldReward: 28,
+    minLevel: 4,
+    baseWeight: 2.4,
+    weightGrowthPerLevel: 0.55,
+    maxWeight: 10,
+    biomes: ["tundra"],
+    bodyShape: "wolf",
+    customColors: { primary: "#dfe8f0", accent: "#6b8fb4" }
+  },
+  {
+    id: "iceWraith",
+    name: "Ice Wraith",
+    maxHp: 50,
+    attack: 17,
+    defense: 8,
+    speed: 11,
+    xpReward: 44,
+    goldReward: 38,
+    minLevel: 6,
+    baseWeight: 1.4,
+    weightGrowthPerLevel: 0.75,
+    maxWeight: 8,
+    biomes: ["tundra"],
+    bodyShape: "wraith",
+    customColors: { primary: "#2f4d6e", accent: "#8ce5ff" }
+  },
+
+  // ── Generalist dragon (any biome at high level) ────────────────────────
   {
     id: "drake",
     name: "Young Drake",
@@ -83,7 +235,8 @@ export const ENEMIES: EnemyDefinition[] = [
     minLevel: 8,
     baseWeight: 0.8,
     weightGrowthPerLevel: 0.85,
-    maxWeight: 7
+    maxWeight: 7,
+    biomes: ["meadow", "forest", "tundra"]
   }
 ];
 
@@ -121,6 +274,13 @@ export const ITEM_DATA = {
   hiPotion: { name: "Hi-Potion", healAmount: 45, price: 34 },
   megaPotion: { name: "Mega Potion", healAmount: 80, price: 78 }
 } as const satisfies Record<ItemKey, { name: string; healAmount: number; price: number }>;
+
+/** One-time purchase — enables the floating compass overlay that points to the nearest town. */
+export const TOWN_MAP = {
+  name: "Town Map",
+  price: 40,
+  description: "A compass-inked scroll that always points toward the nearest town."
+} as const;
 
 export const ITEM_PRIORITY: ItemKey[] = ["megaPotion", "hiPotion", "potion"];
 export const SHOP_ITEMS: ItemKey[] = ["potion", "hiPotion", "megaPotion"];

@@ -1,18 +1,64 @@
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 import Phaser from "phaser";
 import { GameScene } from "./game/GameScene";
 import { inputController, type MoveDirection } from "./game/inputController";
 import { gameStore } from "./game/state";
-import { ARMOR_STATS, ITEM_DATA, SKILL_DATA, WEAPON_STATS, getUnlockedSkills } from "./game/data";
+import { ARMOR_STATS, ITEM_DATA, SKILL_DATA, TOWN_MAP, WEAPON_STATS, getUnlockedSkills } from "./game/data";
+import { STORY_CHAPTERS } from "./game/story";
 import { useGameStore } from "./game/useGameStore";
-import type { EnemyState, SkillKey } from "./game/types";
+import type { SkillKey } from "./game/types";
 import { Overworld3D } from "./game3d/Overworld3D";
+import { MonsterPortrait3D } from "./game3d/MonsterPortrait3D";
+import { CharacterCreation } from "./ui/CharacterCreation";
+import { TownCompass } from "./ui/TownCompass";
+import { UgcStudio } from "./ui/UgcStudio";
+import {
+  ChapterToast,
+  Journal,
+  StoryEpilogueModal,
+  StoryIntroModal,
+  useStoryOverlays
+} from "./ui/Journal";
 
 /**
  * Feature flag for the 3D prototype overworld.
  * Set to `false` to fall back to the Phaser 2D overworld that lives on the 2d-baseline branch/tag.
  */
 const USE_3D_OVERWORLD = true;
+
+type Screen = "title" | "create" | "play";
+
+/**
+ * Minimal URL-synced router (no extra dependency).
+ *
+ * Listens for back/forward via `popstate` and exposes a `navigate(to, replace?)`
+ * helper that mirrors the call to `history.pushState` / `replaceState`. We only
+ * care about `location.pathname`; search/hash are left untouched.
+ */
+function useRoute() {
+  const [path, setPath] = useState<string>(() =>
+    typeof window === "undefined" ? "/" : window.location.pathname || "/"
+  );
+
+  useEffect(() => {
+    const onPop = () => setPath(window.location.pathname || "/");
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  const navigate = useCallback((to: string, replace = false) => {
+    if (typeof window === "undefined") return;
+    if (window.location.pathname === to) return;
+    if (replace) {
+      window.history.replaceState(null, "", to);
+    } else {
+      window.history.pushState(null, "", to);
+    }
+    setPath(to);
+  }, []);
+
+  return { path, navigate };
+}
 
 function DirButton({ dir, label }: { dir: MoveDirection; label: string }) {
   const press = (event: PointerEvent<HTMLButtonElement>) => {
@@ -38,45 +84,6 @@ function DirButton({ dir, label }: { dir: MoveDirection; label: string }) {
   );
 }
 
-function MonsterPortrait({ enemy }: { enemy: EnemyState }) {
-  if (enemy.id === "slime") {
-    return (
-      <svg viewBox="0 0 180 140" className="monster-svg" role="img" aria-label="Slime">
-        <ellipse cx="90" cy="95" rx="60" ry="35" fill="#4da7b8" />
-        <ellipse cx="90" cy="75" rx="42" ry="30" fill="#66c4d2" />
-        <circle cx="74" cy="72" r="6" fill="#13293b" />
-        <circle cx="106" cy="72" r="6" fill="#13293b" />
-        <path d="M70,92 Q90,102 110,92" stroke="#13293b" strokeWidth="4" fill="none" />
-      </svg>
-    );
-  }
-  if (enemy.id === "bat") {
-    return (
-      <svg viewBox="0 0 180 140" className="monster-svg" role="img" aria-label="Bat">
-        <ellipse cx="90" cy="78" rx="20" ry="20" fill="#5f566f" />
-        <path d="M70,78 C42,48 22,52 10,78 C30,80 42,90 55,102 Z" fill="#4f475e" />
-        <path d="M110,78 C138,48 158,52 170,78 C150,80 138,90 125,102 Z" fill="#4f475e" />
-        <circle cx="83" cy="74" r="4" fill="#ffefef" />
-        <circle cx="97" cy="74" r="4" fill="#ffefef" />
-        <polygon points="88,88 83,98 92,95" fill="#f5d4d4" />
-        <polygon points="92,88 97,98 88,95" fill="#f5d4d4" />
-      </svg>
-    );
-  }
-  return (
-    <svg viewBox="0 0 180 140" className="monster-svg" role="img" aria-label="Goblin">
-      <ellipse cx="90" cy="86" rx="34" ry="34" fill="#6eaa4f" />
-      <polygon points="54,80 38,70 48,94" fill="#629645" />
-      <polygon points="126,80 142,70 132,94" fill="#629645" />
-      <circle cx="78" cy="82" r="5" fill="#142218" />
-      <circle cx="102" cy="82" r="5" fill="#142218" />
-      <rect x="74" y="96" width="32" height="6" rx="2" fill="#1f3b27" />
-      <rect x="78" y="102" width="4" height="7" fill="#f0e0c6" />
-      <rect x="98" y="102" width="4" height="7" fill="#f0e0c6" />
-    </svg>
-  );
-}
-
 function ItemIcon({ kind }: { kind: "potion" | "hiPotion" | "megaPotion" }) {
   const label = kind === "potion" ? "P" : kind === "hiPotion" ? "H" : "M";
   return <span className={`item-icon ${kind}`}>{label}</span>;
@@ -91,10 +98,37 @@ function WeaponIcon({ attackBonus }: { attackBonus: number }) {
 }
 
 export default function App() {
-  const [gameStarted, setGameStarted] = useState(false);
+  const [screen, setScreen] = useState<Screen>("title");
+  const [journalOpen, setJournalOpen] = useState(false);
   const gameRef = useRef<Phaser.Game | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const snapshot = useGameStore();
+  const overlays = useStoryOverlays();
+  const { path, navigate } = useRoute();
+
+  // The UGC Studio is rendered when the URL is `/ugc`.
+  // Gating: the player must have created a character *and* defeated the boss.
+  // If either condition fails, silently redirect back to `/` so a direct visit
+  // to /ugc never shows a half-state view.
+  const ugcRequested = path === "/ugc";
+  const ugcAllowed =
+    snapshot.player.hasCreatedCharacter && snapshot.player.bossDefeated;
+  const ugcOpen = ugcRequested && ugcAllowed;
+
+  useEffect(() => {
+    if (ugcRequested && !ugcAllowed) {
+      navigate("/", true);
+    }
+  }, [ugcRequested, ugcAllowed, navigate]);
+
+  // Open the UGC URL directly should bypass the title screen — if the player
+  // already has a character, render the play backdrop beneath the studio
+  // overlay on the very first frame (no flash of title screen).
+  const effectiveScreen: Screen =
+    ugcOpen && snapshot.player.hasCreatedCharacter ? "play" : screen;
+
+  const openUgc = useCallback(() => navigate("/ugc"), [navigate]);
+  const closeUgc = useCallback(() => navigate("/"), [navigate]);
   const unlockedSkills = getUnlockedSkills(snapshot.player.level);
   const weaponBonus = WEAPON_STATS[snapshot.player.weapon].attackBonus;
   const armorBonus = ARMOR_STATS[snapshot.player.armor].defenseBonus;
@@ -113,7 +147,7 @@ export default function App() {
   const canAffordTraining = gold >= trainFee;
 
   useEffect(() => {
-    if (!gameStarted) {
+    if (screen !== "play") {
       return;
     }
     if (USE_3D_OVERWORLD) {
@@ -136,24 +170,61 @@ export default function App() {
       game.destroy(true);
       gameRef.current = null;
     };
-  }, [gameStarted]);
+  }, [screen]);
 
-  if (!gameStarted) {
+  const handlePlay = () => {
+    if (snapshot.player.hasCreatedCharacter) {
+      setScreen("play");
+    } else {
+      setScreen("create");
+    }
+  };
+
+  const handleLoad = async () => {
+    const loaded = await gameStore.load();
+    if (loaded) {
+      setScreen("play");
+    }
+  };
+
+  if (effectiveScreen === "title") {
     return (
       <div className="title-screen">
         <div className="title-screen-inner">
           <h1 className="title-screen-logo">Monster Slayer</h1>
           <p className="title-screen-tagline">Roam the wilds, brave towns, and cut down what lurks beyond the road.</p>
-          <button type="button" className="title-screen-play" onClick={() => setGameStarted(true)}>
-            Play
-          </button>
+          <div className="title-screen-actions">
+            <button type="button" className="title-screen-play" onClick={handlePlay}>
+              {snapshot.player.hasCreatedCharacter ? "Continue" : "New Game"}
+            </button>
+            <button type="button" className="title-screen-secondary" onClick={handleLoad}>
+              Load Save
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
+  if (effectiveScreen === "create") {
+    return <CharacterCreation onDone={() => setScreen("play")} onBack={() => setScreen("title")} />;
+  }
+
+  const showStoryOverlays = effectiveScreen === "play";
+
   return (
     <div className="app">
+      {ugcOpen && <UgcStudio onClose={closeUgc} />}
+      {journalOpen && <Journal onClose={() => setJournalOpen(false)} />}
+      {showStoryOverlays && overlays.showPrologue && (
+        <StoryIntroModal onDismiss={() => gameStore.dismissPrologue()} />
+      )}
+      {showStoryOverlays && overlays.showEpilogue && (
+        <StoryEpilogueModal onDismiss={() => gameStore.dismissEpilogue()} />
+      )}
+      {showStoryOverlays && overlays.toastStage && (
+        <ChapterToast stage={overlays.toastStage} onDone={overlays.dismissToast} />
+      )}
       <div className="main-column">
         <div className="panel">
           <h1>Monster Slayer</h1>
@@ -167,7 +238,8 @@ export default function App() {
             </div>
           </div>
           <p>
-            Lv {snapshot.player.level} | HP {snapshot.player.hp}/{snapshot.player.maxHp} | Gold {snapshot.player.gold}
+            <strong>{snapshot.player.name}</strong> — Lv {snapshot.player.level} | HP {snapshot.player.hp}/
+            {snapshot.player.maxHp} | Gold {snapshot.player.gold}
           </p>
           <div className="hp-meter">
             <div className="hp-meter-head">
@@ -264,6 +336,7 @@ export default function App() {
           ) : (
             <div ref={mountRef} className="phaser-mount" />
           )}
+          <TownCompass />
           <div className="touch-overlay">
             <div className="touch-pad">
               <DirButton dir="up" label="U" />
@@ -289,9 +362,36 @@ export default function App() {
           <div className="row reset-game-row">
             <button
               type="button"
+              className="journal-open-btn"
+              onClick={() => setJournalOpen(true)}
+              title={STORY_CHAPTERS[snapshot.story.stage].objective}
+            >
+              Journal
+              <span className="journal-open-badge">
+                {STORY_CHAPTERS[snapshot.story.stage].title.split(" — ")[0]}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="ugc-open-btn"
+              onClick={openUgc}
+              disabled={!snapshot.player.bossDefeated || snapshot.battle.inBattle}
+              title={
+                snapshot.player.bossDefeated
+                  ? "Create monsters, weapons, and armor. List them for sale."
+                  : "Defeat the Void Titan to unlock the UGC Studio."
+              }
+            >
+              UGC Studio
+              {snapshot.player.bossDefeated && snapshot.ugc.totalSales > 0 && (
+                <span className="ugc-open-badge">{snapshot.ugc.totalSales} sold</span>
+              )}
+            </button>
+            <button
+              type="button"
               className="reset-game-btn"
               onClick={() => {
-                if (!window.confirm("Start a new journey? This clears your character and world progress.")) {
+                if (!window.confirm("Start a new journey? This clears your character, UGC, and world progress.")) {
                   return;
                 }
                 gameStore.resetGame();
@@ -337,6 +437,19 @@ export default function App() {
                 </button>
                 <button onClick={() => gameStore.buyDragonArmor()} disabled={gold < ARMOR_STATS.dragonArmor.price}>
                   Buy Dragon Armor ({ARMOR_STATS.dragonArmor.price}g)
+                </button>
+                <button
+                  onClick={() => gameStore.buyTownMap()}
+                  disabled={snapshot.player.hasTownMap || gold < TOWN_MAP.price}
+                  title={
+                    snapshot.player.hasTownMap
+                      ? "Already owned."
+                      : TOWN_MAP.description
+                  }
+                >
+                  {snapshot.player.hasTownMap
+                    ? `${TOWN_MAP.name} (owned)`
+                    : `Buy ${TOWN_MAP.name} (${TOWN_MAP.price}g)`}
                 </button>
               </div>
             </div>
@@ -419,7 +532,7 @@ export default function App() {
         {snapshot.battle.inBattle && snapshot.battle.enemy && (
           <div className="box monster-panel">
             <strong>Monster</strong>
-            <MonsterPortrait enemy={snapshot.battle.enemy} />
+            <MonsterPortrait3D enemy={snapshot.battle.enemy} />
             <p className="monster-name">{snapshot.battle.enemy.name}</p>
             <div className="hp-meter enemy">
               <div className="hp-meter-head">

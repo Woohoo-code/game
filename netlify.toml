@@ -1,3 +1,9 @@
 [build]
   command = "npm run build"
   publish = "dist"
+
+# Redirect all paths back to index.html so client-side routes like /ugc work
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
