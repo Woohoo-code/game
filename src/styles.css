@@ -1231,78 +1231,158 @@ button.reset-game-btn:not(:disabled):hover {
 }
 
 .game-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: block;
   position: relative;
   width: 100%;
   max-width: 640px;
 }
 
-/* Main Save/Load/Journal row + building-specific actions — bottom overlays on the playfield. */
-.playfield-dock-overlay {
+/* Compass, HUD, touch D-pad — top-to-bottom on the right, above the map. */
+.playfield-right-stack {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 8;
-  padding: 4px 6px calc(6px + var(--safe-bottom));
+  top: calc(4px + env(safe-area-inset-top, 0px));
+  right: calc(4px + env(safe-area-inset-right, 0px));
+  bottom: calc(4px + var(--safe-bottom));
+  z-index: 11;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   align-items: flex-end;
+  justify-content: flex-start;
+  gap: 8px;
   pointer-events: none;
+}
+
+.playfield-right-stack .touch-overlay {
+  pointer-events: none;
+}
+
+.playfield-right-stack .touch-overlay .touch-pad {
+  pointer-events: auto;
+}
+
+/* Full-height left rail: compact strip (~¼ prior width) + scroll for store. */
+.playfield-left-rail {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: min(108px, 26vw);
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  pointer-events: none;
+}
+
+.playfield-left-rail > .playfield-dock-overlay,
+.playfield-left-rail > .playfield-context-overlay {
+  pointer-events: auto;
+}
+
+.playfield-left-rail .playfield-dock-overlay {
+  position: static;
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  width: 100%;
+  padding: 0;
+  display: flex;
+  justify-content: flex-start;
+  align-items: stretch;
+  z-index: 2;
+}
+
+.playfield-left-rail > .playfield-dock-overlay:only-child {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.playfield-left-rail .playfield-context-overlay {
+  position: static;
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  overflow: hidden;
+  z-index: 1;
 }
 
 .playfield-dock-inner {
   pointer-events: auto;
   width: 100%;
-  max-width: 640px;
-  padding: 8px 10px 10px;
-  border-radius: 10px 10px 0 0;
+  max-width: none;
+  padding: 8px 10px 10px 8px;
+  border-radius: 0 10px 10px 0;
   border: 1px solid rgba(80, 120, 180, 0.38);
-  border-bottom: none;
+  border-left: none;
   background: rgba(18, 26, 40, 0.9);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 -6px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: 4px 0 28px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
 }
 
-.playfield-context-overlay {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 12;
-  max-height: min(58vh, 520px);
-  display: flex;
-  justify-content: center;
-  align-items: flex-end;
-  padding: 0 6px calc(6px + var(--safe-bottom));
-  pointer-events: none;
+.playfield-left-rail .playfield-dock-inner {
+  padding: 4px 5px 5px 3px;
+  border-radius: 0 6px 6px 0;
+}
+
+.playfield-left-rail > .playfield-dock-overlay:only-child .playfield-dock-inner {
+  flex: 1 1 auto;
+  justify-content: space-between;
 }
 
 .playfield-context-inner {
   pointer-events: auto;
   width: 100%;
-  max-width: 640px;
-  max-height: min(52vh, 480px);
+  max-width: none;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 10px 10px 12px;
-  border-radius: 10px 10px 0 0;
+  padding: 10px 10px 10px 8px;
+  border-radius: 0 10px 10px 0;
   border: 1px solid rgba(120, 160, 220, 0.4);
-  border-bottom: none;
+  border-left: none;
   background: rgba(10, 15, 26, 0.94);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 -10px 44px rgba(0, 0, 0, 0.55);
+  box-shadow: 4px 0 32px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+}
+
+.playfield-left-rail .playfield-context-inner {
+  padding: 4px 4px 5px 3px;
+  border-radius: 0 6px 6px 0;
+}
+
+.playfield-left-rail .playfield-context-inner .box {
+  padding: 5px 4px;
+}
+
+.playfield-left-rail .playfield-context-inner .box strong {
+  font-size: 8px;
+  letter-spacing: 0.02em;
+}
+
+.playfield-left-rail .playfield-context-inner .box p,
+.playfield-left-rail .playfield-context-inner .boss-arena-hint {
+  font-size: 7px;
+  line-height: 1.25;
+  margin: 2px 0 4px;
 }
 
 .playfield-context-inner .box + .box {
   margin-top: 8px;
 }
 
-/* Smaller controls in bottom playfield overlays (Save/Load row + shop/inn/etc.). */
+/* Smaller controls in playfield overlays (Save/Load row + shop/inn/etc.). */
 .playfield-dock-inner,
 .playfield-context-inner {
   --dock-btn-min-h: 30px;
@@ -1311,8 +1391,16 @@ button.reset-game-btn:not(:disabled):hover {
   --dock-btn-pad-x: 9px;
 }
 
+.playfield-left-rail .playfield-dock-inner,
+.playfield-left-rail .playfield-context-inner {
+  --dock-btn-min-h: 22px;
+  --dock-btn-fs: clamp(7px, 1.1vw + 4px, 9px);
+  --dock-btn-pad-y: 2px;
+  --dock-btn-pad-x: 3px;
+}
+
 .playfield-dock-inner {
-  padding: 6px 8px 8px;
+  padding: 6px 8px 8px 6px;
 }
 
 .playfield-dock-inner button,
@@ -1337,9 +1425,30 @@ button.reset-game-btn:not(:disabled):hover {
   padding: 1px 5px;
 }
 
-.playfield-dock-inner .row,
-.playfield-context-inner .row {
+.playfield-left-rail .playfield-dock-inner .journal-open-badge,
+.playfield-left-rail .playfield-dock-inner .ugc-open-badge {
+  font-size: 6px;
+  margin-left: 2px;
+  padding: 0 3px;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.playfield-left-rail .playfield-dock-inner .row,
+.playfield-left-rail .playfield-context-inner .row {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
   gap: 5px;
+}
+
+.playfield-left-rail .playfield-dock-inner .row > button,
+.playfield-left-rail .playfield-context-inner .row > button {
+  width: 100%;
+  flex: 0 0 auto;
 }
 
 /* Full-bleed battle layer over the map + compass + touch zone in this column. */
@@ -1471,7 +1580,7 @@ button.reset-game-btn:not(:disabled):hover {
 
 .battle-overlay-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr);
   gap: 8px;
   align-items: stretch;
 }
@@ -1483,16 +1592,30 @@ button.reset-game-btn:not(:disabled):hover {
   min-width: 0;
 }
 
-/* Scrollable feed under enemy HP on the main fight column. */
+/* Left: player HUD, then foe portrait + HP. Right: log + actions. */
+.battle-overlay-column-main {
+  align-items: stretch;
+}
+
+.battle-overlay-column-actions {
+  min-height: 0;
+}
+
+/* Scrollable battle log on the right column (under action buttons). */
 .battle-overlay-battle-log {
   align-self: stretch;
   width: 100%;
   flex: 1 1 auto;
   min-height: 44px;
-  max-height: clamp(72px, 15vh, 130px);
+  max-height: clamp(88px, 18vh, 150px);
   height: auto;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+.battle-overlay-column-actions .battle-actions {
+  flex: 0 0 auto;
+  align-self: stretch;
 }
 
 .battle-player-hud--overlay {
@@ -1500,7 +1623,7 @@ button.reset-game-btn:not(:disabled):hover {
 }
 
 .monster-panel--overlay {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
 }
 
@@ -1552,6 +1675,8 @@ button.reset-game-btn:not(:disabled):hover {
 .battle-overlay .monster-panel {
   min-height: 0;
   gap: 4px;
+  align-items: center;
+  width: 100%;
 }
 
 .battle-overlay .monster-panel > strong {
@@ -1565,7 +1690,8 @@ button.reset-game-btn:not(:disabled):hover {
 }
 
 .battle-overlay .monster-panel .hp-meter {
-  max-width: 200px;
+  max-width: 100%;
+  width: 100%;
 }
 
 .battle-overlay .monster-name {
@@ -1622,17 +1748,15 @@ button.reset-game-btn:not(:disabled):hover {
 }
 
 .world-status-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: auto;
-  bottom: auto;
-  z-index: 6;
-  max-width: min(calc(100% - 12px), 225px);
-  padding: 5px;
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  align-self: flex-end;
+  max-width: min(236px, 58vw);
+  padding: 0;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: flex-end;
   pointer-events: none;
 }
 
@@ -1748,7 +1872,11 @@ button.reset-game-btn:not(:disabled):hover {
 }
 
 .hud-equip-weapon {
-  color: #d4e6ff;
+  color: inherit;
+}
+
+.hud-sword-svg {
+  display: block;
 }
 
 .hud-equip-armor {
@@ -1910,6 +2038,8 @@ button.reset-game-btn:not(:disabled):hover {
 
 .touch-overlay {
   display: none;
+  flex: 0 0 auto;
+  align-self: flex-end;
 }
 
 /* ─── Tablet / narrow desktop (≤ 980px): stack the two main columns ─── */
@@ -1932,11 +2062,10 @@ button.reset-game-btn:not(:disabled):hover {
 
   .touch-overlay {
     display: block;
-    position: absolute;
-    right: 10px;
-    left: auto;
-    bottom: calc(10px + var(--safe-bottom));
-    z-index: 14;
+    position: relative;
+    right: auto;
+    bottom: auto;
+    z-index: auto;
     pointer-events: none;
   }
 
@@ -1961,13 +2090,21 @@ button.reset-game-btn:not(:disabled):hover {
     --btn-pad-x: 14px;
   }
 
-  /* Playfield dock stays smaller than global 44px tap targets (still usable). */
+  /* Default dock sizing (unused off-rail); left rail keeps its own compact tokens below. */
   .playfield-dock-inner,
   .playfield-context-inner {
     --dock-btn-min-h: 34px;
     --dock-btn-fs: 11px;
     --dock-btn-pad-y: 5px;
     --dock-btn-pad-x: 8px;
+  }
+
+  .playfield-left-rail .playfield-dock-inner,
+  .playfield-left-rail .playfield-context-inner {
+    --dock-btn-min-h: 26px;
+    --dock-btn-fs: clamp(7px, 1.6vw + 4px, 9px);
+    --dock-btn-pad-y: 3px;
+    --dock-btn-pad-x: 4px;
   }
 
   .app {
@@ -2519,10 +2656,10 @@ button.reset-game-btn:not(:disabled):hover {
  * ──────────────────────────────────────────────────────────────────── */
 
 .town-compass {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 6;
+  position: relative;
+  flex: 0 0 auto;
+  align-self: flex-end;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2597,10 +2734,6 @@ button.reset-game-btn:not(:disabled):hover {
 }
 
 @media (max-width: 980px) {
-  .town-compass {
-    top: 8px;
-    right: 8px;
-  }
   .town-compass-dial {
     width: 60px;
     height: 60px;

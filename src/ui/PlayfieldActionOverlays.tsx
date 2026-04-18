@@ -25,7 +25,7 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenUgc }: Props) {
     snapshot.world.canBoss;
 
   return (
-    <>
+    <div className="playfield-left-rail" aria-label="Game controls">
       <div className="playfield-dock-overlay" aria-label="Game actions">
         <div className="playfield-dock-inner action-dock">
           <div className="row">
@@ -220,6 +220,6 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenUgc }: Props) {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

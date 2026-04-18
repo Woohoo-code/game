@@ -203,15 +203,17 @@ export default function App() {
             ) : (
               <div ref={mountRef} className="phaser-mount" />
             )}
-            {!snapshot.battle.inBattle && <WorldStatusOverlay />}
           </div>
-          <TownCompass />
-          <div className="touch-overlay">
-            <div className="touch-pad touch-pad-arrow" aria-label="Movement">
-              <DirButton dir="up" label="↑" className="dir-btn-up" />
-              <DirButton dir="left" label="←" className="dir-btn-left" />
-              <DirButton dir="down" label="↓" className="dir-btn-down" />
-              <DirButton dir="right" label="→" className="dir-btn-right" />
+          <div className="playfield-right-stack" aria-label="Map overlays">
+            <TownCompass />
+            {!snapshot.battle.inBattle && <WorldStatusOverlay />}
+            <div className="touch-overlay">
+              <div className="touch-pad touch-pad-arrow" aria-label="Movement">
+                <DirButton dir="up" label="↑" className="dir-btn-up" />
+                <DirButton dir="left" label="←" className="dir-btn-left" />
+                <DirButton dir="down" label="↓" className="dir-btn-down" />
+                <DirButton dir="right" label="→" className="dir-btn-right" />
+              </div>
             </div>
           </div>
           <PlayfieldActionOverlays onOpenJournal={() => setJournalOpen(true)} onOpenUgc={openUgc} />

@@ -3,7 +3,8 @@ import { useGameStore } from "../game/useGameStore";
 import { TILE, nearestTown } from "../game/worldMap";
 
 /**
- * Floating compass overlay, rendered in the top-right of the game viewport.
+ * Floating compass overlay, rendered in the top-right stack with the world HUD
+ * and touch controls (see `playfield-right-stack` in App).
  *
  * Visibility rules:
  *   - Hidden until the player buys the Town Map at any Shop (one-time purchase).

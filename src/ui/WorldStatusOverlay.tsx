@@ -1,28 +1,58 @@
 import type { ReactNode } from "react";
 import { ARMOR_STATS, ITEM_DATA, WEAPON_STATS } from "../game/data";
 import { useGameStore } from "../game/useGameStore";
+import type { WeaponKey } from "../game/types";
+
+/** HUD sword icon tints — wood earth tones, iron silver, steel blue-steel, mythril arcane teal. */
+const WEAPON_HUD_SWORD: Record<
+  WeaponKey,
+  { blade: string; bladeShade: string; guard: string; grip: string; pommel: string }
+> = {
+  woodSword: {
+    blade: "#d4a574",
+    bladeShade: "#8b5a2b",
+    guard: "#5c3d24",
+    grip: "#4a301c",
+    pommel: "#6b4528"
+  },
+  ironSword: {
+    blade: "#e2e6ee",
+    bladeShade: "#9aa2ae",
+    guard: "#5a5f68",
+    grip: "#3a3f48",
+    pommel: "#6d737c"
+  },
+  steelSword: {
+    blade: "#b0c4d8",
+    bladeShade: "#5f7a94",
+    guard: "#3d4f64",
+    grip: "#283545",
+    pommel: "#4a6278"
+  },
+  mythrilBlade: {
+    blade: "#a8f2ff",
+    bladeShade: "#3aa8c4",
+    guard: "#3d4e9c",
+    grip: "#2a3570",
+    pommel: "#5a6ed0"
+  }
+};
 
 function ItemIcon({ kind }: { kind: "potion" | "hiPotion" | "megaPotion" }) {
   const label = kind === "potion" ? "P" : kind === "hiPotion" ? "H" : "M";
   return <span className={`item-icon ${kind} item-icon--hud`}>{label}</span>;
 }
 
-function IconSword({ className }: { className?: string }) {
+function IconSword({ weapon }: { weapon: WeaponKey }) {
+  const c = WEAPON_HUD_SWORD[weapon];
   return (
-    <svg
-      className={className}
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M14.5 3.5 20.5 9.5 9 21H3v-6L14.5 3.5z" />
-      <path d="M7 17l3-3" />
+    <svg className="hud-sword-svg" width="18" height="18" viewBox="0 0 24 24" aria-hidden>
+      {/* Blade under crossguard */}
+      <path d="M12 1.75 L14.1 12.35 H9.9 Z" fill={c.blade} />
+      <path d="M12 3.2 L13.15 12.35 H10.85 Z" fill={c.bladeShade} opacity="0.55" />
+      <rect x="5.5" y="12.4" width="13" height="2.4" rx="0.5" fill={c.guard} />
+      <rect x="10.25" y="14.8" width="3.5" height="4.8" rx="0.45" fill={c.grip} />
+      <circle cx="12" cy="20.6" r="1.85" fill={c.pommel} />
     </svg>
   );
 }
@@ -195,7 +225,7 @@ export function WorldStatusOverlay() {
             ariaLabel={`Equipped weapon: ${w.name}`}
             title={weaponTitle}
           >
-            <IconSword />
+            <IconSword weapon={snapshot.player.weapon} />
           </HudIconButton>
           <HudIconButton className="hud-equip-armor" ariaLabel={`Equipped armor: ${a.name}`} title={armorTitle}>
             <IconShield />
