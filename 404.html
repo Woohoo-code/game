@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Monster Slayer</title>
+    <script>
+      /**
+       * GitHub Pages SPA redirect trick.
+       *
+       * Pages returns this 404.html for any path it doesn't recognise (e.g. /game/ugc).
+       * We encode the full path into a query string and redirect to the repo root so
+       * the React app loads and its client-side router reconstructs the original URL.
+       *
+       * Encoding: path segments + query are stored as a single `p` param.
+       * The receiver script in index.html decodes it via history.replaceState.
+       */
+      var l = window.location;
+      l.replace(
+        l.protocol +
+          "//" +
+          l.hostname +
+          (l.port ? ":" + l.port : "") +
+          l.pathname
+            .split("/")
+            .slice(0, 1 + 1) // keep /game prefix
+            .join("/") +
+          "/?p=/" +
+          l.pathname.split("/").slice(2).join("/").replace(/&/g, "~and~") +
+          (l.search ? "&q=" + l.search.slice(1).replace(/&/g, "~and~") : "") +
+          l.hash
+      );
+    </script>
+  </head>
+  <body></body>
+</html>

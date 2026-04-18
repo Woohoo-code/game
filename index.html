@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Monster Slayer</title>
+    <script>
+      // GitHub Pages SPA redirect receiver — must run before React mounts.
+      // Paired with public/404.html which encodes the intended path into ?p=
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var p = params.get("p");
+        if (p) {
+          var q = params.get("q");
+          var hash = window.location.hash;
+          var url =
+            window.location.pathname.replace(/\/$/, "") +
+            p.replace(/~and~/g, "&") +
+            (q ? "?" + q.replace(/~and~/g, "&") : "") +
+            hash;
+          window.history.replaceState(null, "", url);
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="/game/assets/index-DmYWgR3A.js"></script>
+    <link rel="stylesheet" crossorigin href="/game/assets/index-BYDZjs5Z.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
