@@ -386,6 +386,22 @@ export default function App() {
           />
           {snapshot.battle.inBattle && <BattleOverlay />}
         </div>
+        {effectiveScreen === "play" && (
+          <div className={desktopInventory ? "inventory-bar-desktop" : "inventory-bar-compact"}>
+            <InventoryBar
+              hotkeysBlocked={
+                lanRole === "guest" ||
+                journalOpen ||
+                petsOpen ||
+                ugcOpen ||
+                overlays.showPrologue ||
+                overlays.showEpilogue ||
+                Boolean(overlays.toastStage)
+              }
+              coopGuestLocked={lanRole === "guest"}
+            />
+          </div>
+        )}
       </div>
 
       <div className="right-column panel">
@@ -404,23 +420,6 @@ export default function App() {
           </div>
         )}
       </div>
-
-      {effectiveScreen === "play" && (
-        <div className={desktopInventory ? "inventory-bar-desktop" : "inventory-bar-compact"}>
-          <InventoryBar
-            hotkeysBlocked={
-              lanRole === "guest" ||
-              journalOpen ||
-              petsOpen ||
-              ugcOpen ||
-              overlays.showPrologue ||
-              overlays.showEpilogue ||
-              Boolean(overlays.toastStage)
-            }
-            coopGuestLocked={lanRole === "guest"}
-          />
-        </div>
-      )}
     </div>
   );
 }
