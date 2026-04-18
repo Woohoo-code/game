@@ -597,7 +597,7 @@ class GameStore {
       this.emit();
       return;
     }
-    const fee = 12;
+    const fee = 5;
     const debt = this.state.player.revivalDebtMonstersRemaining ?? 0;
     const needsHeal = this.state.player.hp < this.state.player.maxHp;
     if (!needsHeal && debt <= 0) {

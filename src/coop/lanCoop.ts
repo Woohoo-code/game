@@ -200,10 +200,40 @@ export function sendGuestMove(direction: MoveDirection, pressed: boolean): void 
   }
 }
 
-function defaultSignalingUrl(): string {
+const SIGNALING_OPEN_MS = 12_000;
+
+/** True when the page is HTTPS and the given URL is plain ws:// (browser mixed-content block). */
+export function isMixedContentWsBlocked(url: string): boolean {
+  if (typeof window === "undefined") return false;
+  return window.location.protocol === "https:" && /^ws:\/\//i.test(url.trim());
+}
+
+/**
+ * Default signaling URL for the LAN panel and connect().
+ * - HTTPS (e.g. GitHub Pages): cannot use ws:// from the page — still default to loopback for typing override.
+ * - file:// (desktop build): loopback.
+ * - http://localhost: loopback (signaling runs on same machine as browser).
+ * - http://LAN IP: same host so two devices that opened the game from the host PC URL hit the right machine.
+ */
+export function defaultSignalingUrlForBrowser(): string {
   if (typeof window === "undefined") return "ws://127.0.0.1:8765";
-  const host = window.location.hostname || "127.0.0.1";
-  return `ws://${host}:8765`;
+  const { protocol, hostname } = window.location;
+  if (protocol === "https:" || protocol === "file:") {
+    return "ws://127.0.0.1:8765";
+  }
+  const h = (hostname || "").trim();
+  if (h === "" || h === "localhost" || h === "[::1]") {
+    return "ws://127.0.0.1:8765";
+  }
+  return `ws://${h}:8765`;
+}
+
+function defaultSignalingUrl(): string {
+  return defaultSignalingUrlForBrowser();
+}
+
+function mixedContentBlockMessage(): string {
+  return "This game is on HTTPS, so the browser blocks ws:// signaling. Open the game over HTTP on your LAN (run Vite with --host and use http://YOUR-LAN-IP:5173), or host wss:// signaling.";
 }
 
 /**
@@ -214,6 +244,11 @@ export async function startLanHost(signalingUrl?: string): Promise<string> {
   const myEpoch = coopEpoch;
   lastError = null;
   const url = signalingUrl?.trim() || defaultSignalingUrl();
+  if (isMixedContentWsBlocked(url)) {
+    lastError = mixedContentBlockMessage();
+    notify();
+    throw new Error(lastError);
+  }
   const code = generateCode();
   roomCode = code;
   role = "host";
@@ -222,12 +257,21 @@ export async function startLanHost(signalingUrl?: string): Promise<string> {
 
   return await new Promise<string>((resolve, reject) => {
     let settled = false;
+    let openTimer: number | null = null;
+    const clearOpenTimer = () => {
+      if (openTimer !== null) {
+        window.clearTimeout(openTimer);
+        openTimer = null;
+      }
+    };
+
     const socket = new WebSocket(url);
     ws = socket;
 
     const stale = () => myEpoch !== coopEpoch;
 
     const fail = (msg: string) => {
+      clearOpenTimer();
       if (stale() || settled) return;
       settled = true;
       lastError = msg;
@@ -236,12 +280,27 @@ export async function startLanHost(signalingUrl?: string): Promise<string> {
       reject(new Error(msg));
     };
 
+    openTimer = window.setTimeout(() => {
+      if (stale() || settled) return;
+      if (socket.readyState !== WebSocket.OPEN) {
+        fail(
+          "Signaling server did not answer (wrong WebSocket URL, port 8765 blocked by firewall, or run `npm run coop-server` on the host PC)."
+        );
+        try {
+          socket.close();
+        } catch {
+          /* ignore */
+        }
+      }
+    }, SIGNALING_OPEN_MS);
+
     socket.onerror = () => {
       if (stale()) return;
       fail("Could not reach signaling server (is it running?).");
     };
 
     socket.onclose = () => {
+      clearOpenTimer();
       clearSignalingKeepAlive();
       if (stale()) return;
       // Before hello-ok: treat as fatal. After room is registered, signaling may drop (proxy idle
@@ -293,6 +352,7 @@ export async function startLanHost(signalingUrl?: string): Promise<string> {
     };
 
     socket.onopen = () => {
+      clearOpenTimer();
       if (stale()) return;
       socket.send(JSON.stringify({ type: "hello", role: "host", code }));
       clearSignalingKeepAlive();
@@ -374,6 +434,11 @@ export async function joinLanGuest(joinCode: string, signalingUrl?: string): Pro
   const myEpoch = coopEpoch;
   lastError = null;
   const url = signalingUrl?.trim() || defaultSignalingUrl();
+  if (isMixedContentWsBlocked(url)) {
+    lastError = mixedContentBlockMessage();
+    notify();
+    throw new Error(lastError);
+  }
   const code = joinCode.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
   if (code.length !== 6) {
     throw new Error("Enter the 6-character join code from the host.");
@@ -385,12 +450,21 @@ export async function joinLanGuest(joinCode: string, signalingUrl?: string): Pro
 
   return await new Promise<void>((resolve, reject) => {
     let settled = false;
+    let openTimer: number | null = null;
+    const clearOpenTimer = () => {
+      if (openTimer !== null) {
+        window.clearTimeout(openTimer);
+        openTimer = null;
+      }
+    };
+
     const socket = new WebSocket(url);
     ws = socket;
 
     const stale = () => myEpoch !== coopEpoch;
 
     const fail = (err: Error) => {
+      clearOpenTimer();
       if (stale() || settled) return;
       settled = true;
       lastError = err.message;
@@ -398,12 +472,29 @@ export async function joinLanGuest(joinCode: string, signalingUrl?: string): Pro
       reject(err);
     };
 
+    openTimer = window.setTimeout(() => {
+      if (stale() || settled) return;
+      if (socket.readyState !== WebSocket.OPEN) {
+        fail(
+          new Error(
+            "Signaling server did not answer (wrong WebSocket URL, port 8765 blocked, or coop-server not running on the host)."
+          )
+        );
+        try {
+          socket.close();
+        } catch {
+          /* ignore */
+        }
+      }
+    }, SIGNALING_OPEN_MS);
+
     socket.onerror = () => {
       if (stale()) return;
       fail(new Error("Could not reach signaling server (is it running?)."));
     };
 
     socket.onclose = () => {
+      clearOpenTimer();
       clearSignalingKeepAlive();
       if (stale()) return;
       if (!settled) {
@@ -442,6 +533,7 @@ export async function joinLanGuest(joinCode: string, signalingUrl?: string): Pro
     };
 
     socket.onopen = () => {
+      clearOpenTimer();
       if (stale()) return;
       socket.send(JSON.stringify({ type: "hello", role: "guest", code }));
       clearSignalingKeepAlive();

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  defaultSignalingUrlForBrowser,
   disconnectLan,
   getLanLastError,
   getLanRoomCode,
   getLanStatusMessage,
+  isMixedContentWsBlocked,
   joinLanGuest,
   startLanHost,
   subscribeLanCoop
@@ -14,15 +16,9 @@ type Props = {
   onClose: () => void;
 };
 
-function defaultWsUrl(): string {
-  if (typeof window === "undefined") return "ws://127.0.0.1:8765";
-  const host = window.location.hostname || "127.0.0.1";
-  return `ws://${host}:8765`;
-}
-
 export function LanCoopPanel({ onClose }: Props) {
   const role = useLanCoopRole();
-  const [signalingUrl, setSignalingUrl] = useState(defaultWsUrl);
+  const [signalingUrl, setSignalingUrl] = useState(defaultSignalingUrlForBrowser);
   const [joinInput, setJoinInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [, refresh] = useState(0);
@@ -74,9 +70,18 @@ export function LanCoopPanel({ onClose }: Props) {
         <header className="lan-coop-head">
           <h2 id="lan-coop-title">LAN co-op</h2>
           <p className="lan-coop-lead">
-            One player runs the <strong>signaling server</strong> on the LAN (<code>npm run coop-server</code>), then
-            hosts. The other machine opens the same game URL (or the host&apos;s IP) and joins with the code.
+            Host runs <code>npm run coop-server</code> (port 8765, allow it in Windows Firewall). Both browsers must load
+            the game over <strong>http://</strong> (e.g. <code>npm run dev -- --host 0.0.0.0</code> then open{" "}
+            <code>http://&lt;host-LAN-IP&gt;:5173</code>) — <strong>https:// GitHub Pages cannot open ws://</strong>.
+            Guest: set the signaling URL to <code>ws://&lt;host-LAN-IP&gt;:8765</code> (not localhost unless the server
+            is on your own PC).
           </p>
+          {isMixedContentWsBlocked(signalingUrl) && (
+            <p className="lan-coop-warn">
+              This page is HTTPS, so <code>ws://</code> signaling is blocked. Use a local HTTP dev URL on your LAN, or
+              ship <code>wss://</code> signaling — the hosted site cannot reach your PC&apos;s coop server otherwise.
+            </p>
+          )}
           <button type="button" className="lan-coop-close" onClick={() => !busy && onClose()} aria-label="Close">
             ×
           </button>

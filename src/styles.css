@@ -4204,6 +4204,22 @@ button.reset-game-btn:not(:disabled):hover {
   color: #f0a0a0;
 }
 
+.lan-coop-warn {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(230, 180, 90, 0.45);
+  background: rgba(60, 44, 20, 0.35);
+  color: #f5d9a8;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.lan-coop-warn code {
+  font-size: 0.92em;
+  color: #fff2cc;
+}
+
 .lan-coop-status {
   margin: 0 0 10px;
   font-size: 0.86rem;
