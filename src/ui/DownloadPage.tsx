@@ -78,3 +78,6 @@ export function DownloadPage({ onBack }: DownloadPageProps) {
     </div>
   );
 }
+
+// Default export for React.lazy()
+export default DownloadPage;

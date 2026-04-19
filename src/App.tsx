@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent, lazy, Suspense } from "react";
 import Phaser from "phaser";
 import { GameScene } from "./game/GameScene";
 import { inputController, type MoveDirection } from "./game/inputController";
@@ -28,12 +28,16 @@ import { FullInventoryScreen } from "./ui/FullInventoryScreen";
 import { InventoryBar } from "./ui/InventoryBar";
 import { LevelUpCelebration } from "./ui/LevelUpCelebration";
 import { SleepSplash } from "./ui/SleepSplash";
-import { DownloadPage } from "./ui/DownloadPage";
 import { DOWNLOAD_ROUTE } from "./routes";
 import { ShopItemDetailPanel } from "./ui/ShopItemDetailPanel";
 import { DevCheatConsole } from "./ui/DevCheatConsole";
 import { SkillTreeModal } from "./ui/SkillTreeModal";
 import type { ItemKey } from "./game/types";
+
+// Lazy-load the download page so it gets its own small JS chunk (~15 KB instead of
+// being bundled with the 2.8 MB main game). This makes the title screen and
+// main game load much faster; the download page only loads when visited.
+const LazyDownloadPage = lazy(() => import("./ui/DownloadPage"));
 
 /**
  * Feature flag for the 3D prototype overworld.
@@ -133,7 +137,20 @@ export default function App() {
   const { path, navigate } = useRoute();
 
   if (path === DOWNLOAD_ROUTE) {
-    return <DownloadPage onBack={() => navigate("/", true)} />;
+    return (
+      <Suspense
+        fallback={
+          <div className="download-page" style={{ background: "#0c1018", color: "#e4eaf4", display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh" }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: "1.1rem", marginBottom: "12px" }}>Loading download page...</div>
+              <div style={{ fontSize: "0.8rem", opacity: 0.6 }}>This should only happen once.</div>
+            </div>
+          </div>
+        }
+      >
+        <LazyDownloadPage onBack={() => navigate("/", true)} />
+      </Suspense>
+    );
   }
 
   // The UGC Studio is rendered when the URL is `/ugc`.
