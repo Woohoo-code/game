@@ -69,6 +69,9 @@ export function normalizeHairStyle(value: unknown): HairStyle {
   return HAIR_STYLE_ORDER.includes(value as HairStyle) ? (value as HairStyle) : "short";
 }
 
+/** Stables mounts — each adds +1 speed in battle (max five owned). */
+export type HorseKey = "dustPony" | "moorCob" | "riverPalfrey" | "sunCourser" | "stormcharger";
+
 export type FacialHairStyle = "none" | "stubble" | "goatee" | "shortBeard" | "fullBeard";
 
 export const FACIAL_HAIR_ORDER: readonly FacialHairStyle[] = [
@@ -119,12 +122,17 @@ export interface PlayerState {
   items: Record<ItemKey, number>;
   /** Quick-use slots for keys 1–9 then 0; null = empty. Always length 10 when normalized. */
   itemHotbar: (ItemKey | null)[];
+  /** Gatherable overworld resources awaiting sale at a market. */
+  resources: Record<ResourceKey, number>;
   map: string;
   x: number;
   y: number;
   monstersDefeated: number;
   bountyTier: number;
+  /** True once the Void Titan in the *current* realm has been defeated (cleared when crossing a rift). */
   bossDefeated: boolean;
+  /** Total Void Titans defeated across all realms (UGC Studio unlocks after two). */
+  voidTitansDefeated: number;
   appearance: PlayerAppearance;
   /** True once the player has gone through the character creation screen. */
   hasCreatedCharacter: boolean;
@@ -136,6 +144,13 @@ export interface PlayerState {
   pets: Pet[];
   /** The currently active pet (follows in overworld, assists in battle). Null = no pet out. */
   activePetId: string | null;
+  /** Owned mounts from the stables; each grants +1 battle speed, capped at five total. */
+  horsesOwned: HorseKey[];
+  /**
+   * Stables pet drill in progress: companion levels up when `readyAt` (epoch ms) is reached.
+   * Only one at a time; advanced by the overworld clock tick while not in battle.
+   */
+  petStableTraining: { petId: string; readyAt: number } | null;
   /**
    * After a knockout, each gold short of the 10g revival tithe requires one wild
    * kill to clear. While positive, shops, inn, pets, training, and guild payouts are locked.
@@ -161,9 +176,14 @@ export interface Pet {
 /** Distinct overworld regions with their own flora, palette, and monster pools. */
 export type BiomeKind = "meadow" | "forest" | "desert" | "swamp" | "tundra";
 
+/** Combat affinity for damage modifiers (weapon/skills vs foe). Cycle: fire→air→earth→water→fire. */
+export type ElementKind = "fire" | "water" | "earth" | "air";
+
 export interface EnemyDefinition {
   id: string;
   name: string;
+  /** Used for type effectiveness when the player attacks this foe. */
+  element: ElementKind;
   maxHp: number;
   attack: number;
   defense: number;
@@ -175,6 +195,16 @@ export interface EnemyDefinition {
   weightGrowthPerLevel: number;
   maxWeight: number;
   /**
+   * Lowest realm tier where this enemy can appear (`realmTier` from world state).
+   * Omit for 1 — same as original Aetheria.
+   */
+  minRealmTier?: number;
+  /**
+   * Highest realm tier where this enemy appears. Omit for no cap.
+   * World-1 roster uses `maxRealmTier: 1` so portal realms get their own pools.
+   */
+  maxRealmTier?: number;
+  /**
    * Biomes this enemy can spawn in. Omit (or empty) to allow every biome.
    * Used to gate encounter pools regionally.
    */
@@ -183,6 +213,90 @@ export interface EnemyDefinition {
   bodyShape?: MonsterBodyShape;
   /** Optional color overrides applied to the 3D model. */
   customColors?: { primary?: string; accent?: string };
+  /**
+   * When true, this species appears only as a visible overworld roamer (not in random encounter rolls).
+   */
+  visibleRoamer?: boolean;
+}
+
+/** A visible monster placed on the procedural map until the player engages it. */
+export interface RoamingMonster {
+  id: string;
+  enemyId: string;
+  tx: number;
+  ty: number;
+}
+
+/** Gatherable overworld flora — sold to the town market for gold. */
+export type ResourceKey =
+  | "meadowBlossom"
+  | "forestFern"
+  | "sunOrchid"
+  | "glowCap"
+  | "mirrorLily"
+  | "emberMoss"
+  | "frostPetal"
+  | "starAnise"
+  | "voidTruffle";
+
+/** A harvestable plant/mushroom placed on the procedural map until picked. */
+export interface ResourceNode {
+  id: string;
+  resourceKey: ResourceKey;
+  tx: number;
+  ty: number;
+}
+
+/**
+ * Dungeon tile codes. Dungeons are small self-contained maps overlaid on the
+ * same TILE grid as the overworld (indices 0..dungeonW-1 × 0..dungeonH-1).
+ */
+export const DUNGEON_TILE_WALL = 0;
+export const DUNGEON_TILE_FLOOR = 1;
+/** Stepping onto this tile lets the player leave and return to the overworld. */
+export const DUNGEON_TILE_EXIT = 2;
+/** Decorative pillar — blocks movement, rendered differently from a wall. */
+export const DUNGEON_TILE_PILLAR = 3;
+
+/** Type-level set of dungeon tile codes for discriminated handling. */
+export type DungeonTileCode =
+  | typeof DUNGEON_TILE_WALL
+  | typeof DUNGEON_TILE_FLOOR
+  | typeof DUNGEON_TILE_EXIT
+  | typeof DUNGEON_TILE_PILLAR;
+
+/** A treasure chest inside a dungeon. */
+export interface DungeonChest {
+  id: string;
+  tx: number;
+  ty: number;
+  opened: boolean;
+  /** Preselected loot so re-opening the chest isn't re-randomized. */
+  lootItem: ItemKey;
+  /** Gold contained in the chest. */
+  lootGold: number;
+}
+
+/** A visible monster placed inside the dungeon until the player engages it. */
+export interface DungeonRoamer {
+  id: string;
+  enemyId: string;
+  tx: number;
+  ty: number;
+}
+
+/** Live state of the currently-loaded dungeon (null when the player isn't inside). */
+export interface DungeonState {
+  seed: number;
+  width: number;
+  height: number;
+  /** row-major width*height tile codes (see DUNGEON_TILE_* consts) */
+  tiles: number[];
+  /** Tile the player materializes on when entering. Also a valid exit tile. */
+  entryTx: number;
+  entryTy: number;
+  chests: DungeonChest[];
+  roamers: DungeonRoamer[];
 }
 
 /** Body shapes available to both built-in and UGC monsters. */
@@ -202,11 +316,16 @@ export interface EnemyState extends EnemyDefinition {
 
 export type BattlePhase = "idle" | "playerTurn" | "enemyTurn" | "won" | "lost" | "escaped";
 
+/** Player combat approach — changes outgoing/incoming damage and (for Fortune) win rewards. */
+export type BattleStanceKind = "balanced" | "stealth" | "power" | "fortune";
+
 export interface BattleState {
   inBattle: boolean;
   phase: BattlePhase;
   log: string[];
   enemy: EnemyState | null;
+  /** Active fighting style until you change it or the battle ends. */
+  stance: BattleStanceKind;
   /**
    * Shared skill lockout: after casting any skill, all skills are unusable until
    * this hits 0 (ticks down by 1 after each enemy turn). Casting sets it from
@@ -217,6 +336,16 @@ export interface BattleState {
   itemAttackBonus: number;
   /** Flat defense from consumables used this fight; cleared when the battle ends. */
   itemDefenseBonus: number;
+  /**
+   * After using Dodge, the next enemy attack rolls evasion (speed + stance) before damage.
+   * Cleared when that swing resolves.
+   */
+  dodgeReady?: boolean;
+  /**
+   * Fraction (0–0.55) shaved from the next incoming foe hit after using Brace.
+   * Cleared when that hit lands.
+   */
+  nextHitMitigation?: number;
 }
 
 export interface WorldState {
@@ -235,11 +364,15 @@ export interface WorldState {
   canMarket: boolean;
   /** Standing on the post-boss dimensional rift (same tile as the former arena). */
   canVoidPortal: boolean;
+  /** Standing on the return rift near the spawn point in a portal realm (realm 2+). */
+  canReturnPortal: boolean;
   /**
    * When true, the boss landmark on this save's world seed is rendered as {@link BuildingKind} `voidPortal`.
    * Cleared when crossing into a new realm.
    */
   voidPortalActive: boolean;
+  /** Realm index: 1 = original world, 2+ = post-portal worlds. */
+  realmTier: number;
   encounterRate: number;
   /** Random encounter rolls are skipped until this hits 0 (ticks down on each wilderness tile step). */
   encounterGraceSteps: number;
@@ -252,6 +385,21 @@ export interface WorldState {
    * Advances in real time while exploring; pauses in battle.
    */
   worldTime: number;
+  /** Visible wilderness foes (not used for random encounter rolls). */
+  roamingMonsters: RoamingMonster[];
+  /** Harvestable flora on the overworld — sold at town markets. */
+  resourceNodes: ResourceNode[];
+  /** Standing on the dungeon entrance building (realm 2+ only). */
+  canDungeon: boolean;
+  /** Standing on the entry/exit tile inside an active dungeon. */
+  canLeaveDungeon: boolean;
+  /** True when the player is inside a dungeon — overworld rendering is suspended. */
+  inDungeon: boolean;
+  /** Active dungeon map + contents (null when outside a dungeon). */
+  dungeon: DungeonState | null;
+  /** Cached overworld pixel position, restored when the player leaves the dungeon. */
+  overworldReturnX: number;
+  overworldReturnY: number;
 }
 
 /** Shared fields for all marketplace-listed UGC creations. */
@@ -266,6 +414,8 @@ export interface UgcListing {
 export interface UgcMonster extends UgcListing {
   id: string;
   name: string;
+  /** Combat element; omitted on older saves — inferred from body shape when hydrating. */
+  element?: ElementKind;
   bodyShape: MonsterBodyShape;
   colorPrimary: string;
   colorAccent: string;

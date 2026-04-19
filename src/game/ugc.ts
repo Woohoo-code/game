@@ -1,4 +1,5 @@
 import type {
+  ElementKind,
   EnemyDefinition,
   EnemyState,
   MonsterBodyShape,
@@ -59,6 +60,20 @@ export const MONSTER_BODY_SHAPES: readonly MonsterBodyShape[] = [
   "scorpion"
 ] as const;
 
+function elementForBodyShape(shape: MonsterBodyShape): ElementKind {
+  const m: Record<MonsterBodyShape, ElementKind> = {
+    slime: "water",
+    bat: "air",
+    goblin: "earth",
+    wolf: "earth",
+    wraith: "air",
+    drake: "fire",
+    spider: "earth",
+    scorpion: "fire"
+  };
+  return m[shape];
+}
+
 export const BODY_SHAPE_LABEL: Record<MonsterBodyShape, string> = {
   slime: "Blob",
   bat: "Flyer",
@@ -86,6 +101,7 @@ export function defaultMonsterDraft(shape: MonsterBodyShape, playerLevel: number
   return {
     name: `Custom ${BODY_SHAPE_LABEL[shape]}`,
     bodyShape: shape,
+    element: elementForBodyShape(shape),
     colorPrimary: "#8855cc",
     colorAccent: "#221133",
     maxHp: b.hp,
@@ -155,6 +171,7 @@ export function ugcMonsterToEnemyDef(m: UgcMonster): EnemyDefinition {
   return {
     id: m.id,
     name: m.name,
+    element: m.element ?? elementForBodyShape(m.bodyShape),
     maxHp: m.maxHp,
     attack: m.attack,
     defense: m.defense,

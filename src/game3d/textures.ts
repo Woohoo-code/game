@@ -673,18 +673,28 @@ const BIOME_FLOOR_DRAWERS: Record<BiomeFloorKind, (ctx: CanvasRenderingContext2D
   tundra: drawSnow
 };
 
+const REALM2_FLOOR_DRAWERS: Record<BiomeFloorKind, (ctx: CanvasRenderingContext2D, size: number) => void> = {
+  meadow: drawMud,
+  forest: drawSnow,
+  desert: drawRoad,
+  swamp: drawWater,
+  tundra: drawForestFloor
+};
+
 /**
  * Returns the ground/grass texture that best represents a biome. For "grass"-kind
  * tiles, this completely replaces the default grass texture. Road/town kinds stay
  * the same everywhere; water and forest can be tinted via {@link BIOME_TINT}.
  */
-export function getBiomeGroundTexture(biome: BiomeKind): THREE.CanvasTexture {
-  const key = `biome-${biome}`;
+export function getBiomeGroundTexture(biome: BiomeKind, realmTier: number = 1): THREE.CanvasTexture {
+  const tier = Math.max(1, Math.floor(realmTier));
+  const key = `biome-${tier}-${biome}`;
   const cached = cache.get(key);
   if (cached) return cached;
   const size = PROCEDURAL_TEX_SIZE;
   const { canvas, ctx } = makeCanvas(size);
-  BIOME_FLOOR_DRAWERS[biome](ctx, size);
+  const drawers = tier >= 2 ? REALM2_FLOOR_DRAWERS : BIOME_FLOOR_DRAWERS;
+  drawers[biome](ctx, size);
   const tex = new THREE.CanvasTexture(canvas);
   applyTextureQuality(tex);
   cache.set(key, tex);
@@ -733,6 +743,21 @@ export const BIOME_TINT: Record<BiomeKind, Record<TerrainKind, string>> = {
     forest: "#cdd8dc"
   }
 };
+
+const BIOME_TINT_REALM2: Record<BiomeKind, Record<TerrainKind, string>> = {
+  meadow: { grass: "#ffffff", road: "#d7cab0", water: "#6ea2ba", town: "#e7d9c2", forest: "#c4b79a" },
+  forest: { grass: "#ffffff", road: "#c9d3e2", water: "#d9e8ff", town: "#dfe7f6", forest: "#dde8f4" },
+  desert: { grass: "#ffffff", road: "#ffcf8c", water: "#f0b97e", town: "#ffdcb2", forest: "#e8bb77" },
+  swamp: { grass: "#ffffff", road: "#9ba8b8", water: "#6a86a4", town: "#b1becf", forest: "#8897ab" },
+  tundra: { grass: "#ffffff", road: "#b9d5c1", water: "#8eb8a3", town: "#c6decf", forest: "#9ebba9" }
+};
+
+/** Realm-aware biome tint for non-grass terrain kinds. */
+export function biomeTerrainTint(biome: BiomeKind, kind: TerrainKind, realmTier: number = 1): string {
+  const tier = Math.max(1, Math.floor(realmTier));
+  const map = tier >= 2 ? BIOME_TINT_REALM2 : BIOME_TINT;
+  return map[biome][kind];
+}
 
 /** Procedural roof tile texture (red clay / gray slate variants). */
 export function getRoofTexture(variant: "red" | "slate" | "thatch" | "gold"): THREE.CanvasTexture {
@@ -805,6 +830,8 @@ const WALL_TEXTURE_SEED: Record<
   | "petShop"
   | "boss"
   | "voidPortal"
+  | "returnPortal"
+  | "dungeon"
   | "library"
   | "forge"
   | "chapel"
@@ -819,6 +846,8 @@ const WALL_TEXTURE_SEED: Record<
   petShop: 66,
   boss: 55,
   voidPortal: 56,
+  returnPortal: 57,
+  dungeon: 58,
   library: 77,
   forge: 88,
   chapel: 99,
@@ -842,6 +871,8 @@ export function getWallTexture(
     petShop: { base: "#8fc4b4", accent: "#6aa898", trim: "#2a5c50" },
     boss: { base: "#3b1d4a", accent: "#612a78", trim: "#1a0a25" },
     voidPortal: { base: "#1a3a52", accent: "#3a7aa8", trim: "#0a2840" },
+    returnPortal: { base: "#1f3a2a", accent: "#4a8a6a", trim: "#0a2418" },
+    dungeon: { base: "#3b3238", accent: "#2a2128", trim: "#14100e" },
     library: { base: "#a8b4c8", accent: "#7a8aa8", trim: "#3a4a62" },
     forge: { base: "#5a5654", accent: "#3a3634", trim: "#2a1810" },
     chapel: { base: "#e4e0d8", accent: "#c8c4b8", trim: "#7a6848" },

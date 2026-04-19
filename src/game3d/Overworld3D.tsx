@@ -2,8 +2,6 @@ import { useEffect, useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Cloud, Clouds, Sky, Stars } from "@react-three/drei";
 import * as THREE from "three";
-import { isLanGuest, sendGuestMove } from "../coop/lanCoop";
-import { useLanCoopRole } from "../coop/useLanCoopRole";
 import { inputController, type MoveDirection } from "../game/inputController";
 import { gameStore } from "../game/state";
 import { useGameStore } from "../game/useGameStore";
@@ -11,8 +9,11 @@ import { MAP_H, MAP_W } from "../game/worldMap";
 import { WORLD_CLOCK_TICK_FRACTION, nightVisualBlend, sunHeight01 } from "../game/worldClock";
 import { Buildings } from "./Buildings";
 import { AmbientSparkles, GroundDecorations, TownFencing } from "./Decorations";
+import { Dungeon3D } from "./Dungeon3D";
 import { Pet3D } from "./Pet3D";
 import { Player3D } from "./Player3D";
+import { ResourceNodes3D } from "./ResourceNodes3D";
+import { RoamingMonsters3D } from "./RoamingMonsters3D";
 import { Forests, Terrain } from "./Terrain";
 
 const KEY_TO_DIR: Record<string, MoveDirection> = {
@@ -39,7 +40,6 @@ function keyboardTargetIsTyping(event: KeyboardEvent): boolean {
 
 export function Overworld3D() {
   const snapshot = useGameStore();
-  const lanRole = useLanCoopRole();
   const worldVersion = snapshot.world.worldVersion;
   const worldTimeRaw = snapshot.world.worldTime ?? 0;
   const worldTime = Number.isFinite(worldTimeRaw) ? worldTimeRaw : 0;
@@ -94,12 +94,11 @@ export function Overworld3D() {
   const cloudOpacityB = THREE.MathUtils.lerp(0.45, 0.12, nb);
 
   useEffect(() => {
-    if (lanRole === "guest") return;
     const id = window.setInterval(() => {
       gameStore.tickWorldClock(WORLD_CLOCK_TICK_FRACTION);
     }, 1000);
     return () => window.clearInterval(id);
-  }, [lanRole]);
+  }, []);
 
   useEffect(() => {
     const onDown = (event: KeyboardEvent) => {
@@ -107,10 +106,6 @@ export function Overworld3D() {
       const dir = KEY_TO_DIR[event.key];
       if (!dir) return;
       event.preventDefault();
-      if (isLanGuest()) {
-        sendGuestMove(dir, true);
-        return;
-      }
       inputController.setPressed(dir, true);
     };
     const onUp = (event: KeyboardEvent) => {
@@ -118,10 +113,6 @@ export function Overworld3D() {
       const dir = KEY_TO_DIR[event.key];
       if (!dir) return;
       event.preventDefault();
-      if (isLanGuest()) {
-        sendGuestMove(dir, false);
-        return;
-      }
       inputController.setPressed(dir, false);
     };
     window.addEventListener("keydown", onDown);
@@ -131,7 +122,7 @@ export function Overworld3D() {
       window.removeEventListener("keyup", onUp);
       inputController.clear();
     };
-  }, [lanRole]);
+  }, []);
 
   const sunTilt = 0.48 - nb * 0.36;
 
@@ -149,59 +140,61 @@ export function Overworld3D() {
           gl.outputColorSpace = THREE.SRGBColorSpace;
         }}
       >
-        <color attach="background" args={[bgHex]} />
-        <fog attach="fog" args={[fogHex, fogNearEff, fogFarEff]} />
+        <color attach="background" args={[snapshot.world.inDungeon ? "#060406" : bgHex]} />
+        <fog attach="fog" args={snapshot.world.inDungeon ? ["#07040a", 8, 28] : [fogHex, fogNearEff, fogFarEff]} />
 
-        <Sky
-          distance={450000}
-          sunPosition={sunPosition}
-          inclination={sunTilt}
-          azimuth={0.25 + nb * 0.12}
-          rayleigh={0.9 - nb * 0.54}
-          turbidity={7 + nb * 16}
-          mieCoefficient={0.003 + nb * 0.022}
-          mieDirectionalG={0.85 - nb * 0.22}
-        />
-
-        {nb > 0.32 && (
-          <Stars
-            radius={140}
-            depth={52}
-            count={1600}
-            factor={3.2}
-            saturation={0}
-            fade
-            speed={0.85}
-          />
+        {!snapshot.world.inDungeon && (
+          <>
+            <Sky
+              distance={450000}
+              sunPosition={sunPosition}
+              inclination={sunTilt}
+              azimuth={0.25 + nb * 0.12}
+              rayleigh={0.9 - nb * 0.54}
+              turbidity={7 + nb * 16}
+              mieCoefficient={0.003 + nb * 0.022}
+              mieDirectionalG={0.85 - nb * 0.22}
+            />
+            {nb > 0.32 && (
+              <Stars
+                radius={140}
+                depth={52}
+                count={1600}
+                factor={3.2}
+                saturation={0}
+                fade
+                speed={0.85}
+              />
+            )}
+            <Clouds material={THREE.MeshBasicMaterial}>
+              <Cloud
+                seed={worldVersion}
+                segments={18}
+                bounds={view.cloudBounds}
+                volume={8}
+                color="#f4f6fb"
+                position={[MAP_W / 2, 22, MAP_H / 2]}
+                fade={Math.min(120, 36 + view.cloudBounds[0])}
+                opacity={cloudOpacityA}
+              />
+              <Cloud
+                seed={worldVersion + 7}
+                segments={14}
+                bounds={[view.cloudBounds[0] * 0.65, 2, view.cloudBounds[2] * 0.65]}
+                volume={5}
+                color="#e6ecf4"
+                position={[MAP_W / 3, 18, MAP_H / 4]}
+                opacity={cloudOpacityB}
+              />
+            </Clouds>
+          </>
         )}
 
-        <Clouds material={THREE.MeshBasicMaterial}>
-          <Cloud
-            seed={worldVersion}
-            segments={18}
-            bounds={view.cloudBounds}
-            volume={8}
-            color="#f4f6fb"
-            position={[MAP_W / 2, 22, MAP_H / 2]}
-            fade={Math.min(120, 36 + view.cloudBounds[0])}
-            opacity={cloudOpacityA}
-          />
-          <Cloud
-            seed={worldVersion + 7}
-            segments={14}
-            bounds={[view.cloudBounds[0] * 0.65, 2, view.cloudBounds[2] * 0.65]}
-            volume={5}
-            color="#e6ecf4"
-            position={[MAP_W / 3, 18, MAP_H / 4]}
-            opacity={cloudOpacityB}
-          />
-        </Clouds>
-
-        <hemisphereLight args={["#cde3f2", "#2b2a36", hemiIntensity]} />
-        <ambientLight intensity={ambIntensity} />
+        <hemisphereLight args={["#cde3f2", "#2b2a36", snapshot.world.inDungeon ? 0 : hemiIntensity]} />
+        <ambientLight intensity={snapshot.world.inDungeon ? 0 : ambIntensity} />
         <directionalLight
           position={[MAP_W * 0.75, 38, MAP_H * 0.3]}
-          intensity={sunIntensity}
+          intensity={snapshot.world.inDungeon ? 0 : sunIntensity}
           color={sunColor}
           castShadow
           shadow-mapSize-width={2048}
@@ -222,14 +215,22 @@ export function Overworld3D() {
           color="#b8d4ff"
         />
 
-        <Terrain />
-        <Forests />
-        <GroundDecorations />
-        <TownFencing />
-        <AmbientSparkles />
-        <Buildings />
+        {snapshot.world.inDungeon ? (
+          <Dungeon3D />
+        ) : (
+          <>
+            <Terrain />
+            <Forests />
+            <GroundDecorations />
+            <TownFencing />
+            <AmbientSparkles />
+            <Buildings />
+            <ResourceNodes3D />
+            <RoamingMonsters3D />
+          </>
+        )}
         <Player3D />
-        <Pet3D />
+        {!snapshot.world.inDungeon && <Pet3D />}
       </Canvas>
     </div>
   );

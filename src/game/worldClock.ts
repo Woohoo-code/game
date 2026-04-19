@@ -31,12 +31,12 @@ export function isNightWilds(worldTime: number): boolean {
   return sunHeight01(worldTime) < 0.38;
 }
 
-/** Multiplies per-step encounter rate (still clamped globally). */
+/** Multiplies per-step encounter rate (still clamped globally). Stronger at deeper night. */
 export function nightEncounterRateMultiplier(worldTime: number): number {
   if (!isNightWilds(worldTime)) return 1;
   const s = sunHeight01(worldTime);
   const depth = Math.min(1, (0.38 - s) / 0.38);
-  return 1 + 0.34 * depth;
+  return 1 + 0.82 * depth;
 }
 
 /** Applied to rolled enemy HP/ATK/DEF/SPD after level scaling. */

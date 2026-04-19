@@ -33,6 +33,13 @@ export type BuildingKind =
   | "boss"
   /** Replaces the boss arena tile after the Void Titan is defeated — not generated initially. */
   | "voidPortal"
+  /**
+   * Stable rift placed near the spawn of portal realms (realmTier ≥ 2) that sends
+   * the player back to a freshly generated tier-1 world.
+   */
+  | "returnPortal"
+  /** Ominous entrance with a carved "DUNGEON" sign — only generated in realm 2+. */
+  | "dungeon"
   | "library"
   | "forge"
   | "chapel"
@@ -47,6 +54,7 @@ export interface GeneratedBuilding {
 
 export interface GeneratedWorld {
   seed: number;
+  realmTier: number;
   width: number;
   height: number;
   /** row-major width*height tile codes */
@@ -87,7 +95,14 @@ function worldAxisScale(): number {
   return Math.sqrt(WORLD_AREA_MULTIPLIER);
 }
 
-export function generateWorld(seed: number = randomSeed()): GeneratedWorld {
+export function generateWorld(
+  seed: number = randomSeed(),
+  opts?: {
+    /** 1 = original Aetheria, 2+ = portal realms with alternate biome/building themes. */
+    realmTier?: number;
+  }
+): GeneratedWorld {
+  const realmTier = Math.max(1, Math.floor(opts?.realmTier ?? 1));
   const rng = mulberry32(seed);
   const ri = (lo: number, hi: number) => Math.floor(rng() * (hi - lo + 1)) + lo;
 
@@ -185,15 +200,17 @@ export function generateWorld(seed: number = randomSeed()): GeneratedWorld {
   carveTown(townB);
 
   // ── 4. Buildings ────────────────────────────────────────────────────────
-  // Guaranteed: core services (inn, shop, train, guild, pet) plus five extra town types.
+  // Every village includes inn + shop + guild; extras vary by realm.
   const buildings: GeneratedBuilding[] = [];
-  const townABuildingKinds: BuildingKind[] = ["inn", "shop", "library", "forge", "market"];
-  const townBBuildingKinds: BuildingKind[] = ["train", "guild", "petShop", "chapel", "stables"];
-  if (rng() < 0.5) {
-    townBBuildingKinds.push("inn");
-  }
-  if (rng() < 0.4) {
-    townABuildingKinds.push("guild");
+  const villageCore: BuildingKind[] = ["inn", "shop", "guild"];
+  let townABuildingKinds: BuildingKind[];
+  let townBBuildingKinds: BuildingKind[];
+  if (realmTier >= 2) {
+    townABuildingKinds = [...villageCore, "library", "forge", "market", "chapel", "stables"];
+    townBBuildingKinds = [...villageCore, "library", "forge", "market", "chapel", "stables", "train", "petShop"];
+  } else {
+    townABuildingKinds = [...villageCore, "library", "forge", "market"];
+    townBBuildingKinds = [...villageCore, "train", "petShop", "chapel", "stables"];
   }
 
   const placeBuildingsAround = (center: { x: number; y: number }, kinds: BuildingKind[]) => {
@@ -242,6 +259,96 @@ export function generateWorld(seed: number = randomSeed()): GeneratedWorld {
   }
   buildings.push({ kind: "boss", x: boss.x, y: boss.y });
 
+  // ── 5b. Return portal (portal realms only) ──────────────────────────────
+  // A stable rift placed next to the spawn town so the player can always find
+  // their way back to a tier-1 world. Offset a few tiles so it isn't buried
+  // under one of the town buildings, and clear water/forest on that tile.
+  if (realmTier >= 2) {
+    const isBuildingOccupied = (x: number, y: number) =>
+      buildings.some((b) => b.x === x && b.y === y);
+    const portalOffsets: Array<{ dx: number; dy: number }> = [
+      { dx: 0, dy: -3 },
+      { dx: 0, dy: 3 },
+      { dx: -4, dy: 0 },
+      { dx: 4, dy: 0 },
+      { dx: -4, dy: -3 },
+      { dx: 4, dy: -3 },
+      { dx: -4, dy: 3 },
+      { dx: 4, dy: 3 },
+      { dx: 0, dy: -4 },
+      { dx: 0, dy: 4 }
+    ];
+    let portalPos: { x: number; y: number } | null = null;
+    for (const { dx, dy } of portalOffsets) {
+      const px = townA.x + dx;
+      const py = townA.y + dy;
+      if (px < 1 || py < 1 || px >= width - 1 || py >= height - 1) continue;
+      if (isBuildingOccupied(px, py)) continue;
+      const t = getT(px, py);
+      // Avoid carving straight through town tiles or roads.
+      if (t === TERRAIN_TOWN || t === TERRAIN_ROAD) continue;
+      portalPos = { x: px, y: py };
+      break;
+    }
+    if (portalPos) {
+      // Clear the portal tile (and a one-tile ring) of water/forest so the
+      // player can actually walk onto it.
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const px = portalPos.x + dx;
+          const py = portalPos.y + dy;
+          if (!inBounds(px, py)) continue;
+          const t = getT(px, py);
+          if (t === TERRAIN_WATER || t === TERRAIN_FOREST) {
+            setT(px, py, TERRAIN_GRASS);
+          }
+        }
+      }
+      buildings.push({ kind: "returnPortal", x: portalPos.x, y: portalPos.y });
+    }
+
+    // ── 5c. Dungeon entrance ──────────────────────────────────────────────
+    // Place a dungeon building on a remote grass tile (away from both towns,
+    // boss, and the return portal) so finding it feels exploratory.
+    const dungeonPos = (() => {
+      const occupied = new Set<string>();
+      for (const b of buildings) occupied.add(`${b.x},${b.y}`);
+      const candidates: { x: number; y: number; score: number }[] = [];
+      for (let y = 2; y < height - 2; y++) {
+        for (let x = 2; x < width - 2; x++) {
+          if (occupied.has(`${x},${y}`)) continue;
+          const t = getT(x, y);
+          if (t !== TERRAIN_GRASS && t !== TERRAIN_ROAD) continue;
+          const dA = Math.hypot(x - townA.x, y - townA.y);
+          const dB = Math.hypot(x - townB.x, y - townB.y);
+          const dBoss = Math.hypot(x - boss.x, y - boss.y);
+          // Prefer tiles that are far from everything but not adjacent to map edge.
+          const score =
+            Math.min(dA, dB) * 1.1 + dBoss * 0.4 + Math.min(x, y, width - x, height - y) * 0.2;
+          if (dA < 8 || dB < 8 || dBoss < 6) continue;
+          candidates.push({ x, y, score });
+        }
+      }
+      if (candidates.length === 0) return null;
+      candidates.sort((a, b) => b.score - a.score);
+      // Pick from the top 10% for a bit of variation per world.
+      const topCount = Math.max(1, Math.floor(candidates.length * 0.1));
+      const pick = candidates[Math.floor(rng() * topCount)]!;
+      return { x: pick.x, y: pick.y };
+    })();
+    if (dungeonPos) {
+      setT(dungeonPos.x, dungeonPos.y, TERRAIN_GRASS);
+      // Ensure the adjacent tile north is walkable (sign faces south by convention).
+      if (inBounds(dungeonPos.x, dungeonPos.y - 1)) {
+        const t = getT(dungeonPos.x, dungeonPos.y - 1);
+        if (t === TERRAIN_WATER || t === TERRAIN_FOREST) {
+          setT(dungeonPos.x, dungeonPos.y - 1, TERRAIN_GRASS);
+        }
+      }
+      buildings.push({ kind: "dungeon", x: dungeonPos.x, y: dungeonPos.y });
+    }
+  }
+
   // ── 6. Roads connecting landmarks ───────────────────────────────────────
   /** Carves an L-shaped path (x then y), turning water into bridges and forest into road. */
   const carveRoad = (x1: number, y1: number, x2: number, y2: number) => {
@@ -273,7 +380,7 @@ export function generateWorld(seed: number = randomSeed()): GeneratedWorld {
   }
 
   // ── 7. Biome regions (Voronoi with meadow anchored at town A) ───────────
-  const biomes = generateBiomeMap(width, height, townA, townB, rng);
+  const biomes = generateBiomeMap(width, height, townA, townB, rng, realmTier);
 
   // ── 8. Spawn on town A ──────────────────────────────────────────────────
   const spawnX = townA.x;
@@ -281,6 +388,7 @@ export function generateWorld(seed: number = randomSeed()): GeneratedWorld {
 
   return {
     seed,
+    realmTier,
     width,
     height,
     tiles,
@@ -318,7 +426,8 @@ function generateBiomeMap(
   height: number,
   townA: { x: number; y: number },
   townB: { x: number; y: number },
-  rng: () => number
+  rng: () => number,
+  realmTier: number
 ): Uint8Array {
   const out = new Uint8Array(width * height);
 
@@ -327,12 +436,22 @@ function generateBiomeMap(
   // Meadow anchors on both towns. Weight varies per world so some starts are
   // a sprawling meadow kingdom and others are tiny green islands in a
   // dominant foreign biome.
-  const anchors: Anchor[] = [
-    { x: townA.x, y: townA.y, biome: "meadow", weight: 0.85 + rng() * 0.55 },
-    { x: townB.x, y: townB.y, biome: "meadow", weight: 0.75 + rng() * 0.5 }
-  ];
+  const anchors: Anchor[] =
+    realmTier >= 2
+      ? [
+          // No "safe meadow bubble" in portal realms — seed with harsher domains.
+          { x: townA.x, y: townA.y, biome: "desert", weight: 1.05 + rng() * 0.7 },
+          { x: townB.x, y: townB.y, biome: "swamp", weight: 0.95 + rng() * 0.65 }
+        ]
+      : [
+          { x: townA.x, y: townA.y, biome: "meadow", weight: 0.85 + rng() * 0.55 },
+          { x: townB.x, y: townB.y, biome: "meadow", weight: 0.75 + rng() * 0.5 }
+        ];
 
-  const deck: BiomeKind[] = ["forest", "desert", "swamp", "tundra", "forest", "desert", "tundra", "swamp"];
+  const deck: BiomeKind[] =
+    realmTier >= 2
+      ? ["desert", "swamp", "tundra", "forest", "desert", "swamp", "tundra", "forest", "desert", "swamp"]
+      : ["forest", "desert", "swamp", "tundra", "forest", "desert", "tundra", "swamp"];
   for (let i = deck.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [deck[i], deck[j]] = [deck[j], deck[i]];
@@ -340,7 +459,7 @@ function generateBiomeMap(
 
   // 2–6 additional anchors — so worlds range from "two big biomes split in
   // half" to "fragmented mosaic of six small pockets".
-  const extraAnchors = 2 + Math.floor(rng() * 5);
+  const extraAnchors = realmTier >= 2 ? 4 + Math.floor(rng() * 4) : 2 + Math.floor(rng() * 5);
 
   // 35% chance one anchor becomes "dominant" (much larger weight), letting a
   // single biome theme most of the world occasionally.
