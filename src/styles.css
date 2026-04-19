@@ -575,10 +575,35 @@ html[data-app-screen="create"] .viewport-scaler-inner > .character-create {
 }
 
 .download-page-hint {
-  margin: 0;
+  margin: 0 0 16px;
   font-size: 0.78rem;
   line-height: 1.45;
   color: #7a8aa0;
+}
+
+.download-page-whatsnew {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(100, 140, 200, 0.2);
+  font-size: 0.82rem;
+  color: #9ab0d4;
+}
+
+.download-page-whatsnew strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #c8d9f2;
+  font-size: 0.85rem;
+}
+
+.download-page-whatsnew ul {
+  margin: 0;
+  padding-left: 1.3em;
+  line-height: 1.4;
+}
+
+.download-page-whatsnew li {
+  margin-bottom: 4px;
 }
 
 .download-page-secondary {

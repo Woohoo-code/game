@@ -35,13 +35,33 @@ export function DownloadPage({ onBack }: DownloadPageProps) {
             </span>
             <span className="download-page-meta-label">Windows portable</span> v{DESKTOP_EXE_VERSION}
           </p>
-          <a className="download-page-primary" href={exeUrl} rel="noopener noreferrer">
+
+          <a
+            className="download-page-primary"
+            href={exeUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            download={`MonsterSlayer-${DESKTOP_EXE_VERSION}-Portable.exe`}
+          >
             Download MonsterSlayer-{DESKTOP_EXE_VERSION}-Portable.exe
           </a>
+
           <p className="download-page-hint">
-            If Windows SmartScreen appears, choose <strong>More info</strong> → <strong>Run anyway</strong> — the file
-            is not signed yet.
+            ~86 MB • Portable (no installer). If Windows SmartScreen warns, choose{" "}
+            <strong>More info → Run anyway</strong>. The build is not code-signed yet.
           </p>
+
+          <div className="download-page-whatsnew">
+            <strong>What’s new in V1.0.9</strong>
+            <ul>
+              <li>Storyline pacing rebalanced (harder early chapters) + fixed Chapter 4 getting stuck</li>
+              <li>Dungeon treasure chests now block movement; “Open” button stays visible</li>
+              <li>Overworld shops no longer appear inside dungeons</li>
+              <li>Royal Hall prompt stays on screen</li>
+              <li>Walking animation for arms/legs + correct seated riding pose on horse</li>
+              <li>Town buildings no longer spawn outside the plaza</li>
+            </ul>
+          </div>
         </div>
 
         <p className="download-page-secondary">
