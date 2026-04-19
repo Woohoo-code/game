@@ -3,7 +3,7 @@ import { ARMOR_STATS, WEAPON_STATS, petAttackBuffForParty } from "../game/data";
 import { useGameStore } from "../game/useGameStore";
 import type { WeaponKey } from "../game/types";
 import { CAMPAIGN_PREMISE, hudCampaignGoal } from "../game/story";
-import { encounterDangerDisplayPercent } from "../game/worldMap";
+import { TILE, encounterDangerDisplayPercent, townAtTile } from "../game/worldMap";
 import { GAME_VERSION_LABEL } from "../version";
 import { isNightWilds, timeOfDayLabel } from "../game/worldClock";
 import { IconGold } from "./IconGold";
@@ -186,7 +186,7 @@ export function WorldStatusOverlay() {
     "After you cast any skill, every skill shares the same lockout. It ticks down by one after each enemy turn; stronger skills apply a longer lockout when cast."
   ].join("\n");
 
-  const goldTitle = [`Gold: ${snapshot.player.gold}`, "Earned from battles and quests. Spend in shops."].join("\n");
+  const goldTitle = [`Gold: ${snapshot.player.gold}`, "Earned from battles and quests. Spend at the general merchant, forge, and other town services."].join("\n");
 
   const goal = hudCampaignGoal(
     snapshot.story.stage,
@@ -195,6 +195,10 @@ export function WorldStatusOverlay() {
     snapshot.player.bossDefeated
   );
   const goalTooltip = [goal.tagline, goal.chapterTitle, goal.objective, goal.progress].filter(Boolean).join("\n");
+
+  const tileX = Math.floor(snapshot.player.x / TILE);
+  const tileY = Math.floor(snapshot.player.y / TILE);
+  const visitingTown = snapshot.world.inTown ? townAtTile(tileX, tileY) : null;
 
   return (
     <div className="world-status-overlay" aria-label="Status">
@@ -213,6 +217,12 @@ export function WorldStatusOverlay() {
           <span className="world-time-label">{tod}</span>
           {nightWilds ? <span className="world-time-night"> · Wilds surge</span> : null}
         </p>
+        {visitingTown ? (
+          <div className="world-town-visit" role="status">
+            <div className="world-town-visit-name">{visitingTown.name}</div>
+            <div className="world-town-visit-epithet">{visitingTown.epithet}</div>
+          </div>
+        ) : null}
         <div className="danger-meter">
           <div className="danger-meter-head">
             <strong>Danger: {dangerLabel}</strong>
@@ -289,7 +299,8 @@ export function WorldStatusOverlay() {
           </HudIconButton>
         </div>
         <p className="world-hud-consumable-hint">
-          Consumables: use the hotbar (keys 1–9, 0) and the backpack button below the playfield.
+          Items vs gear: buy consumables and maps at the <strong>general merchant</strong>; weapons, armor, and buyback at
+          the <strong>forge</strong>. Hotbar 1–9 / 0, backpack, or <strong>Inventory</strong> (<kbd>I</kbd>) for the full list.
         </p>
 
         <div className="world-hud-section-label">Stats</div>

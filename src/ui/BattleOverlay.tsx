@@ -14,6 +14,8 @@ export function BattleOverlay() {
   const snapshot = useGameStore();
   const [actionPending, setActionPending] = useState(false);
   const actionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const knockoutAckRef = useRef<HTMLButtonElement | null>(null);
+  const knockoutFocusDoneRef = useRef(false);
 
   const queueBattleAction = useCallback((run: () => void) => {
     if (isLanGuest()) return;
@@ -43,6 +45,7 @@ export function BattleOverlay() {
 
   useEffect(() => {
     if (!snapshot.battle.inBattle) {
+      knockoutFocusDoneRef.current = false;
       if (actionTimerRef.current) {
         clearTimeout(actionTimerRef.current);
         actionTimerRef.current = null;
@@ -51,6 +54,16 @@ export function BattleOverlay() {
     }
   }, [snapshot.battle.inBattle]);
 
+  useEffect(() => {
+    if (!snapshot.battle.inBattle || snapshot.battle.phase !== "knockoutPending" || isLanGuest()) {
+      return;
+    }
+    if (knockoutFocusDoneRef.current) return;
+    knockoutFocusDoneRef.current = true;
+    const id = window.requestAnimationFrame(() => knockoutAckRef.current?.focus());
+    return () => window.cancelAnimationFrame(id);
+  }, [snapshot.battle.inBattle, snapshot.battle.phase]);
+
   const unlockedSkills = getUnlockedSkills(snapshot.player.level);
   const xpPercent = Math.max(0, Math.min(100, Math.round((snapshot.player.xp / snapshot.player.xpToNext) * 100)));
   const playerHpPercent = Math.max(0, Math.min(100, Math.round((snapshot.player.hp / snapshot.player.maxHp) * 100)));
@@ -58,17 +71,30 @@ export function BattleOverlay() {
   const enemyHpPercent = enemy
     ? Math.max(0, Math.min(100, Math.round((enemy.hp / enemy.maxHp) * 100)))
     : 0;
+  const knockoutPending = snapshot.battle.phase === "knockoutPending";
+  const victoryPending = snapshot.battle.phase === "victoryPending";
 
   if (!snapshot.battle.inBattle || !enemy) {
     return null;
   }
 
-  const actionsLocked = isLanGuest() || snapshot.battle.phase !== "playerTurn" || actionPending;
+  const actionsLocked =
+    isLanGuest() ||
+    snapshot.battle.phase !== "playerTurn" ||
+    actionPending ||
+    knockoutPending ||
+    victoryPending;
+
+  const panelModClass = knockoutPending
+    ? " battle-overlay-panel--knockout-dim"
+    : victoryPending
+      ? " battle-overlay-panel--victory-linger"
+      : "";
 
   return (
     <div className="battle-overlay" role="dialog" aria-modal="true" aria-label="Battle">
       <div className="battle-overlay-backdrop" aria-hidden />
-      <div className="battle-overlay-panel">
+      <div className={`battle-overlay-panel${panelModClass}`}>
         <div className="battle-overlay-grid">
           <div className="battle-overlay-column battle-overlay-column-main">
             <div className="battle-player-hud battle-player-hud--overlay">
@@ -120,9 +146,7 @@ export function BattleOverlay() {
               <div className="hp-meter enemy">
                 <div className="hp-meter-head">
                   <strong>HP</strong>
-                  <span>
-                    {enemy.hp}/{enemy.maxHp}
-                  </span>
+                  <span>{victoryPending ? "Defeated" : `${enemy.hp}/${enemy.maxHp}`}</span>
                 </div>
                 <div className="hp-meter-track">
                   <div className="hp-meter-fill enemy" style={{ width: `${enemyHpPercent}%` }} />
@@ -132,6 +156,12 @@ export function BattleOverlay() {
           </div>
 
           <div className="battle-overlay-column battle-overlay-column-actions">
+            {victoryPending && (
+              <div className="battle-victory-linger" role="status" aria-live="polite">
+                <strong>Victory</strong>
+                <p>Rewards are logged below. Returning to the field in a moment…</p>
+              </div>
+            )}
             <div className="battle-actions">
               <div className="battle-action-primary row">
                 <button onClick={() => queueBattleAction(() => gameStore.playerAttack())} disabled={actionsLocked}>
@@ -180,6 +210,43 @@ export function BattleOverlay() {
         </div>
       </div>
       <div className="battle-overlay-flashburst" aria-hidden />
+      {knockoutPending && (
+        <div
+          className="battle-death-screen"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="battle-death-title"
+          aria-describedby="battle-death-desc"
+        >
+          <div className="battle-death-screen__vignette" aria-hidden />
+          <div className="battle-death-screen__content">
+            <p className="battle-death-screen__eyebrow" aria-hidden>
+              Defeat
+            </p>
+            <h2 id="battle-death-title" className="battle-death-screen__title">
+              You have fallen
+            </h2>
+            <p id="battle-death-desc" className="battle-death-screen__subtitle">
+              {enemy.name} struck the final blow. If you continue, the Guild seizes <strong>all your gold</strong> and your{" "}
+              <strong>equipped weapon and armor</strong> (replaced with starter gear) before dragging you to safety.
+            </p>
+            {isLanGuest() ? (
+              <p className="battle-death-screen__guest-hint" role="status">
+                Waiting for the host to acknowledge…
+              </p>
+            ) : (
+              <button
+                ref={knockoutAckRef}
+                type="button"
+                className="battle-death-screen__ack"
+                onClick={() => gameStore.acknowledgeKnockout()}
+              >
+                Acknowledge defeat and continue
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

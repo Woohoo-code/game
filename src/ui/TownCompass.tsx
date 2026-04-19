@@ -30,6 +30,7 @@ export function TownCompass() {
     const tileY = snapshot.player.y / TILE;
     const target = nearestTown(tileX, tileY);
     if (!target) return null;
+    const toward = target.name;
     const dx = target.x - tileX;
     const dy = target.y - tileY;
     // atan2 returns radians in world/tile space where +y is "south" (down on screen).
@@ -41,16 +42,16 @@ export function TownCompass() {
     //   north (dx = 0, dy < 0)  →   0°
     const rad = Math.atan2(dy, dx); // east=0, south=+π/2, west=±π, north=-π/2
     const deg = (rad * 180) / Math.PI + 90; // shift so north = 0°
-    return { angle: deg, distance: Math.round(target.distance) };
+    return { angle: deg, distance: Math.round(target.distance), toward };
   }, [shouldRender, snapshot.player.x, snapshot.player.y]);
 
   if (!compass) return null;
 
-  const { angle, distance } = compass;
+  const { angle, distance, toward } = compass;
   const veryClose = distance <= 1;
 
   return (
-    <div className="town-compass" role="img" aria-label={`Nearest town is ${distance} tiles away`}>
+    <div className="town-compass" role="img" aria-label={`Nearest settlement is ${toward}, about ${distance} tiles away`}>
       <div className="town-compass-dial">
         <span className="town-compass-tick n">N</span>
         <span className="town-compass-tick e">E</span>
@@ -68,7 +69,7 @@ export function TownCompass() {
         </svg>
       </div>
       <div className={`town-compass-label${veryClose ? " close" : ""}`}>
-        {veryClose ? "Town nearby" : `${distance} tiles`}
+        {veryClose ? `${toward} · here` : `Toward ${toward} · ${distance}t`}
       </div>
     </div>
   );

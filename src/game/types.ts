@@ -137,8 +137,9 @@ export interface PlayerState {
   /** The currently active pet (follows in overworld, assists in battle). Null = no pet out. */
   activePetId: string | null;
   /**
-   * After a knockout, each gold short of the 10g revival tithe requires one wild
-   * kill to clear. While positive, shops, inn, pets, training, and guild payouts are locked.
+   * Guild lock: each point requires one won wild battle to clear (chapel blessing
+   * can reduce by 1). While positive, shops, inn, pets, training, and guild payouts are locked.
+   * Legacy saves may still carry debt from the old revival tithe; new knockouts strip gold/gear instead.
    */
   revivalDebtMonstersRemaining: number;
 }
@@ -200,7 +201,17 @@ export interface EnemyState extends EnemyDefinition {
   hp: number;
 }
 
-export type BattlePhase = "idle" | "playerTurn" | "enemyTurn" | "won" | "lost" | "escaped";
+export type BattlePhase =
+  | "idle"
+  | "playerTurn"
+  | "enemyTurn"
+  | "won"
+  /** Rewards applied; battle UI lingers so the player can read the log before returning to the field. */
+  | "victoryPending"
+  | "lost"
+  | "escaped"
+  /** Player HP reached 0; revival runs after `gameStore.acknowledgeKnockout()`. */
+  | "knockoutPending";
 
 export interface BattleState {
   inBattle: boolean;
@@ -235,6 +246,8 @@ export interface WorldState {
   canMarket: boolean;
   /** Standing on the post-boss dimensional rift (same tile as the former arena). */
   canVoidPortal: boolean;
+  /** Standing on the wilderness restore spring (full HP, no cost). */
+  canRestoreSpring: boolean;
   /**
    * When true, the boss landmark on this save's world seed is rendered as {@link BuildingKind} `voidPortal`.
    * Cleared when crossing into a new realm.

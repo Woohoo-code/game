@@ -1,5 +1,17 @@
 import { useState } from "react";
-import { ARMOR_STATS, ITEM_DATA, formatItemTooltipSummary, PET_SHOP_OFFERS, SHOP_ITEMS, TOWN_MAP, WEAPON_STATS } from "../game/data";
+import {
+  ARMOR_STATS,
+  GEAR_SELLBACK_FRACTION,
+  ITEM_DATA,
+  armorSellDowngrade,
+  formatItemTooltipSummary,
+  gearSellRefundGold,
+  PET_SHOP_OFFERS,
+  SHOP_ITEMS,
+  TOWN_MAP,
+  WEAPON_STATS,
+  weaponSellDowngrade
+} from "../game/data";
 import { getLanRoomCode } from "../coop/lanCoop";
 import { useLanCoopRole } from "../coop/useLanCoopRole";
 import { gameStore } from "../game/state";
@@ -9,11 +21,12 @@ import { LanCoopPanel } from "./LanCoopPanel";
 
 type Props = {
   onOpenJournal: () => void;
+  onOpenInventory: () => void;
   onOpenUgc: () => void;
   onOpenPets: () => void;
 };
 
-export function PlayfieldActionOverlays({ onOpenJournal, onOpenUgc, onOpenPets }: Props) {
+export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpenUgc, onOpenPets }: Props) {
   const snapshot = useGameStore();
   const lanRole = useLanCoopRole();
   const coopGuest = lanRole === "guest";
@@ -45,7 +58,15 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenUgc, onOpenPets }
     snapshot.world.canChapel ||
     snapshot.world.canStables ||
     snapshot.world.canMarket ||
-    snapshot.world.canVoidPortal;
+    snapshot.world.canVoidPortal ||
+    snapshot.world.canRestoreSpring;
+
+  const weaponDownAfterSell = weaponSellDowngrade(snapshot.player.weapon);
+  const armorDownAfterSell = armorSellDowngrade(snapshot.player.armor);
+  const weaponSellRefund = weaponDownAfterSell
+    ? gearSellRefundGold(WEAPON_STATS[snapshot.player.weapon].price)
+    : 0;
+  const armorSellRefund = armorDownAfterSell ? gearSellRefundGold(ARMOR_STATS[snapshot.player.armor].price) : 0;
 
   return (
     <>
@@ -122,6 +143,14 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenUgc, onOpenPets }
                 <span className="journal-open-badge">
                   {STORY_CHAPTERS[snapshot.story.stage].title.split(" — ")[0]}
                 </span>
+              </button>
+              <button
+                type="button"
+                className="journal-open-btn full-inventory-open-btn"
+                onClick={onOpenInventory}
+                title="Full inventory — every item type, gold, and equipment (shortcut I)"
+              >
+                Inventory
               </button>
               <button
                 type="button"
@@ -226,8 +255,11 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenUgc, onOpenPets }
 
             {snapshot.world.canShop && (
               <div className="box shop-box">
-                <strong>Shop</strong>
-                <p className="shop-consumables-hint">Consumables — assign favorites on the hotbar (keys 1–9, 0) or from the backpack.</p>
+                <strong>General merchant</strong>
+                <p className="shop-consumables-hint">
+                  Consumables and maps only — assign favorites on the hotbar (keys 1–9, 0) or from the backpack. Weapons and
+                  armor are sold at the <strong>forge</strong>.
+                </p>
                 <div className="row shop-consumable-grid">
                   {SHOP_ITEMS.map((itemKey) => (
                     <button
@@ -246,54 +278,6 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenUgc, onOpenPets }
                   ))}
                 </div>
                 <div className="row">
-                  <button
-                    type="button"
-                    onClick={() => gameStore.buyIronSword()}
-                    disabled={revivalDebtLock || coopGuest || gold < WEAPON_STATS.ironSword.price}
-                    title={revivalDebtLock ? revivalDebtTitle : undefined}
-                  >
-                    Buy Iron Sword ({WEAPON_STATS.ironSword.price}g)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => gameStore.buySteelSword()}
-                    disabled={revivalDebtLock || coopGuest || gold < WEAPON_STATS.steelSword.price}
-                    title={revivalDebtLock ? revivalDebtTitle : undefined}
-                  >
-                    Buy Steel Sword ({WEAPON_STATS.steelSword.price}g)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => gameStore.buyMythrilBlade()}
-                    disabled={revivalDebtLock || coopGuest || gold < WEAPON_STATS.mythrilBlade.price}
-                    title={revivalDebtLock ? revivalDebtTitle : undefined}
-                  >
-                    Buy Mythril Blade ({WEAPON_STATS.mythrilBlade.price}g)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => gameStore.buyChainMail()}
-                    disabled={revivalDebtLock || coopGuest || gold < ARMOR_STATS.chainMail.price}
-                    title={revivalDebtLock ? revivalDebtTitle : undefined}
-                  >
-                    Buy Chain Mail ({ARMOR_STATS.chainMail.price}g)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => gameStore.buyKnightArmor()}
-                    disabled={revivalDebtLock || coopGuest || gold < ARMOR_STATS.knightArmor.price}
-                    title={revivalDebtLock ? revivalDebtTitle : undefined}
-                  >
-                    Buy Knight Armor ({ARMOR_STATS.knightArmor.price}g)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => gameStore.buyDragonArmor()}
-                    disabled={revivalDebtLock || coopGuest || gold < ARMOR_STATS.dragonArmor.price}
-                    title={revivalDebtLock ? revivalDebtTitle : undefined}
-                  >
-                    Buy Dragon Armor ({ARMOR_STATS.dragonArmor.price}g)
-                  </button>
                   {!snapshot.player.hasTownMap ? (
                     <button
                       type="button"
@@ -338,6 +322,21 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenUgc, onOpenPets }
                   title={revivalDebtLock ? revivalDebtTitle : undefined}
                 >
                   Rest (10g)
+                </button>
+              </div>
+            )}
+
+            {snapshot.world.canRestoreSpring && (
+              <div className="box">
+                <strong>Restore spring</strong>
+                <p className="boss-arena-hint">Ancient waters — no fee.</p>
+                <button
+                  type="button"
+                  onClick={() => gameStore.healAtRestoreSpring()}
+                  disabled={coopGuest || snapshot.player.hp >= snapshot.player.maxHp}
+                  title={coopGuest ? "LAN guest: healing is host-driven from their session." : undefined}
+                >
+                  Drink (restore HP)
                 </button>
               </div>
             )}
@@ -443,9 +442,102 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenUgc, onOpenPets }
             )}
 
             {snapshot.world.canForge && (
-              <div className="box">
-                <strong>Forge</strong> <span className="training-fee">({forgeFee}g)</span>
-                <p>Temper your gear for permanent stats.</p>
+              <div className="box shop-box forge-armory-box">
+                <strong>Forge &amp; armory</strong>
+                <p className="shop-gear-buyback-hint">
+                  Buy weapons and armor here. Buyback: sell your equipped piece for{" "}
+                  <strong>{Math.round(GEAR_SELLBACK_FRACTION * 100)}%</strong> of that tier's list price (you step down
+                  one tier).
+                </p>
+                <div className="row">
+                  <button
+                    type="button"
+                    onClick={() => gameStore.buyIronSword()}
+                    disabled={revivalDebtLock || coopGuest || gold < WEAPON_STATS.ironSword.price}
+                    title={revivalDebtLock ? revivalDebtTitle : undefined}
+                  >
+                    Buy Iron Sword ({WEAPON_STATS.ironSword.price}g)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => gameStore.buySteelSword()}
+                    disabled={revivalDebtLock || coopGuest || gold < WEAPON_STATS.steelSword.price}
+                    title={revivalDebtLock ? revivalDebtTitle : undefined}
+                  >
+                    Buy Steel Sword ({WEAPON_STATS.steelSword.price}g)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => gameStore.buyMythrilBlade()}
+                    disabled={revivalDebtLock || coopGuest || gold < WEAPON_STATS.mythrilBlade.price}
+                    title={revivalDebtLock ? revivalDebtTitle : undefined}
+                  >
+                    Buy Mythril Blade ({WEAPON_STATS.mythrilBlade.price}g)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => gameStore.buyChainMail()}
+                    disabled={revivalDebtLock || coopGuest || gold < ARMOR_STATS.chainMail.price}
+                    title={revivalDebtLock ? revivalDebtTitle : undefined}
+                  >
+                    Buy Chain Mail ({ARMOR_STATS.chainMail.price}g)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => gameStore.buyKnightArmor()}
+                    disabled={revivalDebtLock || coopGuest || gold < ARMOR_STATS.knightArmor.price}
+                    title={revivalDebtLock ? revivalDebtTitle : undefined}
+                  >
+                    Buy Knight Armor ({ARMOR_STATS.knightArmor.price}g)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => gameStore.buyDragonArmor()}
+                    disabled={revivalDebtLock || coopGuest || gold < ARMOR_STATS.dragonArmor.price}
+                    title={revivalDebtLock ? revivalDebtTitle : undefined}
+                  >
+                    Buy Dragon Armor ({ARMOR_STATS.dragonArmor.price}g)
+                  </button>
+                </div>
+                <div className="row shop-gear-sell-row">
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => gameStore.sellWeaponToShop()}
+                    disabled={revivalDebtLock || coopGuest || !weaponDownAfterSell}
+                    title={
+                      revivalDebtLock
+                        ? revivalDebtTitle
+                        : weaponDownAfterSell
+                          ? `Sell ${WEAPON_STATS[snapshot.player.weapon].name} for ${weaponSellRefund}g (${Math.round(GEAR_SELLBACK_FRACTION * 100)}% of list price). Equip ${WEAPON_STATS[weaponDownAfterSell].name}.`
+                          : "You already carry the starter wood sword."
+                    }
+                  >
+                    {weaponDownAfterSell
+                      ? `Sell sword (+${weaponSellRefund}g) → ${WEAPON_STATS[weaponDownAfterSell].name}`
+                      : "Sell sword (starter)"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => gameStore.sellArmorToShop()}
+                    disabled={revivalDebtLock || coopGuest || !armorDownAfterSell}
+                    title={
+                      revivalDebtLock
+                        ? revivalDebtTitle
+                        : armorDownAfterSell
+                          ? `Sell ${ARMOR_STATS[snapshot.player.armor].name} for ${armorSellRefund}g (${Math.round(GEAR_SELLBACK_FRACTION * 100)}% of list price). Equip ${ARMOR_STATS[armorDownAfterSell].name}.`
+                          : "You already wear guild-issue cloth armor."
+                    }
+                  >
+                    {armorDownAfterSell
+                      ? `Sell armor (+${armorSellRefund}g) → ${ARMOR_STATS[armorDownAfterSell].name}`
+                      : "Sell armor (starter)"}
+                  </button>
+                </div>
+                <p className="forge-temper-hint">
+                  Tempering <span className="training-fee">({forgeFee}g)</span> — permanent edge on your weapon.
+                </p>
                 <button
                   type="button"
                   onClick={() => gameStore.temperAtForge()}

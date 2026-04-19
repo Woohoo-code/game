@@ -9,11 +9,12 @@ import {
   TERRAIN_TOWN,
   TERRAIN_WATER,
   type BuildingKind,
+  type GeneratedTown,
   type GeneratedWorld,
   generateWorld
 } from "./worldGen";
 
-export { type BuildingKind };
+export { type BuildingKind, type GeneratedTown };
 
 /** World tile size in pixels (shared by Phaser 2D + 3D unit scale). */
 export const TILE = 32;
@@ -85,7 +86,8 @@ const BUILDING_LABELS: Record<BuildingKind, string> = {
   forge: "FORGE",
   chapel: "CHAPEL",
   stables: "STABLES",
-  market: "MARKET"
+  market: "MARKET",
+  restoreSpring: "RESTORE SPRING"
 };
 
 const BUILDING_COLORS: Record<BuildingKind, number> = {
@@ -100,7 +102,8 @@ const BUILDING_COLORS: Record<BuildingKind, number> = {
   forge: 0x6a3830,
   chapel: 0x9a8848,
   stables: 0x7a5020,
-  market: 0xa87830
+  market: 0xa87830,
+  restoreSpring: 0x2a8a9e
 };
 
 // ── Mutable live bindings exposed as ES module exports ─────────────────────
@@ -119,12 +122,16 @@ let activeWorld: GeneratedWorld | null = null;
 function rebuildBuildingsFromActiveWorld(): void {
   const world = activeWorld;
   if (!world) return;
-  BUILDINGS = world.buildings.map((b) => ({
-    kind: b.kind,
-    label: BUILDING_LABELS[b.kind],
-    color: BUILDING_COLORS[b.kind],
-    pos: { x: b.x, y: b.y }
-  }));
+  BUILDINGS = world.buildings.map((b) => {
+    const townPrefix =
+      b.townId !== undefined && world.towns[b.townId] ? `${world.towns[b.townId]!.name} · ` : "";
+    return {
+      kind: b.kind,
+      label: `${townPrefix}${BUILDING_LABELS[b.kind]}`,
+      color: BUILDING_COLORS[b.kind],
+      pos: { x: b.x, y: b.y }
+    };
+  });
 }
 
 /**
@@ -212,25 +219,56 @@ export function terrainAt(x: number, y: number): TerrainKind {
   }
 }
 
+/** Named settlements on the active map (two per world). */
+export function getTowns(): ReadonlyArray<GeneratedTown> {
+  const world = activeWorld;
+  if (!world) return [];
+  return world.towns;
+}
+
+/**
+ * If the tile is town ground, returns the settlement whose center is closest
+ * (used for HUD and banners).
+ */
+export function townAtTile(tx: number, ty: number): GeneratedTown | null {
+  if (terrainAt(tx, ty) !== "town") return null;
+  const world = activeWorld;
+  if (!world || world.towns.length === 0) return null;
+  let best: GeneratedTown = world.towns[0]!;
+  let bestD = (tx - best.x) ** 2 + (ty - best.y) ** 2;
+  for (let i = 1; i < world.towns.length; i++) {
+    const t = world.towns[i]!;
+    const d = (tx - t.x) ** 2 + (ty - t.y) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      best = t;
+    }
+  }
+  return best;
+}
+
 /**
  * Find the nearest town's center tile to the given tile coordinates.
  * Used by the in-game Town Map compass to point the player home.
  * Returns null only if the active world has no towns (shouldn't happen).
  */
-export function nearestTown(tx: number, ty: number): { x: number; y: number; distance: number } | null {
+export function nearestTown(
+  tx: number,
+  ty: number
+): { x: number; y: number; distance: number; name: string; epithet: string } | null {
   const world = activeWorld;
   if (!world || world.towns.length === 0) return null;
-  let best = world.towns[0];
+  let best = world.towns[0]!;
   let bestDist = Math.hypot(best.x - tx, best.y - ty);
   for (let i = 1; i < world.towns.length; i++) {
-    const t = world.towns[i];
+    const t = world.towns[i]!;
     const d = Math.hypot(t.x - tx, t.y - ty);
     if (d < bestDist) {
       best = t;
       bestDist = d;
     }
   }
-  return { x: best.x, y: best.y, distance: bestDist };
+  return { x: best.x, y: best.y, distance: bestDist, name: best.name, epithet: best.epithet };
 }
 
 /** Biome at the given tile (returns "meadow" for out-of-bounds). */
@@ -271,6 +309,7 @@ export function syncZonesAtTile(tx: number, ty: number): void {
   let canStables = false;
   let canMarket = false;
   let canVoidPortal = false;
+  let canRestoreSpring = false;
   for (const b of BUILDINGS) {
     if (b.pos.x === tx && b.pos.y === ty) {
       switch (b.kind) {
@@ -310,6 +349,9 @@ export function syncZonesAtTile(tx: number, ty: number): void {
         case "voidPortal":
           canVoidPortal = true;
           break;
+        case "restoreSpring":
+          canRestoreSpring = true;
+          break;
       }
     }
   }
@@ -327,7 +369,8 @@ export function syncZonesAtTile(tx: number, ty: number): void {
     canChapel,
     canStables,
     canMarket,
-    canVoidPortal
+    canVoidPortal,
+    canRestoreSpring
   );
 
   gameStore.storyNoteBiomeVisited(biome);
