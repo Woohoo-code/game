@@ -606,6 +606,23 @@ html[data-app-screen="create"] .viewport-scaler-inner > .character-create {
   margin-bottom: 4px;
 }
 
+/* Spinner for the lazy-loaded download page fallback */
+.download-spinner {
+  width: 42px;
+  height: 42px;
+  border: 4px solid rgba(140, 180, 255, 0.2);
+  border-top: 4px solid #8cb4ff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 20px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .download-page-secondary {
   margin: 22px 0 0;
   font-size: 0.88rem;

@@ -142,6 +142,7 @@ export default function App() {
         fallback={
           <div className="download-page" style={{ background: "#0c1018", color: "#e4eaf4", display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh" }}>
             <div style={{ textAlign: "center" }}>
+              <div className="download-spinner" />
               <div style={{ fontSize: "1.2rem", marginBottom: "16px", fontWeight: 600 }}>LOADING...</div>
               <div style={{ fontSize: "0.9rem", opacity: 0.7, maxWidth: "260px" }}>
                 The download page is being fetched the first time you visit it.
