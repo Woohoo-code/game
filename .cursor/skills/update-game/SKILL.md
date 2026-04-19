@@ -19,12 +19,12 @@ This runs `predeploy` (which calls `npm run build`) then pushes `dist/` to the `
 
 2. Confirm success — output should end with `Published`.
 
-3. Optionally commit and push any source changes to `3d-prototype`:
+3. Optionally commit and push any source changes to `main`:
 
 ```powershell
 git add -A
 git commit -m "<describe changes>"
-git push origin 3d-prototype
+git push origin main
 ```
 
 ## Live URL
@@ -36,3 +36,4 @@ https://woohoo-code.github.io/game/
 - `npm run deploy` handles the build step — no need to run `npm run build` separately.
 - The `gh-pages` branch is managed automatically; never commit to it directly.
 - GitHub Pages takes ~30–60 seconds to reflect a new deploy.
+- Source of truth is the single `main` branch. It contains both the web code and the Electron scaffolding, so `/update-exe` runs from the same branch.
