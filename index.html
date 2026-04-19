@@ -12,7 +12,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="mobile-web-app-capable" content="yes" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <title>Monster Slayer</title>
+    <title>Monster Slayer V1.0.4</title>
     <script>
       // GitHub Pages SPA redirect receiver — must run before React mounts.
       // Paired with public/404.html which encodes the intended path into ?p=
@@ -22,23 +22,19 @@
         if (p) {
           var q = params.get("q");
           var hash = window.location.hash;
-          var base = window.location.pathname.replace(/\/$/, "");
-          var tail = p.replace(/~and~/g, "&");
-          if (tail.charAt(0) === "/") tail = tail.slice(1);
           var url =
-            base +
-            "/" +
-            tail +
+            window.location.pathname.replace(/\/$/, "") +
+            p.replace(/~and~/g, "&") +
             (q ? "?" + q.replace(/~and~/g, "&") : "") +
             hash;
           window.history.replaceState(null, "", url);
         }
       })();
     </script>
-    <script type="module" crossorigin src="/game/assets/index-B9v11yFS.js"></script>
-    <link rel="stylesheet" crossorigin href="/game/assets/index-DBeLuBMm.css">
+    <script type="module" crossorigin src="/game/assets/index-DwgeaoMI.js"></script>
+    <link rel="stylesheet" crossorigin href="/game/assets/index-B_vYKfUl.css">
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"></div>
   </body>
 </html>
