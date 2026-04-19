@@ -409,6 +409,28 @@ html[data-app-screen="create"] .viewport-scaler-inner > .character-create {
   color: #d8f5e4;
 }
 
+.title-screen-download-line {
+  margin: 0 0 20px;
+  text-align: center;
+}
+
+.title-screen-download-link {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 0.95rem;
+  color: #9ec8ff;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.title-screen-download-link:hover {
+  color: #c8e4ff;
+}
+
 .title-screen-transfer {
   margin-top: 18px;
   max-width: 420px;
@@ -435,6 +457,129 @@ html[data-app-screen="create"] .viewport-scaler-inner > .character-create {
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(120, 150, 190, 0.35);
+}
+
+/* ── Download Windows EXE page (/game/download) ─────────────────────────── */
+
+.download-page {
+  min-height: 100dvh;
+  padding: 24px 18px 40px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  color: #e4eaf4;
+  background: radial-gradient(ellipse 120% 80% at 50% 0%, #1a2438 0%, #0c1018 55%, #06080c 100%);
+}
+
+.download-page::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 60% 40% at 50% 100%, rgba(80, 120, 180, 0.12), transparent 55%);
+}
+
+.download-page-inner {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 520px;
+}
+
+.download-page-eyebrow {
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7a8cb0;
+}
+
+.download-page-title {
+  margin: 0 0 12px;
+  font-size: 1.65rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #f0f4fc;
+}
+
+.download-page-lead {
+  margin: 0 0 24px;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: #b8c6dc;
+}
+
+.download-page-card {
+  padding: 20px 20px 18px;
+  border-radius: 12px;
+  background: rgba(12, 18, 32, 0.72);
+  border: 1px solid rgba(100, 140, 200, 0.28);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.download-page-meta {
+  margin: 0 0 16px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #8a9cb8;
+}
+
+.download-page-meta-label {
+  color: #6a7a94;
+  margin-right: 0.25em;
+}
+
+.download-page-meta-sep {
+  margin: 0 0.5em;
+  opacity: 0.6;
+}
+
+.download-page-primary {
+  display: inline-block;
+  margin: 0 0 14px;
+  padding: 12px 20px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  color: #0a0e14;
+  background: linear-gradient(180deg, #e8f0ff 0%, #b8d4f8 100%);
+  border: 1px solid rgba(200, 220, 255, 0.5);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(80, 140, 220, 0.25);
+}
+
+.download-page-primary:hover {
+  background: linear-gradient(180deg, #f4f8ff 0%, #c8dfffc4 100%);
+}
+
+.download-page-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #7a8aa0;
+}
+
+.download-page-secondary {
+  margin: 22px 0 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: #9aaccc;
+}
+
+.download-page-secondary a {
+  color: #9ec8ff;
+}
+
+.download-page-secondary a:hover {
+  color: #c8e4ff;
+}
+
+.download-page-back {
+  margin-top: 28px;
+  padding: 10px 18px;
+  font-size: 0.9rem;
 }
 
 .title-transfer-textarea {
@@ -4322,4 +4467,56 @@ button.lan-coop-strip-btn {
 
 button.lan-coop-strip-btn:hover {
   background: rgba(45, 70, 105, 0.85);
+}
+
+/* ── Mobile branch: touch playfield, safe edges, scrollable title/download ───
+   (Keeps desktop unchanged; pairs with ViewportScaler min-scale on narrow viewports.) */
+
+.game-viewport {
+  position: relative;
+  touch-action: none;
+}
+
+.phaser-mount canvas,
+.phaser-mount.overworld-3d canvas {
+  touch-action: none;
+}
+
+@media (max-width: 560px) {
+  .inventory-bar-compact .inventory-bar {
+    padding-left: max(6px, env(safe-area-inset-left, 0px));
+    padding-right: max(6px, env(safe-area-inset-right, 0px));
+  }
+
+  .playfield-left-rail .playfield-dock-inner button,
+  .playfield-left-rail .playfield-dock-inner a[role="button"] {
+    min-height: 36px;
+    padding-top: max(6px, var(--dock-btn-pad-y, 4px));
+    padding-bottom: max(6px, var(--dock-btn-pad-y, 4px));
+  }
+
+  .title-screen-inner {
+    max-height: min(92dvh, 100%);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  .download-page-inner {
+    max-height: min(92dvh, 100%);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  .touch-pad.touch-pad-arrow {
+    --dir-btn-size: 48px;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 420px) {
+  :root {
+    --log-h: clamp(100px, 18vh, 160px);
+  }
 }
