@@ -6,4 +6,3 @@ export const GAME_VERSION_LABEL = "V1.0.3";
  * publishing `MonsterSlayer-*-Portable.exe` (see download page + `/update-exe` skill).
  */
 export const DESKTOP_EXE_VERSION = "1.0.3";
-

@@ -31,12 +31,12 @@ export function isNightWilds(worldTime: number): boolean {
   return sunHeight01(worldTime) < 0.38;
 }
 
-/** Multiplies per-step encounter rate (still clamped globally). */
+/** Multiplies per-step encounter rate (still clamped globally). Stronger at deeper night. */
 export function nightEncounterRateMultiplier(worldTime: number): number {
   if (!isNightWilds(worldTime)) return 1;
   const s = sunHeight01(worldTime);
   const depth = Math.min(1, (0.38 - s) / 0.38);
-  return 1 + 0.34 * depth;
+  return 1 + 0.82 * depth;
 }
 
 /** Applied to rolled enemy HP/ATK/DEF/SPD after level scaling. */
@@ -45,6 +45,17 @@ export function nightEnemyStatMultiplier(worldTime: number): number {
   const s = sunHeight01(worldTime);
   const depth = Math.min(1, (0.38 - s) / 0.38);
   return 1 + 0.14 * depth;
+}
+
+/** In-game 24h clock string like "14:37" derived from `worldTime` (0 = midnight). */
+export function timeOfDayClock24(worldTime: number): string {
+  const u = fractDay(worldTime);
+  const totalMinutes = Math.floor(u * 24 * 60);
+  const hours = Math.floor(totalMinutes / 60) % 24;
+  const minutes = totalMinutes % 60;
+  const hh = hours < 10 ? `0${hours}` : `${hours}`;
+  const mm = minutes < 10 ? `0${minutes}` : `${minutes}`;
+  return `${hh}:${mm}`;
 }
 
 export function timeOfDayLabel(worldTime: number): string {

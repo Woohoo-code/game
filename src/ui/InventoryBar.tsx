@@ -8,8 +8,6 @@ import { useGameStore } from "../game/useGameStore";
 type Props = {
   /** When true, digit keys do not fire consumables (modals, story, etc.). */
   hotkeysBlocked?: boolean;
-  /** LAN guest: hotbar and backpack cannot change host state from this device. */
-  coopGuestLocked?: boolean;
 };
 
 function slotFromKeyCode(code: string): number {
@@ -33,7 +31,7 @@ function isTypingTarget(el: EventTarget | null): boolean {
   return el.isContentEditable;
 }
 
-export function InventoryBar({ hotkeysBlocked = false, coopGuestLocked = false }: Props) {
+export function InventoryBar({ hotkeysBlocked = false }: Props) {
   const snapshot = useGameStore();
   const [backpackOpen, setBackpackOpen] = useState(false);
   const hotbar = normalizeItemHotbar(snapshot.player.itemHotbar);
@@ -44,18 +42,17 @@ export function InventoryBar({ hotkeysBlocked = false, coopGuestLocked = false }
 
   const useSlot = useCallback(
     (slotIndex: number) => {
-      if (coopGuestLocked) return;
       if (snapshot.battle.inBattle && snapshot.battle.phase === "playerTurn") {
         gameStore.useHotbarSlot(slotIndex);
       } else if (!snapshot.battle.inBattle) {
         gameStore.useHotbarSlotInField(slotIndex);
       }
     },
-    [coopGuestLocked, snapshot.battle.inBattle, snapshot.battle.phase]
+    [snapshot.battle.inBattle, snapshot.battle.phase]
   );
 
   useEffect(() => {
-    if (hotkeysBlocked || backpackOpen || coopGuestLocked) return;
+    if (hotkeysBlocked || backpackOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat || e.altKey || e.ctrlKey || e.metaKey) return;
       if (isTypingTarget(e.target)) return;
@@ -66,7 +63,7 @@ export function InventoryBar({ hotkeysBlocked = false, coopGuestLocked = false }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [coopGuestLocked, hotkeysBlocked, backpackOpen, useSlot]);
+  }, [hotkeysBlocked, backpackOpen, useSlot]);
 
   useEffect(() => {
     if (!backpackOpen) return;
@@ -91,7 +88,7 @@ export function InventoryBar({ hotkeysBlocked = false, coopGuestLocked = false }
               snapshot.battle.inBattle &&
               (snapshot.battle.phase !== "playerTurn" || !key || qty <= 0);
             const fieldDisabled = !snapshot.battle.inBattle && (!key || qty <= 0);
-            const clickDisabled = coopGuestLocked || (snapshot.battle.inBattle ? disabled : fieldDisabled);
+            const clickDisabled = snapshot.battle.inBattle ? disabled : fieldDisabled;
             const title = key
               ? `${ITEM_DATA[key].name} ×${qty}\n${formatItemTooltipSummary(key)} · Hotkey ${HOTBAR_KEY_LABELS[i]}`
               : `Empty slot · Hotkey ${HOTBAR_KEY_LABELS[i]}`;
@@ -121,14 +118,9 @@ export function InventoryBar({ hotkeysBlocked = false, coopGuestLocked = false }
         <button
           type="button"
           className="inventory-bar-backpack-btn"
-          title={
-            coopGuestLocked
-              ? "Only the host opens the backpack in LAN co-op."
-              : "Backpack — all carried consumables and hotbar setup"
-          }
+          title="Backpack — all carried consumables and hotbar setup"
           aria-label="Open backpack"
           aria-expanded={backpackOpen}
-          disabled={coopGuestLocked}
           onClick={() => setBackpackOpen((o) => !o)}
         >
           <span className="inventory-bar-backpack-icon" aria-hidden>

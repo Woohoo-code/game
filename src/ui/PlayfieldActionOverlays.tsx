@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import {
   ARMOR_STATS,
   GEAR_SELLBACK_FRACTION,
@@ -7,30 +7,45 @@ import {
   formatItemTooltipSummary,
   gearSellRefundGold,
   PET_SHOP_OFFERS,
+  PET_STABLE_MAX_LEVEL,
+  RESOURCES,
+  RESOURCE_KEYS,
   SHOP_ITEMS,
+  STABLE_HORSE_ORDER,
+  STABLE_HORSES,
   TOWN_MAP,
+  UGC_STUDIO_VOID_TITANS_REQUIRED,
   WEAPON_STATS,
-  weaponSellDowngrade
+  weaponSellDowngrade,
+  stableHorseSpeedBonus,
+  stablePetTrainDurationMs,
+  stablePetTrainFee
 } from "../game/data";
-import { getLanRoomCode } from "../coop/lanCoop";
-import { useLanCoopRole } from "../coop/useLanCoopRole";
 import { gameStore } from "../game/state";
 import { STORY_CHAPTERS } from "../game/story";
 import { useGameStore } from "../game/useGameStore";
-import { LanCoopPanel } from "./LanCoopPanel";
+import type { ItemKey, ResourceKey } from "../game/types";
 
 type Props = {
   onOpenJournal: () => void;
   onOpenInventory: () => void;
   onOpenUgc: () => void;
   onOpenPets: () => void;
+  /** Shop consumable grid: selected item for the detail panel (not an immediate purchase). */
+  selectedShopItem: ItemKey | null;
+  onSelectShopItem: Dispatch<SetStateAction<ItemKey | null>>;
 };
 
-export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpenUgc, onOpenPets }: Props) {
+export function PlayfieldActionOverlays({
+  onOpenJournal,
+  onOpenInventory,
+  onOpenUgc,
+  onOpenPets,
+  selectedShopItem,
+  onSelectShopItem
+}: Props) {
   const snapshot = useGameStore();
-  const lanRole = useLanCoopRole();
-  const coopGuest = lanRole === "guest";
-  const [lanPanelOpen, setLanPanelOpen] = useState(false);
+  const coopGuest = false;
 
   if (snapshot.battle.inBattle) {
     return null;
@@ -41,11 +56,12 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
   const trainFee = 20 + snapshot.player.level * 6;
   const libraryFee = 14 + snapshot.player.level * 3;
   const forgeFee = 30 + snapshot.player.level * 8;
-  const stablesFee = 18 + snapshot.player.level * 4;
   const canAffordTraining = gold >= trainFee;
   const revivalDebt = snapshot.player.revivalDebtMonstersRemaining ?? 0;
   const revivalDebtLock = revivalDebt > 0;
   const revivalDebtTitle = `Guild lock: slay ${revivalDebt} more monster${revivalDebt === 1 ? "" : "s"} in the wilds to clear your revival tithe.`;
+  const horsesOwned = snapshot.player.horsesOwned ?? [];
+  const mountBonus = stableHorseSpeedBonus(horsesOwned);
   const hasBuildingContext =
     snapshot.world.canShop ||
     snapshot.world.canPetShop ||
@@ -59,7 +75,10 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
     snapshot.world.canStables ||
     snapshot.world.canMarket ||
     snapshot.world.canVoidPortal ||
-    snapshot.world.canRestoreSpring;
+    snapshot.world.canRestoreSpring ||
+    snapshot.world.canReturnPortal ||
+    snapshot.world.canDungeon ||
+    snapshot.world.canLeaveDungeon;
 
   const weaponDownAfterSell = weaponSellDowngrade(snapshot.player.weapon);
   const armorDownAfterSell = armorSellDowngrade(snapshot.player.armor);
@@ -70,66 +89,37 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
 
   return (
     <>
-      {lanPanelOpen && <LanCoopPanel onClose={() => setLanPanelOpen(false)} />}
       <div className="playfield-left-rail" aria-label="Game controls">
         <div className="playfield-dock-overlay" aria-label="Game actions">
           <div className="playfield-dock-inner action-dock">
-            {lanRole !== "solo" && (
-              <div className="lan-coop-strip" role="status">
-                {lanRole === "host" ? (
-                  <>
-                    <strong>LAN host</strong> — code <strong>{getLanRoomCode() ?? "—"}</strong>.{" "}
-                    <button type="button" className="lan-coop-strip-btn" onClick={() => setLanPanelOpen(true)}>
-                      Open LAN panel
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <strong>LAN guest</strong> — synced from host.{" "}
-                    <button type="button" className="lan-coop-strip-btn" onClick={() => setLanPanelOpen(true)}>
-                      Open LAN panel
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
             <div className="row">
               <button
                 type="button"
                 onClick={() => gameStore.save()}
-                disabled={coopGuest || !snapshot.world.inTown || !snapshot.hasUnsavedChanges}
+                disabled={!snapshot.world.inTown || !snapshot.hasUnsavedChanges}
                 title={
-                  coopGuest
-                    ? "Only the host can save in LAN co-op."
-                    : !snapshot.world.inTown
-                      ? "Save is only available in town."
-                      : !snapshot.hasUnsavedChanges
-                        ? "Nothing new to save since your last save."
-                        : undefined
+                  !snapshot.world.inTown
+                    ? "Save is only available in town."
+                    : !snapshot.hasUnsavedChanges
+                      ? "Nothing new to save since your last save."
+                      : undefined
                 }
               >
                 Save
               </button>
-              <button type="button" onClick={() => gameStore.load()} disabled={coopGuest} title={coopGuest ? "Host controls saves in LAN co-op." : undefined}>
+              <button type="button" onClick={() => gameStore.load()}>
                 Load
               </button>
-              <button type="button" onClick={() => gameStore.usePotionInField()} disabled={coopGuest} title={coopGuest ? "Host uses items in LAN co-op." : undefined}>
+              <button type="button" onClick={() => gameStore.usePotionInField()}>
                 Use Potion
               </button>
               <button
                 type="button"
                 onClick={() => void gameStore.exportTransferCode()}
-                disabled={coopGuest || !snapshot.player.hasCreatedCharacter}
-                title={
-                  coopGuest
-                    ? "Only the host can export saves in LAN co-op."
-                    : "Copy one line to the clipboard for another device (includes a 10-digit key and your full save)."
-                }
+                disabled={!snapshot.player.hasCreatedCharacter}
+                title="Copy one line to the clipboard for another device (includes a 10-digit key and your full save)."
               >
                 Copy transfer line
-              </button>
-              <button type="button" onClick={() => setLanPanelOpen(true)} title="Host or join a session on your local network.">
-                LAN co-op
               </button>
             </div>
             <div className="row reset-game-row">
@@ -156,8 +146,7 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
                 type="button"
                 className="journal-open-btn"
                 onClick={onOpenPets}
-                disabled={coopGuest}
-                title={coopGuest ? "Only the host manages pets in LAN co-op." : "View and manage your pet companions."}
+                title="View and manage your pet companions."
               >
                 Pets
                 {pets.length > 0 && (
@@ -172,17 +161,16 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
                 type="button"
                 className="ugc-open-btn"
                 onClick={onOpenUgc}
-                disabled={coopGuest || !snapshot.player.bossDefeated}
+                disabled={snapshot.player.voidTitansDefeated < UGC_STUDIO_VOID_TITANS_REQUIRED}
                 title={
-                  coopGuest
-                    ? "Only the host opens UGC Studio in LAN co-op."
-                    : snapshot.player.bossDefeated
-                      ? "Create monsters, weapons, and armor. List them for sale."
-                      : "Defeat the Void Titan to unlock the UGC Studio."
+                  snapshot.player.voidTitansDefeated >= UGC_STUDIO_VOID_TITANS_REQUIRED
+                    ? "Create monsters, weapons, and armor. List them for sale."
+                    : "Defeat two Void Titans (beat one, cross the rift, beat the next realm's Titan) to unlock UGC Studio."
                 }
               >
                 UGC Studio
-                {snapshot.player.bossDefeated && snapshot.ugc.totalSales > 0 && (
+                {snapshot.player.voidTitansDefeated >= UGC_STUDIO_VOID_TITANS_REQUIRED &&
+                  snapshot.ugc.totalSales > 0 && (
                   <span className="ugc-open-badge">{snapshot.ugc.totalSales} sold</span>
                 )}
               </button>
@@ -195,13 +183,9 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
                   }
                   gameStore.resetGame();
                 }}
-                disabled={coopGuest || snapshot.battle.inBattle || !snapshot.player.bossDefeated}
+                disabled={snapshot.battle.inBattle || snapshot.player.voidTitansDefeated < 1}
                 title={
-                  coopGuest
-                    ? "Only the host can reset in LAN co-op."
-                    : snapshot.player.bossDefeated
-                      ? undefined
-                      : "Defeat the Void Titan in the southeast arena to unlock."
+                  snapshot.player.voidTitansDefeated >= 1 ? undefined : "Defeat a Void Titan in the arena to unlock."
                 }
               >
                 Reset Game
@@ -239,7 +223,7 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
                       key={o.key}
                       type="button"
                       onClick={() => gameStore.buyPetShopOffer(o.key)}
-                      disabled={revivalDebtLock || coopGuest || gold < o.price || pets.length >= 12}
+                      disabled={revivalDebtLock || gold < o.price || pets.length >= 12}
                       title={
                         revivalDebtLock
                           ? revivalDebtTitle
@@ -261,28 +245,83 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
                   armor are sold at the <strong>forge</strong>.
                 </p>
                 <div className="row shop-consumable-grid">
-                  {SHOP_ITEMS.map((itemKey) => (
-                    <button
-                      key={itemKey}
-                      type="button"
-                      onClick={() => gameStore.purchaseItem(itemKey)}
-                      disabled={revivalDebtLock || coopGuest || gold < ITEM_DATA[itemKey].price}
-                      title={
-                        revivalDebtLock
-                          ? revivalDebtTitle
-                          : `${ITEM_DATA[itemKey].name} · ${formatItemTooltipSummary(itemKey)}`
-                      }
-                    >
-                      {ITEM_DATA[itemKey].name} ({ITEM_DATA[itemKey].price}g)
-                    </button>
-                  ))}
+                  {SHOP_ITEMS.map((itemKey) => {
+                    const itemDisabled = revivalDebtLock;
+                    const isSelected = selectedShopItem === itemKey;
+                    return (
+                      <button
+                        key={itemKey}
+                        type="button"
+                        className={isSelected ? "shop-consumable-btn shop-consumable-btn--selected" : "shop-consumable-btn"}
+                        onClick={() =>
+                          onSelectShopItem(isSelected ? null : itemKey)
+                        }
+                        disabled={itemDisabled}
+                        title={
+                          revivalDebtLock
+                            ? revivalDebtTitle
+                            : `${ITEM_DATA[itemKey].name} · ${formatItemTooltipSummary(itemKey)} — click for details`
+                        }
+                      >
+                        {ITEM_DATA[itemKey].name} ({ITEM_DATA[itemKey].price}g)
+                      </button>
+                    );
+                  })}
                 </div>
                 <div className="row">
+                  <button
+                    type="button"
+                    onClick={() => gameStore.buyIronSword()}
+                    disabled={revivalDebtLock || gold < WEAPON_STATS.ironSword.price}
+                    title={revivalDebtLock ? revivalDebtTitle : undefined}
+                  >
+                    Buy Iron Sword ({WEAPON_STATS.ironSword.price}g)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => gameStore.buySteelSword()}
+                    disabled={revivalDebtLock || gold < WEAPON_STATS.steelSword.price}
+                    title={revivalDebtLock ? revivalDebtTitle : undefined}
+                  >
+                    Buy Steel Sword ({WEAPON_STATS.steelSword.price}g)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => gameStore.buyMythrilBlade()}
+                    disabled={revivalDebtLock || gold < WEAPON_STATS.mythrilBlade.price}
+                    title={revivalDebtLock ? revivalDebtTitle : undefined}
+                  >
+                    Buy Mythril Blade ({WEAPON_STATS.mythrilBlade.price}g)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => gameStore.buyChainMail()}
+                    disabled={revivalDebtLock || gold < ARMOR_STATS.chainMail.price}
+                    title={revivalDebtLock ? revivalDebtTitle : undefined}
+                  >
+                    Buy Chain Mail ({ARMOR_STATS.chainMail.price}g)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => gameStore.buyKnightArmor()}
+                    disabled={revivalDebtLock || gold < ARMOR_STATS.knightArmor.price}
+                    title={revivalDebtLock ? revivalDebtTitle : undefined}
+                  >
+                    Buy Knight Armor ({ARMOR_STATS.knightArmor.price}g)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => gameStore.buyDragonArmor()}
+                    disabled={revivalDebtLock || gold < ARMOR_STATS.dragonArmor.price}
+                    title={revivalDebtLock ? revivalDebtTitle : undefined}
+                  >
+                    Buy Dragon Armor ({ARMOR_STATS.dragonArmor.price}g)
+                  </button>
                   {!snapshot.player.hasTownMap ? (
                     <button
                       type="button"
                       onClick={() => gameStore.buyTownMap()}
-                      disabled={revivalDebtLock || coopGuest || gold < TOWN_MAP.price}
+                      disabled={revivalDebtLock || gold < TOWN_MAP.price}
                       title={revivalDebtLock ? revivalDebtTitle : TOWN_MAP.description}
                     >
                       Buy {TOWN_MAP.name} ({TOWN_MAP.price}g)
@@ -292,7 +331,7 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
                       <button
                         type="button"
                         onClick={() => gameStore.setTownMapEquipped(true)}
-                        disabled={coopGuest || (snapshot.player.townMapEquipped ?? false)}
+                        disabled={(snapshot.player.townMapEquipped ?? false)}
                         title="Show the town compass while exploring outside town."
                       >
                         Equip map
@@ -301,7 +340,7 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
                         type="button"
                         className="secondary"
                         onClick={() => gameStore.setTownMapEquipped(false)}
-                        disabled={coopGuest || !(snapshot.player.townMapEquipped ?? false)}
+                        disabled={!(snapshot.player.townMapEquipped ?? false)}
                         title="Hide the compass overlay until you equip again."
                       >
                         Stow map
@@ -318,7 +357,7 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
                 <button
                   type="button"
                   onClick={() => gameStore.healAtInn()}
-                  disabled={revivalDebtLock || coopGuest || snapshot.player.hp >= snapshot.player.maxHp}
+                  disabled={revivalDebtLock || snapshot.player.hp >= snapshot.player.maxHp}
                   title={revivalDebtLock ? revivalDebtTitle : undefined}
                 >
                   Rest (10g)
@@ -348,7 +387,7 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
                   <button
                     type="button"
                     onClick={() => gameStore.trainAttack()}
-                    disabled={revivalDebtLock || coopGuest || !canAffordTraining}
+                    disabled={revivalDebtLock || !canAffordTraining}
                     title={revivalDebtLock ? revivalDebtTitle : undefined}
                   >
                     Train Attack
@@ -356,7 +395,7 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
                   <button
                     type="button"
                     onClick={() => gameStore.trainDefense()}
-                    disabled={revivalDebtLock || coopGuest || !canAffordTraining}
+                    disabled={revivalDebtLock || !canAffordTraining}
                     title={revivalDebtLock ? revivalDebtTitle : undefined}
                   >
                     Train Defense
@@ -364,7 +403,7 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
                   <button
                     type="button"
                     onClick={() => gameStore.trainSpeed()}
-                    disabled={revivalDebtLock || coopGuest || !canAffordTraining}
+                    disabled={revivalDebtLock || !canAffordTraining}
                     title={revivalDebtLock ? revivalDebtTitle : undefined}
                   >
                     Train Speed
@@ -382,11 +421,7 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
                 <button
                   type="button"
                   onClick={() => gameStore.claimGuildBounty()}
-                  disabled={
-                    revivalDebtLock ||
-                    coopGuest ||
-                    snapshot.player.monstersDefeated < 4 + snapshot.player.bountyTier * 2
-                  }
+                  disabled={revivalDebtLock || snapshot.player.monstersDefeated < 4 + snapshot.player.bountyTier * 2}
                   title={revivalDebtLock ? revivalDebtTitle : undefined}
                 >
                   Claim Bounty
@@ -401,7 +436,7 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
                 <button
                   type="button"
                   onClick={() => gameStore.challengeBoss()}
-                  disabled={coopGuest || snapshot.battle.inBattle || snapshot.player.bossDefeated}
+                  disabled={snapshot.battle.inBattle || snapshot.player.bossDefeated}
                 >
                   {snapshot.player.bossDefeated ? "Void Titan defeated" : "Challenge Void Titan"}
                 </button>
@@ -418,10 +453,60 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
                 <button
                   type="button"
                   onClick={() => gameStore.enterRealmPortal()}
-                  disabled={coopGuest || snapshot.battle.inBattle}
-                  title={coopGuest ? "Only the host can cross realms in LAN co-op." : undefined}
+                  disabled={snapshot.battle.inBattle}
                 >
                   Enter new realm
+                </button>
+              </div>
+            )}
+
+            {snapshot.world.canReturnPortal && (
+              <div className="box return-rift">
+                <strong>Return rift</strong>
+                <p className="boss-arena-hint">
+                  A stable rift anchored near the town — step through to return to a fresh first world. Your gear,
+                  companions, and story progress come with you.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => gameStore.returnToRealmOne()}
+                  disabled={snapshot.battle.inBattle}
+                >
+                  Return to first world
+                </button>
+              </div>
+            )}
+
+            {snapshot.world.canDungeon && (
+              <div className="box dungeon-entrance">
+                <strong>Dungeon</strong>
+                <p className="boss-arena-hint">
+                  Past the iron-bound door, skeletons and zombies prowl the crypt halls. Rare treasures
+                  wait in chests further in — but only the bold descend.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => gameStore.enterDungeon()}
+                  disabled={snapshot.battle.inBattle}
+                >
+                  Descend into dungeon
+                </button>
+              </div>
+            )}
+
+            {snapshot.world.canLeaveDungeon && (
+              <div className="box return-rift">
+                <strong>Dungeon stairs</strong>
+                <p className="boss-arena-hint">
+                  Warm air drifts down from the surface. Climb back up to the overworld — your haul
+                  comes with you.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => gameStore.leaveDungeon()}
+                  disabled={snapshot.battle.inBattle}
+                >
+                  Leave dungeon
                 </button>
               </div>
             )}
@@ -433,7 +518,7 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
                 <button
                   type="button"
                   onClick={() => gameStore.studyAtLibrary()}
-                  disabled={revivalDebtLock || coopGuest || gold < libraryFee}
+                  disabled={revivalDebtLock || gold < libraryFee}
                   title={revivalDebtLock ? revivalDebtTitle : undefined}
                 >
                   Study lore
@@ -541,7 +626,7 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
                 <button
                   type="button"
                   onClick={() => gameStore.temperAtForge()}
-                  disabled={revivalDebtLock || coopGuest || gold < forgeFee}
+                  disabled={revivalDebtLock || gold < forgeFee}
                   title={revivalDebtLock ? revivalDebtTitle : undefined}
                 >
                   Temper weapon
@@ -552,29 +637,104 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
             {snapshot.world.canChapel && (
               <div className="box">
                 <strong>Chapel</strong>
-                <p>Receive a blessing: heal and reduce revival debt by 1 if any remains.</p>
+                <p>Receive a blessing: restore HP. Tithe debt clears only from wild victories.</p>
                 <button
                   type="button"
                   onClick={() => gameStore.prayAtChapel()}
-                  disabled={coopGuest || gold < 12}
+                  disabled={gold < 5}
                 >
-                  Receive blessing (12g)
+                  Receive blessing (5g)
                 </button>
               </div>
             )}
 
             {snapshot.world.canStables && (
               <div className="box">
-                <strong>Stables</strong> <span className="training-fee">({stablesFee}g)</span>
-                <p>Mounted drills sharpen your reaction speed.</p>
-                <button
-                  type="button"
-                  onClick={() => gameStore.rideAtStables()}
-                  disabled={revivalDebtLock || coopGuest || gold < stablesFee}
-                  title={revivalDebtLock ? revivalDebtTitle : undefined}
-                >
-                  Ride drills
-                </button>
+                <strong>Stables</strong>
+                <p>
+                  Buy mounts — each adds <strong>+1 speed</strong> in battle. Current mounts:{" "}
+                  <strong>
+                    +{mountBonus}/5
+                  </strong>
+                </p>
+                <p className="stable-pet-train-hint">
+                  Companion drills level one pet at a time; wait time and fee grow with their current level (cap Lv{" "}
+                  {PET_STABLE_MAX_LEVEL}).
+                </p>
+                {pets.length > 0 ? (
+                  <ul className="stable-pet-train-list">
+                    {pets.map((pet) => {
+                      const train = snapshot.player.petStableTraining;
+                      const fee = stablePetTrainFee(pet.level);
+                      const durSec = Math.ceil(stablePetTrainDurationMs(pet.level) / 1000);
+                      const drilling = train?.petId === pet.id;
+                      const now = Date.now();
+                      const otherBusy = Boolean(train && train.petId !== pet.id && now < train.readyAt);
+                      const waitSec =
+                        drilling && train ? Math.max(0, Math.ceil((train.readyAt - now) / 1000)) : 0;
+                      const maxed = pet.level >= PET_STABLE_MAX_LEVEL;
+                      return (
+                        <li key={pet.id} className="stable-pet-train-row">
+                          <span className="stable-pet-train-meta">
+                            <strong>{pet.name}</strong> · Lv {pet.level}
+                            {drilling ? (
+                              <span className="stable-pet-train-timer"> — in drills ({waitSec}s)</span>
+                            ) : null}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => gameStore.startPetStableTraining(pet.id)}
+                            disabled={revivalDebtLock || otherBusy || drilling || maxed || gold < fee}
+                            title={
+                              revivalDebtLock
+                                ? revivalDebtTitle
+                                : maxed
+                                  ? `Max stable level (${PET_STABLE_MAX_LEVEL}).`
+                                  : otherBusy
+                                    ? "Another companion is still in drills."
+                                    : `Pay ${fee}g · about ${durSec}s`
+                            }
+                          >
+                            {drilling ? "Drilling…" : maxed ? "Max Lv" : `Train (${fee}g, ~${durSec}s)`}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="stable-pet-train-empty">
+                    No companions yet — tame monsters in battle or visit the Companion Emporium.
+                  </p>
+                )}
+                <div className="stable-horse-list" role="list">
+                  {STABLE_HORSE_ORDER.map((key) => {
+                    const h = STABLE_HORSES[key];
+                    const owned = horsesOwned.includes(key);
+                    const stableFull = horsesOwned.length >= 5;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        role="listitem"
+                        className="stable-horse-btn"
+                        onClick={() => gameStore.buyStableHorse(key)}
+                        disabled={revivalDebtLock || owned || stableFull || gold < h.price}
+                        title={
+                          owned
+                            ? `${h.name} — owned`
+                            : stableFull
+                              ? "Stable full (five mounts)."
+                              : revivalDebtLock
+                                ? revivalDebtTitle
+                                : `${h.name} — +1 battle speed (${h.price}g)`
+                        }
+                      >
+                        {owned ? "✓ " : ""}
+                        {h.name} ({h.price}g) +1 SPD
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -582,14 +742,83 @@ export function PlayfieldActionOverlays({ onOpenJournal, onOpenInventory, onOpen
               <div className="box">
                 <strong>Market</strong>
                 <p>Haggle for a discounted random consumable bundle.</p>
-                <button type="button" onClick={() => gameStore.haggleAtMarket()} disabled={revivalDebtLock || coopGuest}>
+                <button type="button" onClick={() => gameStore.haggleAtMarket()} disabled={revivalDebtLock}>
                   Haggle bundle
                 </button>
+                <MarketResourceSell revivalDebtLock={revivalDebtLock} />
               </div>
             )}
           </div>
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * Lists every non-zero gathered resource in the player's forage bag and lets the
+ * user unload them at the market. Hidden entirely when the bag is empty so the
+ * Market panel stays compact for brand-new saves.
+ */
+function MarketResourceSell({ revivalDebtLock }: { revivalDebtLock: boolean }) {
+  const snapshot = useGameStore();
+  const bag = snapshot.player.resources ?? {};
+  const rows = RESOURCE_KEYS.map((key) => ({ key, count: bag[key] ?? 0 }))
+    .filter((r) => r.count > 0)
+    .map((r) => ({ ...r, def: RESOURCES[r.key] }));
+
+  if (rows.length === 0) {
+    return (
+      <p className="market-forage-empty">
+        Forage bag empty — pick flowers, mushrooms, and herbs out in the wilds to sell them back here.
+      </p>
+    );
+  }
+
+  const totalGold = rows.reduce((sum, r) => sum + r.count * r.def.sellPrice, 0);
+  const totalCount = rows.reduce((sum, r) => sum + r.count, 0);
+
+  return (
+    <div className="market-forage">
+      <div className="market-forage-head">
+        <strong>Forage bag</strong>
+        <span>
+          {totalCount} item{totalCount === 1 ? "" : "s"} · worth {totalGold}g
+        </span>
+      </div>
+      <ul className="market-forage-list">
+        {rows.map(({ key, count, def }) => (
+          <li key={key} className="market-forage-row">
+            <span
+              className="market-forage-swatch"
+              style={{
+                background: def.colorPrimary,
+                boxShadow: `0 0 0 2px ${def.colorAccent} inset`
+              }}
+              aria-hidden
+            />
+            <span className="market-forage-name">
+              {def.name} <span className="market-forage-count">×{count}</span>
+            </span>
+            <span className="market-forage-price">{def.sellPrice}g</span>
+            <button
+              type="button"
+              onClick={() => gameStore.sellResource(key as ResourceKey, 1)}
+              disabled={revivalDebtLock}
+            >
+              Sell 1
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        className="market-forage-sell-all"
+        onClick={() => gameStore.sellAllResources()}
+        disabled={revivalDebtLock}
+      >
+        Sell all ({totalGold}g)
+      </button>
+    </div>
   );
 }

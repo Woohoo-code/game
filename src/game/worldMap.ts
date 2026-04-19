@@ -1,5 +1,13 @@
+import {
+  ENEMIES,
+  enemyAppearsInRealm,
+  RESOURCES,
+  resourcesForRealm,
+  type ResourceDefinition
+} from "./data";
+import { isDungeonTileBlocked } from "./dungeon";
 import { gameStore } from "./state";
-import type { BiomeKind } from "./types";
+import type { BiomeKind, ResourceNode, RoamingMonster } from "./types";
 import { nightEncounterRateMultiplier } from "./worldClock";
 import {
   BIOME_BY_CODE,
@@ -82,6 +90,8 @@ const BUILDING_LABELS: Record<BuildingKind, string> = {
   petShop: "PET SHOP",
   boss: "BOSS",
   voidPortal: "RIFT",
+  returnPortal: "RETURN RIFT",
+  dungeon: "DUNGEON",
   library: "LIBRARY",
   forge: "FORGE",
   chapel: "CHAPEL",
@@ -98,6 +108,8 @@ const BUILDING_COLORS: Record<BuildingKind, number> = {
   petShop: 0x2a6b5c,
   boss: 0x3d1054,
   voidPortal: 0x2a6aa8,
+  returnPortal: 0x48a878,
+  dungeon: 0x1c1418,
   library: 0x4a6088,
   forge: 0x6a3830,
   chapel: 0x9a8848,
@@ -114,6 +126,8 @@ export let MAP_W: number = 60;
 export let MAP_H: number = 40;
 export let BUILDINGS: BuildingPlacement[] = [];
 export let worldSeed: number = 0;
+/** Active realm index (1 = original world, 2+ = portal worlds). */
+export let worldRealmTier: number = 1;
 /** Bumped every time the active world changes — use as a React dep / key. */
 export let worldVersion: number = 0;
 
@@ -149,12 +163,13 @@ export function swapBossTileForVoidPortal(): void {
 }
 
 /** Initialise / replace the active world and update all live bindings. */
-export function regenerateWorld(seed?: number): GeneratedWorld {
-  const world = generateWorld(seed);
+export function regenerateWorld(seed?: number, realmTier?: number): GeneratedWorld {
+  const world = generateWorld(seed, { realmTier });
   activeWorld = world;
   MAP_W = world.width;
   MAP_H = world.height;
   worldSeed = world.seed;
+  worldRealmTier = Math.max(1, Math.floor(world.realmTier ?? 1));
   worldVersion += 1;
   rebuildBuildingsFromActiveWorld();
   return world;
@@ -280,10 +295,29 @@ export function biomeAt(x: number, y: number): BiomeKind {
   return BIOME_BY_CODE[code] ?? "meadow";
 }
 
+const REALM_BIOME_LABELS: Record<number, Partial<Record<BiomeKind, string>>> = {
+  2: {
+    meadow: "Ashfields",
+    forest: "Crystal Groves",
+    desert: "Ember Dunes",
+    swamp: "Void Marsh",
+    tundra: "Storm Peaks"
+  }
+};
+
+/** Display label for a biome, themed by realm tier. */
+export function biomeDisplayName(biome: BiomeKind, realmTier: number = worldRealmTier): string {
+  return REALM_BIOME_LABELS[realmTier]?.[biome] ?? biome;
+}
+
 /** World-pixel blocking test used by both renderers. Water and forest block movement. */
 export function isBlocked(worldX: number, worldY: number): boolean {
   const tx = Math.floor(worldX / TILE);
   const ty = Math.floor(worldY / TILE);
+  const snap = gameStore.getSnapshot();
+  if (snap.world.inDungeon && snap.world.dungeon) {
+    return isDungeonTileBlocked(snap.world.dungeon, tx, ty);
+  }
   const t = terrainCodeAt(tx, ty);
   return t === TERRAIN_WATER || t === TERRAIN_FOREST;
 }
@@ -310,6 +344,8 @@ export function syncZonesAtTile(tx: number, ty: number): void {
   let canMarket = false;
   let canVoidPortal = false;
   let canRestoreSpring = false;
+  let canReturnPortal = false;
+  let canDungeon = false;
   for (const b of BUILDINGS) {
     if (b.pos.x === tx && b.pos.y === ty) {
       switch (b.kind) {
@@ -352,6 +388,12 @@ export function syncZonesAtTile(tx: number, ty: number): void {
         case "restoreSpring":
           canRestoreSpring = true;
           break;
+        case "returnPortal":
+          canReturnPortal = true;
+          break;
+        case "dungeon":
+          canDungeon = true;
+          break;
       }
     }
   }
@@ -370,7 +412,9 @@ export function syncZonesAtTile(tx: number, ty: number): void {
     canStables,
     canMarket,
     canVoidPortal,
-    canRestoreSpring
+    canRestoreSpring,
+    canReturnPortal,
+    canDungeon
   );
 
   gameStore.storyNoteBiomeVisited(biome);
@@ -387,16 +431,182 @@ export function syncZonesAtTile(tx: number, ty: number): void {
   }
 }
 
+function mulberry32(seed: number): () => number {
+  let t = seed >>> 0;
+  return () => {
+    t = (t + 0x6d2b79f5) >>> 0;
+    let r = t;
+    r = Math.imul(r ^ (r >>> 15), r | 1);
+    r ^= r + Math.imul(r ^ (r >>> 7), r | 61);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function buildingOccupiesTile(tx: number, ty: number): boolean {
+  return BUILDINGS.some((b) => b.pos.x === tx && b.pos.y === ty);
+}
+
+function isRoamerSpawnTile(tx: number, ty: number, spawnTx: number, spawnTy: number): boolean {
+  const kind = terrainAt(tx, ty);
+  if (kind === "town" || kind === "water" || kind === "forest") return false;
+  if (buildingOccupiesTile(tx, ty)) return false;
+  if (Math.hypot(tx - spawnTx, ty - spawnTy) < 5) return false;
+  return true;
+}
+
+/**
+ * Place visible overworld monsters (deterministic from world seed + realm tier).
+ * Call after {@link regenerateWorld}; does not touch game state.
+ */
+export function buildRoamingMonsters(): RoamingMonster[] {
+  const world = activeWorld;
+  if (!world) return [];
+  const rng = mulberry32((world.seed ^ 0xc13fad2b) >>> 0);
+  const rt = worldRealmTier;
+  const roamPool = ENEMIES.filter((e) => e.visibleRoamer && enemyAppearsInRealm(e, rt));
+  if (roamPool.length === 0) return [];
+
+  const count = Math.min(48, 9 + Math.floor(rng() * 10));
+  const placed: RoamingMonster[] = [];
+  const occupied = new Set<string>();
+  const minDistSq = 16;
+  const spawnTx = world.spawnX;
+  const spawnTy = world.spawnY;
+
+  let attempts = 0;
+  while (placed.length < count && attempts < 6000) {
+    attempts++;
+    const tx = Math.floor(rng() * world.width);
+    const ty = Math.floor(rng() * world.height);
+    if (!isRoamerSpawnTile(tx, ty, spawnTx, spawnTy)) continue;
+    const key = `${tx},${ty}`;
+    if (occupied.has(key)) continue;
+    let farEnough = true;
+    for (const p of placed) {
+      if ((p.tx - tx) ** 2 + (p.ty - ty) ** 2 < minDistSq) {
+        farEnough = false;
+        break;
+      }
+    }
+    if (!farEnough) continue;
+
+    const biome = biomeAt(tx, ty);
+    const local = roamPool.filter((e) => !e.biomes?.length || e.biomes.includes(biome));
+    const pickFrom = local.length > 0 ? local : roamPool;
+    const def = pickFrom[Math.floor(rng() * pickFrom.length)]!;
+    occupied.add(key);
+    placed.push({ id: `rm-${world.seed}-${placed.length}-${tx}-${ty}`, enemyId: def.id, tx, ty });
+  }
+  return placed;
+}
+
+function isResourceSpawnTile(
+  tx: number,
+  ty: number,
+  spawnTx: number,
+  spawnTy: number,
+  def: ResourceDefinition
+): boolean {
+  const kind = terrainAt(tx, ty);
+  // Flora can live on grass AND in forest clearings (player can't walk in forest, so those
+  // stay purely decorative). Roads / towns / water never spawn pickups.
+  if (kind === "town" || kind === "water" || kind === "road") return false;
+  if (buildingOccupiesTile(tx, ty)) return false;
+  if (Math.hypot(tx - spawnTx, ty - spawnTy) < 3) return false;
+  if (kind === "forest") return false;
+  const biome = biomeAt(tx, ty);
+  if (def.biomes.length > 0 && !def.biomes.includes(biome)) return false;
+  return true;
+}
+
+/**
+ * Place visible gatherable resources (flowers / mushrooms / herbs) across the overworld.
+ * Deterministic from world seed + realm tier. Does not touch game state.
+ * Skips tiles in `occupied` so picks never overlap a visible roamer.
+ */
+export function buildResourceNodes(occupied: Set<string> = new Set()): ResourceNode[] {
+  const world = activeWorld;
+  if (!world) return [];
+  const rt = worldRealmTier;
+  const pool = resourcesForRealm(rt);
+  if (pool.length === 0) return [];
+  const rng = mulberry32((world.seed ^ 0x71a8f13d) >>> 0);
+
+  const count = Math.min(80, 28 + Math.floor(rng() * 24));
+  const placed: ResourceNode[] = [];
+  const used = new Set<string>(occupied);
+  const minDistSq = 4;
+  const spawnTx = world.spawnX;
+  const spawnTy = world.spawnY;
+
+  let attempts = 0;
+  while (placed.length < count && attempts < 9000) {
+    attempts++;
+    const tx = Math.floor(rng() * world.width);
+    const ty = Math.floor(rng() * world.height);
+    const key = `${tx},${ty}`;
+    if (used.has(key)) continue;
+
+    const biome = biomeAt(tx, ty);
+    const local = pool.filter((r) => r.biomes.length === 0 || r.biomes.includes(biome));
+    const pickFrom = local.length > 0 ? local : pool;
+    // Weighted pick.
+    let totalW = 0;
+    for (const r of pickFrom) totalW += r.spawnWeight ?? 1;
+    let roll = rng() * totalW;
+    let def: ResourceDefinition = pickFrom[0]!;
+    for (const r of pickFrom) {
+      roll -= r.spawnWeight ?? 1;
+      if (roll <= 0) {
+        def = r;
+        break;
+      }
+    }
+
+    if (!isResourceSpawnTile(tx, ty, spawnTx, spawnTy, def)) continue;
+
+    let farEnough = true;
+    for (const p of placed) {
+      if ((p.tx - tx) ** 2 + (p.ty - ty) ** 2 < minDistSq) {
+        farEnough = false;
+        break;
+      }
+    }
+    if (!farEnough) continue;
+
+    used.add(key);
+    placed.push({
+      id: `res-${world.seed}-${placed.length}-${tx}-${ty}`,
+      resourceKey: def.key,
+      tx,
+      ty
+    });
+  }
+  // Guard against stale RESOURCES entries removed between saves.
+  return placed.filter((n) => RESOURCES[n.resourceKey] !== undefined);
+}
+
 /**
  * Dispatch zone / encounter logic for the tile the player just moved onto.
  * Returns true if a random encounter was triggered so the caller can skip further movement.
  */
 export function dispatchZonesAndEncounter(tx: number, ty: number): boolean {
+  // Inside a dungeon, fully short-circuit the overworld pipeline and run the
+  // dungeon-specific event dispatcher.
+  const snap = gameStore.getSnapshot();
+  if (snap.world.inDungeon) {
+    return gameStore.dispatchDungeonTile(tx, ty);
+  }
   syncZonesAtTile(tx, ty);
+  // Gather pickups first — harmless, doesn't block an encounter roll after.
+  gameStore.tryGatherResourceAtTile(tx, ty);
   const kind = terrainAt(tx, ty);
   const inTown = kind === "town";
   if (inTown || kind === "water" || kind === "forest") {
     return false;
+  }
+  if (gameStore.tryRoamerEncounterAtTile(tx, ty)) {
+    return true;
   }
   const biome = biomeAt(tx, ty);
   const rates = BIOME_ENCOUNTER_RATES[biome] ?? BIOME_ENCOUNTER_RATES.meadow;

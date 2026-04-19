@@ -2,10 +2,13 @@ import {
   ARMOR_STATS,
   armorSellDowngrade,
   BOSS_ENEMY,
+  bossEnemyForRealm,
   ENEMIES,
+  enemiesForRealm,
   ITEM_DATA,
   ITEM_PRIORITY,
   SHOP_ITEMS,
+  UGC_STUDIO_VOID_TITANS_REQUIRED,
   SKILL_DATA,
   SKILL_ORDER,
   TOWN_MAP,
@@ -15,18 +18,35 @@ import {
   weaponSellDowngrade,
   PET_ATTACK_BUFF_CAP,
   PET_SHOP_OFFERS,
+  PET_STABLE_MAX_LEVEL,
   getUnlockedSkills,
+  pickEncounterEnemy,
   petAttackBuffForParty,
   rollMonsterConsumableDrop,
-  scaleEncounterForPlayerLevel
+  stablePetTrainDurationMs,
+  stablePetTrainFee,
+  scaleEncounterForPlayerLevel,
+  defaultElementForEnemyId,
+  STABLE_HORSES,
+  STABLE_HORSE_ORDER,
+  stableHorseSpeedBonus,
+  BATTLE_STANCE_ORDER,
+  battleStanceModifiers,
+  RESOURCES,
+  RESOURCE_KEYS,
+  emptyResourceBag
 } from "./data";
+import { elementBattleLogSuffix, elementDamageMultiplier, normalizeElementKind } from "./elements";
 import { LocalSaveRepository, type SaveRepository } from "./save";
 import {
   normalizeFacialHair,
   normalizeHairStyle,
   type ArmorKey,
+  type BattleStanceKind,
   type BattleState,
+  type HorseKey,
   type BiomeKind,
+  DUNGEON_TILE_EXIT,
   type EnemyDefinition,
   type EnemyState,
   type GameSnapshot,
@@ -35,6 +55,7 @@ import {
   type Pet,
   type PlayerAppearance,
   type PlayerState,
+  type ResourceKey,
   type SkillKey,
   type StoryStage,
   type StoryState,
@@ -58,8 +79,12 @@ import {
   saleChanceForPrice,
   ugcMonsterToEnemyDef
 } from "./ugc";
+import { generateDungeon } from "./dungeon";
 import { isNightWilds, nightEnemyStatMultiplier } from "./worldClock";
 import {
+  biomeAt,
+  buildResourceNodes,
+  buildRoamingMonsters,
   TILE,
   clampEncounterStepChance,
   getSpawnPixel,
@@ -67,6 +92,7 @@ import {
   regenerateWorld,
   swapBossTileForVoidPortal,
   syncZonesAtTile,
+  worldRealmTier as activeWorldRealmTier,
   worldSeed as activeWorldSeed,
   worldVersion as activeWorldVersion
 } from "./worldMap";
@@ -137,18 +163,22 @@ const initialPlayer = (): PlayerState => {
     armor: "clothArmor",
     items: mergeItemInventory({ potion: 2 }),
     itemHotbar: defaultItemHotbar(),
+    resources: emptyResourceBag(),
     map: "field",
     x: spawn.x,
     y: spawn.y,
     monstersDefeated: 0,
     bountyTier: 1,
     bossDefeated: false,
+    voidTitansDefeated: 0,
     appearance: defaultAppearance(),
     hasCreatedCharacter: false,
     hasTownMap: false,
     townMapEquipped: false,
     pets: [],
     activePetId: null,
+    horsesOwned: [],
+    petStableTraining: null,
     revivalDebtMonstersRemaining: 0
   };
 };
@@ -160,7 +190,8 @@ const initialBattle = (): BattleState => ({
   enemy: null,
   skillCooldown: 0,
   itemAttackBonus: 0,
-  itemDefenseBonus: 0
+  itemDefenseBonus: 0,
+  stance: "balanced"
 });
 
 /** Tile moves on grass/road after a battle before random encounters can roll again. */
@@ -184,12 +215,22 @@ const initialWorld = (): WorldState => ({
   canMarket: false,
   canVoidPortal: false,
   canRestoreSpring: false,
+  canReturnPortal: false,
+  canDungeon: false,
+  canLeaveDungeon: false,
+  inDungeon: false,
+  dungeon: null,
+  overworldReturnX: 0,
+  overworldReturnY: 0,
   voidPortalActive: false,
+  realmTier: 1,
   encounterRate: 0,
   encounterGraceSteps: 0,
   worldSeed: activeWorldSeed,
   worldVersion: activeWorldVersion,
-  worldTime: 0.28
+  worldTime: 0.28,
+  roamingMonsters: [],
+  resourceNodes: []
 });
 
 class GameStore {
@@ -215,6 +256,19 @@ class GameStore {
 
   constructor() {
     this.startMarketTicker();
+    this.refreshRoamingMonsters();
+  }
+
+  private refreshRoamingMonsters(): void {
+    this.state.world.roamingMonsters = buildRoamingMonsters();
+    this.refreshResourceNodes();
+  }
+
+  private refreshResourceNodes(): void {
+    const roamerTiles = new Set(
+      (this.state.world.roamingMonsters ?? []).map((r) => `${r.tx},${r.ty}`)
+    );
+    this.state.world.resourceNodes = buildResourceNodes(roamerTiles);
   }
 
   subscribe(listener: () => void): () => void {
@@ -225,26 +279,6 @@ class GameStore {
 
   getSnapshot(): GameSnapshot {
     return this.state;
-  }
-
-  /**
-   * LAN guest: replace local state with the host snapshot and align generated world
-   * ({@link regenerateWorld}) when the seed differs.
-   */
-  applyLanGuestSnapshot(remote: GameSnapshot): void {
-    const seed = remote.world?.worldSeed;
-    if (typeof seed === "number" && Number.isFinite(seed) && seed !== activeWorldSeed) {
-      regenerateWorld(seed);
-    }
-    this.state = structuredClone(remote) as GameSnapshot;
-    this.state.world.worldSeed = activeWorldSeed;
-    this.state.world.worldVersion = activeWorldVersion;
-    if (this.state.world.voidPortalActive && this.state.player.bossDefeated) {
-      swapBossTileForVoidPortal();
-      this.state.world.worldVersion = activeWorldVersion;
-    }
-    // Host snapshot is already live game state — skip per-tick migrateLoadedGameSnapshot for performance.
-    this.emit();
   }
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -395,7 +429,9 @@ class GameStore {
     canStables: boolean,
     canMarket: boolean,
     canVoidPortal: boolean,
-    canRestoreSpring: boolean
+    canRestoreSpring: boolean,
+    canReturnPortal: boolean,
+    canDungeon: boolean
   ): void {
     this.state.world.inTown = inTown;
     this.state.world.canHeal = canHeal;
@@ -411,6 +447,8 @@ class GameStore {
     this.state.world.canMarket = canMarket;
     this.state.world.canVoidPortal = canVoidPortal;
     this.state.world.canRestoreSpring = canRestoreSpring;
+    this.state.world.canReturnPortal = canReturnPortal;
+    this.state.world.canDungeon = canDungeon;
     this.emit();
   }
 
@@ -427,16 +465,221 @@ class GameStore {
       return;
     }
     this.state.world.voidPortalActive = false;
-    regenerateWorld(randomSeed());
+    this.state.player.bossDefeated = false;
+    const nextRealmTier = Math.max(2, Math.floor((this.state.world.realmTier ?? 1) + 1));
+    regenerateWorld(randomSeed(), nextRealmTier);
     const spawn = getSpawnPixel();
     this.state.player.x = spawn.x;
     this.state.player.y = spawn.y;
     this.state.world.worldSeed = activeWorldSeed;
     this.state.world.worldVersion = activeWorldVersion;
+    this.state.world.realmTier = nextRealmTier;
+    this.refreshRoamingMonsters();
     const tx = Math.floor(spawn.x / TILE);
     const ty = Math.floor(spawn.y / TILE);
     syncZonesAtTile(tx, ty);
     this.logEvent("You step through the rift — only this new land remains.");
+    this.emit();
+  }
+
+  /**
+   * Step through the stable return rift near the spawn of a portal realm to
+   * drop back into a freshly generated tier-1 world. Preserves all player
+   * progression (gear, pets, XP, resources, story) — only the overworld itself
+   * is reshaped.
+   */
+  returnToRealmOne(): void {
+    if (this.state.battle.inBattle) {
+      this.logEvent("Finish the battle before stepping through the rift.");
+      this.emit();
+      return;
+    }
+    if (!this.state.world.canReturnPortal) {
+      this.logEvent("Stand on the return rift near the spawn town to go back.");
+      this.emit();
+      return;
+    }
+    if ((this.state.world.realmTier ?? 1) <= 1) {
+      this.logEvent("You are already in the first world.");
+      this.emit();
+      return;
+    }
+    // A fresh tier-1 world means the player has to re-face that realm's Void Titan
+    // (different seed), so drop the flag unless they somehow kept it set.
+    this.state.world.voidPortalActive = false;
+    this.state.player.bossDefeated = false;
+    regenerateWorld(randomSeed(), 1);
+    const spawn = getSpawnPixel();
+    this.state.player.x = spawn.x;
+    this.state.player.y = spawn.y;
+    this.state.world.worldSeed = activeWorldSeed;
+    this.state.world.worldVersion = activeWorldVersion;
+    this.state.world.realmTier = 1;
+    this.state.world.canReturnPortal = false;
+    this.refreshRoamingMonsters();
+    const tx = Math.floor(spawn.x / TILE);
+    const ty = Math.floor(spawn.y / TILE);
+    syncZonesAtTile(tx, ty);
+    this.logEvent("You step through the return rift — familiar skies greet you again.");
+    this.emit();
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Dungeon (realm 2+)
+  // ────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Descend into the dungeon on the tile the player is standing on. The overworld
+   * layout stays in memory untouched — only the renderers skip drawing it while
+   * `world.inDungeon` is true. The player's overworld position is saved so
+   * {@link leaveDungeon} can drop them back exactly where they entered.
+   */
+  enterDungeon(): void {
+    if (this.state.battle.inBattle) {
+      this.logEvent("Finish the fight before descending.");
+      this.emit();
+      return;
+    }
+    if (this.state.world.inDungeon) {
+      this.logEvent("You are already inside the dungeon.");
+      this.emit();
+      return;
+    }
+    if (!this.state.world.canDungeon) {
+      this.logEvent("Stand at the dungeon entrance to descend.");
+      this.emit();
+      return;
+    }
+    if ((this.state.world.realmTier ?? 1) < 2) {
+      this.logEvent("No dungeon stirs in this realm.");
+      this.emit();
+      return;
+    }
+
+    // Seed the layout off of the current world so each world has its own dungeon,
+    // but also mix in a time component so re-entering after clearing gives a new run.
+    const seed = ((this.state.world.worldSeed ?? 1) * 101 + Date.now()) >>> 0;
+    const dungeon = generateDungeon(seed);
+
+    this.state.world.overworldReturnX = this.state.player.x;
+    this.state.world.overworldReturnY = this.state.player.y;
+    this.state.world.dungeon = dungeon;
+    this.state.world.inDungeon = true;
+    this.state.world.canLeaveDungeon = true; // they materialize on the exit tile
+    // Clear overworld flags so action overlays don't keep offering town shops etc.
+    this.state.world.inTown = false;
+    this.state.world.canHeal = false;
+    this.state.world.canShop = false;
+    this.state.world.canPetShop = false;
+    this.state.world.canTrain = false;
+    this.state.world.canGuild = false;
+    this.state.world.canBoss = false;
+    this.state.world.canLibrary = false;
+    this.state.world.canForge = false;
+    this.state.world.canChapel = false;
+    this.state.world.canStables = false;
+    this.state.world.canMarket = false;
+    this.state.world.canVoidPortal = false;
+    this.state.world.canReturnPortal = false;
+    this.state.world.canDungeon = false;
+
+    this.state.player.x = dungeon.entryTx * TILE + TILE / 2;
+    this.state.player.y = dungeon.entryTy * TILE + TILE / 2;
+
+    this.logEvent("You descend the dungeon stairs. Cold stone swallows the light.");
+    this.emit();
+  }
+
+  /**
+   * Climb back up out of the dungeon. Must be standing on the exit tile (the
+   * same tile used as entry) — {@link dispatchDungeonTile} keeps that flag synced.
+   */
+  leaveDungeon(): void {
+    if (this.state.battle.inBattle) {
+      this.logEvent("Finish the fight before leaving the dungeon.");
+      this.emit();
+      return;
+    }
+    if (!this.state.world.inDungeon) {
+      this.emit();
+      return;
+    }
+    if (!this.state.world.canLeaveDungeon) {
+      this.logEvent("The stairs out are elsewhere in the dungeon.");
+      this.emit();
+      return;
+    }
+
+    this.state.player.x = this.state.world.overworldReturnX;
+    this.state.player.y = this.state.world.overworldReturnY;
+    this.state.world.inDungeon = false;
+    this.state.world.dungeon = null;
+    this.state.world.canLeaveDungeon = false;
+
+    // Re-sync the overworld zones for the tile the player is returning to.
+    const tx = Math.floor(this.state.player.x / TILE);
+    const ty = Math.floor(this.state.player.y / TILE);
+    syncZonesAtTile(tx, ty);
+
+    this.logEvent("You climb back into daylight.");
+    this.emit();
+  }
+
+  /**
+   * Tile-event dispatcher for dungeon movement. Mirrors {@link dispatchZonesAndEncounter}
+   * for the overworld: checks for exit / chest / monster on the tile the player
+   * just stepped on. Returns true when an encounter starts so the caller can skip
+   * further movement for this frame.
+   */
+  dispatchDungeonTile(tx: number, ty: number): boolean {
+    const dungeon = this.state.world.dungeon;
+    if (!this.state.world.inDungeon || !dungeon) return false;
+
+    // Exit tile → let the UI show a "Leave dungeon" button.
+    const tile = dungeon.tiles[ty * dungeon.width + tx] ?? 0;
+    this.state.world.canLeaveDungeon = tile === DUNGEON_TILE_EXIT;
+
+    // Chest pickup — chests block the tile while closed, so the player typically
+    // has to deliberately face them. We still also allow the player action UI to
+    // trigger opening by proximity.
+    const chestHere = dungeon.chests.find((c) => !c.opened && c.tx === tx && c.ty === ty);
+    if (chestHere) {
+      this.openDungeonChest(chestHere.id);
+      // Opening doesn't start a battle — keep returning false so movement continues.
+    }
+
+    // Roamer engage — walking onto a visible undead starts the fight.
+    const roamerIdx = dungeon.roamers.findIndex((r) => r.tx === tx && r.ty === ty);
+    if (roamerIdx !== -1) {
+      const roamer = dungeon.roamers[roamerIdx]!;
+      const def = ENEMIES.find((e) => e.id === roamer.enemyId);
+      // Always remove the roamer — even if the def lookup fails we don't want
+      // the ghost tile blocking movement forever.
+      dungeon.roamers = dungeon.roamers.filter((_, i) => i !== roamerIdx);
+      if (def) {
+        this.startEncounter(undefined, { forcedTemplate: def, roamerEngage: true });
+        this.emit();
+        return true;
+      }
+    }
+
+    this.emit();
+    return false;
+  }
+
+  /** Open the chest with {@link chestId} if the player is adjacent and it isn't already open. */
+  openDungeonChest(chestId: string): void {
+    const dungeon = this.state.world.dungeon;
+    if (!this.state.world.inDungeon || !dungeon) return;
+    const chest = dungeon.chests.find((c) => c.id === chestId);
+    if (!chest || chest.opened) return;
+    chest.opened = true;
+    // Add loot.
+    const curr = this.state.player.items[chest.lootItem] ?? 0;
+    this.state.player.items[chest.lootItem] = curr + 1;
+    this.state.player.gold += chest.lootGold;
+    const itemLabel = ITEM_DATA[chest.lootItem]?.name ?? chest.lootItem;
+    this.logEvent(`Chest! ${itemLabel} (+${chest.lootGold}g).`);
     this.emit();
   }
 
@@ -449,7 +692,8 @@ class GameStore {
       this.emit();
       return;
     }
-    const enemy: EnemyState = { ...BOSS_ENEMY, hp: BOSS_ENEMY.maxHp };
+    const bossDef = bossEnemyForRealm(this.state.world.realmTier ?? 1);
+    const enemy: EnemyState = { ...bossDef, hp: bossDef.maxHp };
     this.clearVictoryExitTimer();
     this.state.battle = {
       inBattle: true,
@@ -458,7 +702,10 @@ class GameStore {
       log: [`${enemy.name} challenges you!`],
       skillCooldown: this.state.battle.skillCooldown,
       itemAttackBonus: 0,
-      itemDefenseBonus: 0
+      itemDefenseBonus: 0,
+      stance: "balanced",
+      dodgeReady: false,
+      nextHitMitigation: 0
     };
     this.emit();
     if (this.state.battle.phase === "enemyTurn") {
@@ -467,8 +714,8 @@ class GameStore {
   }
 
   resetGame(): void {
-    if (!this.state.player.bossDefeated) {
-      this.logEvent("Defeat the top-right boss first to unlock reset.");
+    if ((this.state.player.voidTitansDefeated ?? 0) < 1) {
+      this.logEvent("Defeat a Void Titan first to unlock reset.");
       this.emit();
       return;
     }
@@ -490,6 +737,7 @@ class GameStore {
         story: initialStory(),
         hasUnsavedChanges: true
       };
+      this.refreshRoamingMonsters();
       this.emit();
     })();
   }
@@ -504,7 +752,7 @@ class GameStore {
       this.emit();
       return;
     }
-    regenerateWorld(seed);
+    regenerateWorld(seed, Math.max(1, Math.floor(this.state.world.realmTier ?? 1)));
     const spawn = getSpawnPixel();
     this.state.player.x = spawn.x;
     this.state.player.y = spawn.y;
@@ -526,10 +774,21 @@ class GameStore {
       canMarket: false,
       canVoidPortal: false,
       canRestoreSpring: false,
+      canReturnPortal: false,
+      canDungeon: false,
+      canLeaveDungeon: false,
+      inDungeon: false,
+      dungeon: null,
+      overworldReturnX: 0,
+      overworldReturnY: 0,
       voidPortalActive: false,
+      realmTier: Math.max(1, Math.floor(this.state.world.realmTier ?? 1)),
       encounterRate: 0,
-      encounterGraceSteps: 0
+      encounterGraceSteps: 0,
+      roamingMonsters: [],
+      resourceNodes: []
     };
+    this.refreshRoamingMonsters();
     this.logEvent("The land reshapes itself. A new world stretches before you.");
     this.emit();
   }
@@ -615,10 +874,9 @@ class GameStore {
       this.emit();
       return;
     }
-    const fee = 12;
-    const debt = this.state.player.revivalDebtMonstersRemaining ?? 0;
+    const fee = 5;
     const needsHeal = this.state.player.hp < this.state.player.maxHp;
-    if (!needsHeal && debt <= 0) {
+    if (!needsHeal) {
       this.logEvent("You feel steady already; no chapel blessing is needed.");
       this.emit();
       return;
@@ -631,32 +889,43 @@ class GameStore {
     this.state.player.gold -= fee;
     const heal = Math.max(12, Math.floor(this.state.player.maxHp * 0.35));
     this.state.player.hp = Math.min(this.state.player.maxHp, this.state.player.hp + heal);
-    if (debt > 0) {
-      this.state.player.revivalDebtMonstersRemaining = debt - 1;
-      this.logEvent(
-        `Blessing received: healed ${heal} HP and eased your tithe by 1 (${this.state.player.revivalDebtMonstersRemaining} left).`
-      );
-    } else {
-      this.logEvent(`Blessing received: healed ${heal} HP.`);
-    }
+    this.logEvent(`Blessing received: healed ${heal} HP.`);
     this.emit();
   }
 
-  rideAtStables(): void {
+  buyStableHorse(horseKey: HorseKey): void {
     if (!this.state.world.canStables) {
-      this.logEvent("Visit the stables for agility drills.");
+      this.logEvent("Visit the stables to browse mounts.");
       this.emit();
       return;
     }
-    const fee = 18 + this.state.player.level * 4;
-    if (this.state.player.gold < fee) {
-      this.logEvent(`Stable drills cost ${fee}g.`);
+    if (this.revivalDebtActive()) {
+      this.logEvent(this.revivalDebtBlockMessage());
       this.emit();
       return;
     }
-    this.state.player.gold -= fee;
-    this.state.player.speed += 1;
-    this.logEvent(`You run mounted drills. +1 speed for ${fee}g.`);
+    const def = STABLE_HORSES[horseKey];
+    if (!def) return;
+    const owned = this.state.player.horsesOwned;
+    if (owned.includes(horseKey)) {
+      this.logEvent(`${def.name} is already in your stable.`);
+      this.emit();
+      return;
+    }
+    if (owned.length >= 5) {
+      this.logEvent("Five mounts are enough — the guild won't certify more for battle.");
+      this.emit();
+      return;
+    }
+    if (this.state.player.gold < def.price) {
+      this.logEvent(`${def.name} costs ${def.price}g.`);
+      this.emit();
+      return;
+    }
+    this.state.player.gold -= def.price;
+    this.state.player.horsesOwned = [...owned, horseKey];
+    const bonus = stableHorseSpeedBonus(this.state.player.horsesOwned);
+    this.logEvent(`Stabled ${def.name}! Mounts now grant +${bonus} speed in battle (max +5).`);
     this.emit();
   }
 
@@ -702,6 +971,79 @@ class GameStore {
     const base = this.state.world.worldTime ?? 0;
     const next = base + dayFraction;
     this.state.world.worldTime = Number.isFinite(next) ? next : 0.28;
+    const px = this.state.player.x ?? 0;
+    const py = this.state.player.y ?? 0;
+    const tx = Math.floor(px / TILE);
+    const ty = Math.floor(py / TILE);
+    syncZonesAtTile(tx, ty);
+    this.tickPetStableTraining();
+  }
+
+  /** One companion levels up when their stable drill timer elapses (real-time). */
+  private tickPetStableTraining(): void {
+    const job = this.state.player.petStableTraining;
+    if (!job) return;
+    if (Date.now() < job.readyAt) return;
+
+    const pet = this.state.player.pets.find((p) => p.id === job.petId);
+    this.state.player.petStableTraining = null;
+    if (!pet) {
+      this.emit();
+      return;
+    }
+    if (pet.level >= PET_STABLE_MAX_LEVEL) {
+      this.logEvent(`${pet.name} is already at max stable training (Lv ${PET_STABLE_MAX_LEVEL}).`);
+      this.emit();
+      return;
+    }
+    const newLevel = pet.level + 1;
+    const newBonus = Math.min(PET_ATTACK_BUFF_CAP, pet.attackBonus + 1);
+    this.state.player.pets = this.state.player.pets.map((p) =>
+      p.id === job.petId ? { ...p, level: newLevel, attackBonus: newBonus } : p
+    );
+    this.logEvent(
+      `${pet.name} finished stable drills — now level ${newLevel}! (ATK bonus up to +${PET_ATTACK_BUFF_CAP} while active)`
+    );
+    this.emit();
+  }
+
+  /** Begin a timed level-up for one pet at the stables (fee + longer wait for higher levels). */
+  startPetStableTraining(petId: string): void {
+    if (!this.state.world.canStables) {
+      this.logEvent("Visit the stables to train companions.");
+      this.emit();
+      return;
+    }
+    if (this.revivalDebtActive()) {
+      this.logEvent(this.revivalDebtBlockMessage());
+      this.emit();
+      return;
+    }
+    this.tickPetStableTraining();
+    const existing = this.state.player.petStableTraining;
+    if (existing && Date.now() < existing.readyAt) {
+      this.logEvent("Finish the current stable drill before starting another.");
+      this.emit();
+      return;
+    }
+    const pet = this.state.player.pets.find((p) => p.id === petId);
+    if (!pet) return;
+    if (pet.level >= PET_STABLE_MAX_LEVEL) {
+      this.logEvent(`${pet.name} has reached max stable training (Lv ${PET_STABLE_MAX_LEVEL}).`);
+      this.emit();
+      return;
+    }
+    const fee = stablePetTrainFee(pet.level);
+    if (this.state.player.gold < fee) {
+      this.logEvent(`Stable drills cost ${fee}g for ${pet.name} (Lv ${pet.level}).`);
+      this.emit();
+      return;
+    }
+    const durationMs = stablePetTrainDurationMs(pet.level);
+    this.state.player.gold -= fee;
+    this.state.player.petStableTraining = { petId, readyAt: Date.now() + durationMs };
+    const sec = Math.ceil(durationMs / 1000);
+    this.logEvent(`The stable takes ${pet.name} for drills (${sec}s, ${fee}g paid).`);
     this.emit();
   }
 
@@ -716,19 +1058,124 @@ class GameStore {
     return false;
   }
 
-  startEncounter(biome?: BiomeKind): void {
+  /**
+   * Step onto a tile that holds a gatherable flower / mushroom. Harvests it (stores in the
+   * resource bag) and removes the node from the map. Safe to call on every step — returns
+   * false when no node is present.
+   */
+  tryGatherResourceAtTile(tx: number, ty: number): boolean {
+    if (this.state.battle.inBattle) return false;
+    const list = this.state.world.resourceNodes ?? [];
+    const idx = list.findIndex((n) => n.tx === tx && n.ty === ty);
+    if (idx === -1) return false;
+    const node = list[idx]!;
+    const def = RESOURCES[node.resourceKey];
+    this.state.world.resourceNodes = list.filter((_, i) => i !== idx);
+    if (!def) {
+      this.emit();
+      return true;
+    }
+    const bag = this.state.player.resources ?? emptyResourceBag();
+    bag[node.resourceKey] = (bag[node.resourceKey] ?? 0) + 1;
+    this.state.player.resources = bag;
+    this.logEvent(`Gathered a ${def.name} (market value ${def.sellPrice}g).`);
+    this.emit();
+    return true;
+  }
+
+  /** Sell one unit of a resource at the market. */
+  sellResource(key: ResourceKey, amount: number = 1): void {
+    if (!this.state.world.canMarket) {
+      this.logEvent("Visit the market square to sell gatherings.");
+      this.emit();
+      return;
+    }
+    const def = RESOURCES[key];
+    if (!def) return;
+    const bag = this.state.player.resources ?? emptyResourceBag();
+    const have = bag[key] ?? 0;
+    const qty = Math.max(1, Math.min(Math.floor(amount), have));
+    if (qty <= 0) {
+      this.logEvent(`No ${def.name} on hand to sell.`);
+      this.emit();
+      return;
+    }
+    const gold = qty * def.sellPrice;
+    bag[key] = have - qty;
+    this.state.player.resources = bag;
+    this.state.player.gold += gold;
+    this.logEvent(
+      qty === 1
+        ? `Sold 1 ${def.name} for ${gold}g.`
+        : `Sold ${qty}× ${def.name} for ${gold}g.`
+    );
+    this.emit();
+  }
+
+  /** Sell the entire resource bag in one transaction. */
+  sellAllResources(): void {
+    if (!this.state.world.canMarket) {
+      this.logEvent("Visit the market square to sell gatherings.");
+      this.emit();
+      return;
+    }
+    const bag = this.state.player.resources ?? emptyResourceBag();
+    let totalGold = 0;
+    let totalCount = 0;
+    for (const key of RESOURCE_KEYS) {
+      const have = bag[key] ?? 0;
+      if (have <= 0) continue;
+      const def = RESOURCES[key];
+      if (!def) continue;
+      totalGold += have * def.sellPrice;
+      totalCount += have;
+      bag[key] = 0;
+    }
+    if (totalCount === 0) {
+      this.logEvent("Your forage bag is empty.");
+      this.emit();
+      return;
+    }
+    this.state.player.resources = bag;
+    this.state.player.gold += totalGold;
+    this.logEvent(`Sold ${totalCount} gathered resource${totalCount === 1 ? "" : "s"} for ${totalGold}g.`);
+    this.emit();
+  }
+
+  /** Step onto a tile that holds a visible roamer — starts battle and removes it from the map. */
+  tryRoamerEncounterAtTile(tx: number, ty: number): boolean {
+    if (this.state.battle.inBattle) return false;
+    const list = this.state.world.roamingMonsters ?? [];
+    const idx = list.findIndex((m) => m.tx === tx && m.ty === ty);
+    if (idx === -1) return false;
+    const row = list[idx];
+    const def = ENEMIES.find((e) => e.id === row.enemyId);
+    this.state.world.roamingMonsters = list.filter((_, i) => i !== idx);
+    if (!def) {
+      this.emit();
+      return false;
+    }
+    const biome = biomeAt(tx, ty);
+    this.startEncounter(biome, { forcedTemplate: def, roamerEngage: true });
+    return true;
+  }
+
+  startEncounter(biome?: BiomeKind, opts?: { forcedTemplate?: EnemyDefinition; roamerEngage?: boolean }): void {
     if (this.state.battle.inBattle) {
       return;
     }
-    const builtInPool: EnemyDefinition[] = biome
-      ? ENEMIES.filter((e) => !e.biomes || e.biomes.length === 0 || e.biomes.includes(biome))
-      : ENEMIES;
-    const pool: EnemyDefinition[] = [
-      ...builtInPool,
-      ...this.state.ugc.monsters.map(ugcMonsterToEnemyDef)
-    ];
-    const template = pickEncounterFromPool(pool, this.state.player.level)
-      ?? pickEncounterFromPool(ENEMIES, this.state.player.level);
+    const rt = Math.max(1, Math.floor(this.state.world.realmTier ?? 1));
+    const forced = opts?.forcedTemplate;
+    const realmBuiltInRandom = enemiesForRealm(rt, biome, { randomEncounterOnly: true });
+    const pool: EnemyDefinition[] = forced
+      ? [forced]
+      : [...realmBuiltInRandom, ...this.state.ugc.monsters.map(ugcMonsterToEnemyDef)];
+    const template = forced
+      ? forced
+      : pickEncounterFromPool(pool, this.state.player.level) ??
+        pickEncounterFromPool(realmBuiltInRandom, 99) ??
+        pickEncounterFromPool(enemiesForRealm(rt, undefined, { randomEncounterOnly: true }), this.state.player.level) ??
+        pickEncounterEnemy(this.state.player.level, rt);
     if (!template) return;
     const level = this.state.player.level;
     const ugcMatch = this.state.ugc.monsters.find((m) => m.id === template.id);
@@ -755,14 +1202,23 @@ class GameStore {
         : {})
     };
     this.clearVictoryExitTimer();
+    const intro =
+      opts?.roamerEngage
+        ? `You run into a roaming ${enemy.name}!`
+        : atNight
+          ? `Under dark skies, a wild ${enemy.name} appears!`
+          : `A wild ${enemy.name} appears!`;
     this.state.battle = {
       inBattle: true,
       phase: this.playerSpeed() >= enemy.speed ? "playerTurn" : "enemyTurn",
       enemy,
-      log: [atNight ? `Under dark skies, a wild ${enemy.name} appears!` : `A wild ${enemy.name} appears!`],
+      log: [intro],
       skillCooldown: this.state.battle.skillCooldown,
       itemAttackBonus: 0,
-      itemDefenseBonus: 0
+      itemDefenseBonus: 0,
+      stance: "balanced",
+      dodgeReady: false,
+      nextHitMitigation: 0
     };
     this.emit();
     if (this.state.battle.phase === "enemyTurn") {
@@ -770,13 +1226,52 @@ class GameStore {
     }
   }
 
+  /** Change combat approach (weapon, skills, and pet follow-ups use stance modifiers). */
+  setBattleStance(stance: BattleStanceKind): void {
+    if (!this.canPlayerAct()) return;
+    if (!BATTLE_STANCE_ORDER.includes(stance)) return;
+    if (this.state.battle.stance === stance) return;
+    this.state.battle.stance = stance;
+    const row = battleStanceModifiers(stance);
+    this.logBattle(`Stance: ${row.label}.`);
+    this.emit();
+  }
+
+  /** Spend your turn to roll evasion on the foe's next swing (speed + stance). */
+  playerDodge(): void {
+    if (!this.canPlayerAct()) return;
+    this.state.battle.dodgeReady = true;
+    this.state.battle.nextHitMitigation = 0;
+    this.logBattle("You focus on footwork — ready to dodge the next strike.");
+    this.finishPlayerTurnWithoutOffense();
+  }
+
+  /** Spend your turn to brace; the next enemy hit deals less damage. */
+  playerBrace(): void {
+    if (!this.canPlayerAct()) return;
+    this.state.battle.dodgeReady = false;
+    this.state.battle.nextHitMitigation = 0.34;
+    this.logBattle("You brace behind your guard — the next hit will land softer.");
+    this.finishPlayerTurnWithoutOffense();
+  }
+
   playerAttack(): void {
     if (!this.canPlayerAct()) return;
     const enemy = this.state.battle.enemy;
     if (!enemy) return;
-    const damage = Math.max(1, this.playerAttackPower() - enemy.defense + this.randomVariance());
+    const sm = battleStanceModifiers(this.state.battle.stance);
+    const atkEl = WEAPON_STATS[this.state.player.weapon].element;
+    const effDef = Math.max(0, enemy.defense * (1 - sm.defenseIgnore));
+    const raw = Math.max(1, this.playerAttackPower() - effDef + this.randomVariance());
+    const mult = elementDamageMultiplier(atkEl, enemy.element);
+    let damage = Math.max(1, Math.round(raw * mult * sm.outgoingDamageMult));
+    const crit = this.rollPlayerCrit();
+    if (crit.mult > 1) {
+      damage = Math.max(1, Math.round(damage * crit.mult));
+    }
     enemy.hp = Math.max(0, enemy.hp - damage);
-    this.logBattle(`You attack for ${damage} damage.`);
+    const stanceTag = sm.label !== "Balanced" ? ` (${sm.label})` : "";
+    this.logBattle(`You attack for ${damage} damage.${elementBattleLogSuffix(mult)}${crit.suffix}${stanceTag}`);
     this.maybePetFollowUp(enemy);
     this.afterPlayerAction();
   }
@@ -796,17 +1291,27 @@ class GameStore {
     }
     const enemy = this.state.battle.enemy;
     if (!enemy) return;
+    const sm = battleStanceModifiers(this.state.battle.stance);
     const skillData = SKILL_DATA[skill];
-    const damage = Math.max(2, this.playerAttackPower() + skillData.powerBonus - enemy.defense + this.randomVariance());
+    const effDef = Math.max(0, enemy.defense * (1 - sm.defenseIgnore));
+    const raw = Math.max(2, this.playerAttackPower() + skillData.powerBonus - effDef + this.randomVariance());
+    const mult = elementDamageMultiplier(skillData.element, enemy.element);
+    let damage = Math.max(2, Math.round(raw * mult * sm.outgoingDamageMult));
+    const crit = this.rollPlayerCrit();
+    if (crit.mult > 1) {
+      damage = Math.max(2, Math.round(damage * crit.mult));
+    }
     enemy.hp = Math.max(0, enemy.hp - damage);
-    this.logBattle(`You cast ${skillData.name} for ${damage} damage.`);
+    const stanceTag = sm.label !== "Balanced" ? ` (${sm.label})` : "";
+    this.logBattle(`You cast ${skillData.name} for ${damage} damage.${elementBattleLogSuffix(mult)}${crit.suffix}${stanceTag}`);
     this.state.battle.skillCooldown = skillData.cooldown;
     this.afterPlayerAction();
   }
 
   usePotion(item: ItemKey = "potion"): void {
     if (!this.canPlayerAct()) return;
-    if (this.state.player.items[item] <= 0) {
+    const count = this.state.player.items[item] ?? 0;
+    if (count <= 0) {
       this.logBattle("No healing items left.");
       this.emit();
       return;
@@ -1253,7 +1758,7 @@ class GameStore {
   }
 
   // ────────────────────────────────────────────────────────────────────────────
-  // UGC Studio (gated on bossDefeated at the UI layer)
+  // UGC Studio (gated on voidTitansDefeated >= UGC_STUDIO_VOID_TITANS_REQUIRED at the UI layer)
   // ────────────────────────────────────────────────────────────────────────────
 
   createUgcMonster(draft: Parameters<typeof newUgcMonster>[0]): string {
@@ -1458,6 +1963,22 @@ class GameStore {
     } else {
       battleLoaded.itemDefenseBonus = Math.max(0, Math.floor(battleLoaded.itemDefenseBonus));
     }
+    const st = battleLoaded.stance;
+    battleLoaded.stance = BATTLE_STANCE_ORDER.includes(st as BattleStanceKind)
+      ? (st as BattleStanceKind)
+      : "balanced";
+    battleLoaded.dodgeReady = battleLoaded.dodgeReady === true;
+    const mit = battleLoaded.nextHitMitigation;
+    if (typeof mit !== "number" || !Number.isFinite(mit)) {
+      battleLoaded.nextHitMitigation = 0;
+    } else {
+      battleLoaded.nextHitMitigation = Math.min(0.55, Math.max(0, mit));
+    }
+    if (this.state.battle.enemy) {
+      const e = this.state.battle.enemy as EnemyState & { element?: unknown };
+      const ok = normalizeElementKind(e.element);
+      e.element = ok ?? defaultElementForEnemyId(e.id);
+    }
     if (!this.state.eventLog) {
       this.state.eventLog = ["Save loaded from old format."];
     }
@@ -1522,6 +2043,36 @@ class GameStore {
         Math.floor(this.state.player.revivalDebtMonstersRemaining)
       );
     }
+    if (!Array.isArray(this.state.player.horsesOwned)) {
+      this.state.player.horsesOwned = [];
+    } else {
+      const valid = new Set<HorseKey>(STABLE_HORSE_ORDER);
+      const seen = new Set<HorseKey>();
+      const dedup: HorseKey[] = [];
+      for (const k of this.state.player.horsesOwned) {
+        if (typeof k === "string" && valid.has(k as HorseKey) && !seen.has(k as HorseKey)) {
+          seen.add(k as HorseKey);
+          dedup.push(k as HorseKey);
+          if (dedup.length >= 5) break;
+        }
+      }
+      this.state.player.horsesOwned = dedup;
+    }
+    if (this.state.player.petStableTraining === undefined) {
+      this.state.player.petStableTraining = null;
+    } else if (
+      this.state.player.petStableTraining &&
+      (typeof this.state.player.petStableTraining.petId !== "string" ||
+        typeof this.state.player.petStableTraining.readyAt !== "number" ||
+        !Number.isFinite(this.state.player.petStableTraining.readyAt))
+    ) {
+      this.state.player.petStableTraining = null;
+    } else if (
+      this.state.player.petStableTraining &&
+      !this.state.player.pets.some((p) => p.id === this.state.player.petStableTraining!.petId)
+    ) {
+      this.state.player.petStableTraining = null;
+    }
     if (this.state.world.canPetShop === undefined) {
       this.state.world.canPetShop = false;
     }
@@ -1555,8 +2106,52 @@ class GameStore {
     if (this.state.world.canRestoreSpring === undefined) {
       this.state.world.canRestoreSpring = false;
     }
+    if (this.state.world.canReturnPortal === undefined) {
+      this.state.world.canReturnPortal = false;
+    }
+    if (this.state.world.canDungeon === undefined) {
+      this.state.world.canDungeon = false;
+    }
+    if (this.state.world.canLeaveDungeon === undefined) {
+      this.state.world.canLeaveDungeon = false;
+    }
+    if (this.state.world.inDungeon === undefined) {
+      this.state.world.inDungeon = false;
+    }
+    if (this.state.world.dungeon === undefined) {
+      this.state.world.dungeon = null;
+    }
+    if (typeof this.state.world.overworldReturnX !== "number") {
+      this.state.world.overworldReturnX = 0;
+    }
+    if (typeof this.state.world.overworldReturnY !== "number") {
+      this.state.world.overworldReturnY = 0;
+    }
+    // If a save has the player mid-dungeon but the dungeon object is malformed,
+    // pop them out to the overworld return point so they aren't stuck.
+    if (this.state.world.inDungeon && !this.state.world.dungeon) {
+      this.state.world.inDungeon = false;
+      this.state.world.canLeaveDungeon = false;
+      this.state.player.x = this.state.world.overworldReturnX;
+      this.state.player.y = this.state.world.overworldReturnY;
+    }
     if (this.state.world.voidPortalActive === undefined) {
       this.state.world.voidPortalActive = false;
+    }
+    if (typeof this.state.world.realmTier !== "number" || !Number.isFinite(this.state.world.realmTier)) {
+      this.state.world.realmTier = 1;
+    } else {
+      this.state.world.realmTier = Math.max(1, Math.floor(this.state.world.realmTier));
+    }
+    if (
+      typeof this.state.player.voidTitansDefeated !== "number" ||
+      !Number.isFinite(this.state.player.voidTitansDefeated)
+    ) {
+      const rt = this.state.world.realmTier;
+      const bd = this.state.player.bossDefeated ? 1 : 0;
+      this.state.player.voidTitansDefeated = Math.max(0, rt - 1 + bd);
+    } else {
+      this.state.player.voidTitansDefeated = Math.max(0, Math.floor(this.state.player.voidTitansDefeated));
     }
     if (this.state.world.encounterGraceSteps === undefined) {
       this.state.world.encounterGraceSteps = 0;
@@ -1564,6 +2159,22 @@ class GameStore {
     if (typeof this.state.world.worldTime !== "number" || !Number.isFinite(this.state.world.worldTime)) {
       this.state.world.worldTime = 0.28;
     }
+    if (!Array.isArray(this.state.world.roamingMonsters)) {
+      this.state.world.roamingMonsters = [];
+    }
+    if (!Array.isArray(this.state.world.resourceNodes)) {
+      this.state.world.resourceNodes = [];
+    }
+    // Backfill / sanitize the resource bag so older saves load cleanly.
+    const priorBag = (this.state.player.resources ?? {}) as Record<string, unknown>;
+    const mergedBag = emptyResourceBag();
+    for (const key of RESOURCE_KEYS) {
+      const n = priorBag[key];
+      if (typeof n === "number" && Number.isFinite(n) && n > 0) {
+        mergedBag[key] = Math.floor(n);
+      }
+    }
+    this.state.player.resources = mergedBag;
     if (!this.state.ugc) {
       this.state.ugc = initialUgc();
     }
@@ -1613,9 +2224,9 @@ class GameStore {
     // and plunk the player onto the new spawn so they don't get stranded in water/forest.
     const savedSeed = this.state.world.worldSeed;
     if (typeof savedSeed === "number" && savedSeed !== 0) {
-      regenerateWorld(savedSeed);
+      regenerateWorld(savedSeed, this.state.world.realmTier);
     } else {
-      regenerateWorld(randomSeed());
+      regenerateWorld(randomSeed(), this.state.world.realmTier);
       const spawn = getSpawnPixel();
       this.state.player.x = spawn.x;
       this.state.player.y = spawn.y;
@@ -1623,10 +2234,13 @@ class GameStore {
     }
     this.state.world.worldSeed = activeWorldSeed;
     this.state.world.worldVersion = activeWorldVersion;
+    this.state.world.realmTier = Math.max(1, Math.floor(activeWorldRealmTier));
     if (this.state.world.voidPortalActive && this.state.player.bossDefeated) {
       swapBossTileForVoidPortal();
       this.state.world.worldVersion = activeWorldVersion;
     }
+
+    this.refreshRoamingMonsters();
 
     if (typeof this.state.hasUnsavedChanges !== "boolean") {
       this.state.hasUnsavedChanges = true;
@@ -1646,7 +2260,7 @@ class GameStore {
   }
 
   private playerSpeed(): number {
-    return this.state.player.speed;
+    return this.state.player.speed + stableHorseSpeedBonus(this.state.player.horsesOwned);
   }
 
   private afterPlayerAction(): void {
@@ -1665,42 +2279,118 @@ class GameStore {
     this.enemyTurn();
   }
 
+  /** Pass turn without attacking (Dodge / Brace). */
+  private finishPlayerTurnWithoutOffense(): void {
+    const enemy = this.state.battle.enemy;
+    if (!enemy) return;
+    if (enemy.hp <= 0) {
+      this.state.battle.phase = "won";
+      this.logBattle(`${enemy.name} defeated!`);
+      this.applyRewards(enemy);
+      this.endBattle();
+      return;
+    }
+    this.state.battle.phase = "enemyTurn";
+    this.emit();
+    this.enemyTurn();
+  }
+
+  private computeDodgeChance(enemy: EnemyState): number {
+    const st = this.state.battle.stance;
+    let p = 0.16 + (this.playerSpeed() - enemy.speed) * 0.028;
+    if (st === "stealth") p += 0.09;
+    if (st === "power") p -= 0.06;
+    if (st === "fortune") p += 0.04;
+    if (st === "balanced") p += 0.02;
+    return Math.min(0.52, Math.max(0.08, p));
+  }
+
+  private rollPlayerCrit(): { mult: number; suffix: string } {
+    const st = this.state.battle.stance;
+    let p = 0.11;
+    if (st === "fortune") p += 0.055;
+    if (st === "power") p += 0.035;
+    if (st === "stealth") p -= 0.025;
+    p = Math.min(0.3, Math.max(0.055, p));
+    if (Math.random() < p) {
+      return { mult: 1.34, suffix: " Critical!" };
+    }
+    return { mult: 1, suffix: "" };
+  }
+
+  private resumePlayerPhaseAfterEnemy(): void {
+    this.state.battle.phase = "playerTurn";
+    if ((this.state.battle.skillCooldown ?? 0) > 0) {
+      this.state.battle.skillCooldown -= 1;
+    }
+    this.emit();
+  }
+
   private enemyTurn(): void {
     if (!this.state.battle.inBattle || !this.state.battle.enemy) return;
     const enemy = this.state.battle.enemy;
-    const damage = Math.max(1, enemy.attack - this.playerDefensePower() + this.randomVariance());
+    const sm = battleStanceModifiers(this.state.battle.stance);
+    const isBoss = enemy.id === BOSS_ENEMY.id;
+
+    if (this.state.battle.dodgeReady) {
+      this.state.battle.dodgeReady = false;
+      const dodgeP = this.computeDodgeChance(enemy);
+      if (Math.random() < dodgeP) {
+        this.logBattle(`You dodge ${enemy.name}'s strike!`);
+        this.resumePlayerPhaseAfterEnemy();
+        return;
+      }
+    }
+
+    let rawHit = Math.max(1, enemy.attack - this.playerDefensePower() + this.randomVariance());
+    let heavy = false;
+    if (!isBoss && Math.random() < 0.13) {
+      heavy = true;
+      rawHit = Math.max(1, Math.round(rawHit * 1.28));
+    }
+    let damage = Math.max(1, Math.round(rawHit * sm.incomingDamageMult));
+    const mit = Math.min(0.55, Math.max(0, this.state.battle.nextHitMitigation ?? 0));
+    this.state.battle.nextHitMitigation = 0;
+    damage = Math.max(1, Math.round(damage * (1 - mit)));
+
     this.state.player.hp = Math.max(0, this.state.player.hp - damage);
-    this.logBattle(`${enemy.name} hits you for ${damage} damage.`);
+    const bits: string[] = [];
+    if (heavy) bits.push("Heavy swing!");
+    if (mit > 0) bits.push("Brace absorbed part of it.");
+    const extra = bits.length ? ` ${bits.join(" ")}` : "";
+    this.logBattle(`${enemy.name} hits you for ${damage} damage.${extra}`);
     if (this.state.player.hp <= 0) {
       this.state.battle.phase = "knockoutPending";
       this.logBattle("You were knocked out.");
       this.emit();
       return;
     }
-    this.state.battle.phase = "playerTurn";
-    if (this.state.battle.skillCooldown > 0) {
-      this.state.battle.skillCooldown -= 1;
-    }
-    this.emit();
+    this.resumePlayerPhaseAfterEnemy();
   }
 
   private applyRewards(enemy: EnemyState): void {
+    const stanceMods = battleStanceModifiers(this.state.battle.stance);
+    const isBoss = enemy.id === BOSS_ENEMY.id;
+    const rewardGoldMult = isBoss ? 1 : stanceMods.goldRewardMult;
+    const rewardXpMult = isBoss ? 1 : stanceMods.xpRewardMult;
     // Gold variance: every drop rolls within ±25% of the base reward, with a
     // 10% chance for a "lucky" 2x payout. Bosses always drop their exact gold
     // so flavor text and chapter rewards stay predictable.
     const base = enemy.goldReward;
     let goldGained = base;
     let luckyDrop = false;
-    if (enemy.id !== BOSS_ENEMY.id && base > 0) {
+    if (!isBoss && base > 0) {
       const variance = 1 + (Math.random() * 0.5 - 0.25); // 0.75 .. 1.25
       goldGained = Math.max(1, Math.round(base * variance));
       if (Math.random() < 0.1) {
         luckyDrop = true;
         goldGained *= 2;
       }
+      goldGained = Math.max(1, Math.round(goldGained * rewardGoldMult));
     }
+    const xpGained = Math.round(enemy.xpReward * rewardXpMult);
     this.state.player.gold += goldGained;
-    this.state.player.xp += enemy.xpReward;
+    this.state.player.xp += xpGained;
     this.state.player.monstersDefeated += 1;
 
     const debtBefore = this.state.player.revivalDebtMonstersRemaining ?? 0;
@@ -1715,10 +2405,14 @@ class GameStore {
       }
     }
 
+    const fortuneNote =
+      !isBoss && stanceMods.label === "Fortune" && (rewardXpMult > 1 || rewardGoldMult > 1)
+        ? " Fortune stance boosted rewards."
+        : "";
     if (luckyDrop) {
-      this.logBattle(`Lucky drop! Gained ${enemy.xpReward} XP and ${goldGained} gold.`);
+      this.logBattle(`Lucky drop! Gained ${xpGained} XP and ${goldGained} gold.${fortuneNote}`);
     } else {
-      this.logBattle(`Gained ${enemy.xpReward} XP and ${goldGained} gold.`);
+      this.logBattle(`Gained ${xpGained} XP and ${goldGained} gold.${fortuneNote}`);
     }
 
     const itemDrop = rollMonsterConsumableDrop(enemy);
@@ -1740,14 +2434,24 @@ class GameStore {
     }
 
     if (enemy.id === BOSS_ENEMY.id) {
+      this.state.player.voidTitansDefeated = Math.max(0, Math.floor(this.state.player.voidTitansDefeated ?? 0)) + 1;
       this.state.player.bossDefeated = true;
       this.state.world.voidPortalActive = true;
       swapBossTileForVoidPortal();
       this.state.world.worldSeed = activeWorldSeed;
       this.state.world.worldVersion = activeWorldVersion;
-      this.logEvent(
-        "Void Titan defeated! UGC Studio and Reset Game are now unlocked. A rift opens on the arena tile — step through for a new realm."
-      );
+      const titans = this.state.player.voidTitansDefeated;
+      if (titans === 1) {
+        this.logEvent(
+          "Void Titan defeated! Reset Game unlocks from the journal strip. A rift opens on the arena — cross into a deadlier realm and fell one more Titan to open UGC Studio."
+        );
+      } else if (titans === UGC_STUDIO_VOID_TITANS_REQUIRED) {
+        this.logEvent(
+          "Another Titan falls! UGC Studio unlocks — design monsters, weapons, and armor for the marketplace. A new rift opens on the arena tile."
+        );
+      } else {
+        this.logEvent("Void Titan defeated! A rift opens on the arena tile — step through for a new realm.");
+      }
       // Force-advance the storyline to the epilogue regardless of which chapter
       // the player is on — anyone who rushes the boss still gets the outro.
       story.reachedBossArena = true;
@@ -1883,6 +2587,9 @@ class GameStore {
     this.state.battle.enemy = null;
     this.state.battle.itemAttackBonus = 0;
     this.state.battle.itemDefenseBonus = 0;
+    this.state.battle.stance = "balanced";
+    this.state.battle.dodgeReady = false;
+    this.state.battle.nextHitMitigation = 0;
     this.state.world.encounterGraceSteps = POST_ENCOUNTER_GRACE_STEPS;
     this.emit();
   }
@@ -1908,9 +2615,13 @@ class GameStore {
     const pet = this.getActivePet();
     if (!pet) return;
     // Extra chip after your swing — main attack already includes up to +10 from {@link petAttackBuffForParty}.
-    const dmg = Math.max(1, 2 + Math.floor(pet.level / 2) + this.randomVariance());
+    const sm = battleStanceModifiers(this.state.battle.stance);
+    const atkEl = WEAPON_STATS[this.state.player.weapon].element;
+    const raw = Math.max(1, 2 + Math.floor(pet.level / 2) + this.randomVariance());
+    const mult = elementDamageMultiplier(atkEl, enemy.element);
+    const dmg = Math.max(1, Math.round(raw * mult * sm.outgoingDamageMult));
     enemy.hp = Math.max(0, enemy.hp - dmg);
-    this.logBattle(`${pet.name} strikes for ${dmg}.`);
+    this.logBattle(`${pet.name} strikes for ${dmg}${elementBattleLogSuffix(mult)}`);
   }
 
   /** Roll to tame a defeated monster. Void Titan and duplicates up to the cap are skipped. */
@@ -2015,6 +2726,9 @@ class GameStore {
     this.state.player.pets = this.state.player.pets.filter((p) => p.id !== id);
     if (this.state.player.activePetId === id) {
       this.state.player.activePetId = this.state.player.pets[0]?.id ?? null;
+    }
+    if (this.state.player.petStableTraining?.petId === id) {
+      this.state.player.petStableTraining = null;
     }
     this.logEvent(`You set ${pet.name} free.`);
     this.emit();
@@ -2128,7 +2842,7 @@ class GameStore {
     this.state = {
       player: {
         ...this.state.player,
-        items: { ...this.state.player.items },
+        items: mergeItemInventory(this.state.player.items),
         itemHotbar: [...normalizeItemHotbar(this.state.player.itemHotbar ?? defaultItemHotbar())],
         appearance: { ...this.state.player.appearance },
         pets: pets.map((p) => ({ ...p }))

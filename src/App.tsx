@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 import Phaser from "phaser";
 import { GameScene } from "./game/GameScene";
-import { isLanGuest, sendGuestMove } from "./coop/lanCoop";
-import { useLanCoopRole } from "./coop/useLanCoopRole";
 import { inputController, type MoveDirection } from "./game/inputController";
+import { UGC_STUDIO_VOID_TITANS_REQUIRED } from "./game/data";
 import { gameStore } from "./game/state";
 import { CAMPAIGN_TAGLINE } from "./game/story";
 import { GAME_VERSION_LABEL } from "./version";
@@ -28,6 +27,8 @@ import { FullInventoryScreen } from "./ui/FullInventoryScreen";
 import { InventoryBar } from "./ui/InventoryBar";
 import { DownloadPage } from "./ui/DownloadPage";
 import { DOWNLOAD_ROUTE } from "./routes";
+import { ShopItemDetailPanel } from "./ui/ShopItemDetailPanel";
+import type { ItemKey } from "./game/types";
 
 /**
  * Feature flag for the 3D prototype overworld.
@@ -88,18 +89,10 @@ function useRoute() {
 function DirButton({ dir, label, className }: { dir: MoveDirection; label: string; className?: string }) {
   const press = (event: PointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
-    if (isLanGuest()) {
-      sendGuestMove(dir, true);
-      return;
-    }
     inputController.setPressed(dir, true);
   };
   const release = (event: PointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
-    if (isLanGuest()) {
-      sendGuestMove(dir, false);
-      return;
-    }
     inputController.setPressed(dir, false);
   };
 
@@ -125,10 +118,10 @@ export default function App() {
   const [journalOpen, setJournalOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [petsOpen, setPetsOpen] = useState(false);
+  const [selectedShopItem, setSelectedShopItem] = useState<ItemKey | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const snapshot = useGameStore();
-  const lanRole = useLanCoopRole();
   const desktopInventory = useDesktopInventoryBar();
   const overlays = useStoryOverlays();
   const { path, navigate } = useRoute();
@@ -138,12 +131,13 @@ export default function App() {
   }
 
   // The UGC Studio is rendered when the URL is `/ugc`.
-  // Gating: the player must have created a character *and* defeated the boss.
+  // Gating: character created *and* two Void Titan wins (second realm's boss).
   // If either condition fails, silently redirect back to `/` so a direct visit
   // to /ugc never shows a half-state view.
   const ugcRequested = path === "/ugc";
   const ugcAllowed =
-    snapshot.player.hasCreatedCharacter && snapshot.player.bossDefeated;
+    snapshot.player.hasCreatedCharacter &&
+    snapshot.player.voidTitansDefeated >= UGC_STUDIO_VOID_TITANS_REQUIRED;
   const ugcOpen = ugcRequested && ugcAllowed;
 
   useEffect(() => {
@@ -151,6 +145,12 @@ export default function App() {
       navigate("/", true);
     }
   }, [ugcRequested, ugcAllowed, navigate]);
+
+  useEffect(() => {
+    if (snapshot.battle.inBattle || !snapshot.world.canShop) {
+      setSelectedShopItem(null);
+    }
+  }, [snapshot.battle.inBattle, snapshot.world.canShop]);
 
   // Open the UGC URL directly should bypass the title screen — if the player
   // already has a character, render the play backdrop beneath the studio
@@ -401,7 +401,7 @@ export default function App() {
       <FullInventoryScreen
         open={inventoryOpen}
         onClose={() => setInventoryOpen(false)}
-        coopGuestLocked={lanRole === "guest"}
+        coopGuestLocked={false}
       />
       {petsOpen && <PetsPanel onClose={() => setPetsOpen(false)} />}
       {showStoryOverlays && overlays.showPrologue && (
@@ -442,9 +442,26 @@ export default function App() {
             onOpenInventory={() => setInventoryOpen(true)}
             onOpenUgc={openUgc}
             onOpenPets={() => setPetsOpen(true)}
+            selectedShopItem={selectedShopItem}
+            onSelectShopItem={setSelectedShopItem}
           />
           {snapshot.battle.inBattle && <BattleOverlay />}
         </div>
+        {effectiveScreen === "play" && (
+          <div className={desktopInventory ? "inventory-bar-desktop" : "inventory-bar-compact"}>
+            <InventoryBar
+              hotkeysBlocked={
+                journalOpen ||
+                inventoryOpen ||
+                petsOpen ||
+                ugcOpen ||
+                overlays.showPrologue ||
+                overlays.showEpilogue ||
+                Boolean(overlays.toastStage)
+              }
+            />
+          </div>
+        )}
       </div>
 
       <div className="right-column panel">
@@ -462,25 +479,16 @@ export default function App() {
             ))}
           </div>
         )}
+        {!snapshot.battle.inBattle &&
+          snapshot.world.canShop &&
+          selectedShopItem != null && (
+            <ShopItemDetailPanel
+              itemKey={selectedShopItem}
+              gold={snapshot.player.gold}
+              revivalDebtLock={(snapshot.player.revivalDebtMonstersRemaining ?? 0) > 0}
+            />
+          )}
       </div>
-
-      {effectiveScreen === "play" && (
-        <div className={desktopInventory ? "inventory-bar-desktop" : "inventory-bar-compact"}>
-          <InventoryBar
-            hotkeysBlocked={
-              lanRole === "guest" ||
-              journalOpen ||
-              inventoryOpen ||
-              petsOpen ||
-              ugcOpen ||
-              overlays.showPrologue ||
-              overlays.showEpilogue ||
-              Boolean(overlays.toastStage)
-            }
-            coopGuestLocked={lanRole === "guest"}
-          />
-        </div>
-      )}
     </div>
   );
 }
