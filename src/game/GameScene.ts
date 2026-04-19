@@ -1,9 +1,12 @@
 import Phaser from "phaser";
-import { RESOURCES } from "./data";
+import { overworldHorseWalkSpeedMultiplier, RESOURCES } from "./data";
+import { currentDungeonFloor } from "./dungeon";
 import {
   DUNGEON_TILE_EXIT,
   DUNGEON_TILE_FLOOR,
   DUNGEON_TILE_PILLAR,
+  DUNGEON_TILE_STAIRS_DOWN,
+  DUNGEON_TILE_STAIRS_UP,
   DUNGEON_TILE_WALL
 } from "./types";
 import { inputController } from "./inputController";
@@ -99,7 +102,8 @@ export class GameScene extends Phaser.Scene {
     if (gameStore.getSnapshot().battle.inBattle) {
       return;
     }
-    const speed = 140 * (delta / 1000);
+    const walkMult = overworldHorseWalkSpeedMultiplier(gameStore.getSnapshot().player.horsesOwned);
+    const speed = 140 * walkMult * (delta / 1000);
     let vx = 0;
     let vy = 0;
     if (this.isLeft()) vx -= speed;
@@ -142,6 +146,7 @@ export class GameScene extends Phaser.Scene {
       chapel: { sprite: "innSprite", tint: 0xc8c0b0 },
       stables: { sprite: "innSprite", tint: 0x8b5a32 },
       market: { sprite: "shopSprite", tint: 0xc49a48 },
+      throne: { sprite: "bossArenaSprite", tint: 0xd4a020 },
       restoreSpring: { sprite: "springSprite" }
     };
 
@@ -266,12 +271,14 @@ export class GameScene extends Phaser.Scene {
   private drawDungeonMap(): void {
     const dungeon = gameStore.getSnapshot().world.dungeon;
     if (!dungeon) return;
+    const floor = currentDungeonFloor(dungeon);
+    if (!floor) return;
     const g = this.add.graphics();
-    for (let y = 0; y < dungeon.height; y++) {
-      for (let x = 0; x < dungeon.width; x++) {
+    for (let y = 0; y < floor.height; y++) {
+      for (let x = 0; x < floor.width; x++) {
         const px = x * TILE;
         const py = y * TILE;
-        const code = dungeon.tiles[y * dungeon.width + x] ?? DUNGEON_TILE_WALL;
+        const code = floor.tiles[y * floor.width + x] ?? DUNGEON_TILE_WALL;
         if (code === DUNGEON_TILE_WALL) {
           g.fillStyle(0x120d12, 1);
           g.fillRect(px, py, TILE, TILE);
@@ -292,6 +299,16 @@ export class GameScene extends Phaser.Scene {
           g.fillCircle(px + TILE / 2, py + TILE / 2, 10);
           g.fillStyle(0x2a1f24, 1);
           g.fillCircle(px + TILE / 2, py + TILE / 2, 7);
+        } else if (code === DUNGEON_TILE_STAIRS_DOWN) {
+          g.fillStyle(0x2a2838, 1);
+          g.fillRect(px + 2, py + 2, TILE - 4, TILE - 4);
+          g.fillStyle(0x6a5090, 1);
+          g.fillTriangle(px + 6, py + TILE - 8, px + TILE / 2, py + 8, px + TILE - 6, py + TILE - 8);
+        } else if (code === DUNGEON_TILE_STAIRS_UP) {
+          g.fillStyle(0x283828, 1);
+          g.fillRect(px + 2, py + 2, TILE - 4, TILE - 4);
+          g.fillStyle(0x508868, 1);
+          g.fillTriangle(px + 6, py + 8, px + TILE / 2, py + TILE - 8, px + TILE - 6, py + 8);
         } else if (code === DUNGEON_TILE_EXIT) {
           g.fillStyle(0x5a4028, 1);
           g.fillRect(px + 2, py + 2, TILE - 4, TILE - 4);
@@ -323,7 +340,9 @@ export class GameScene extends Phaser.Scene {
     g.clear();
     const dungeon = gameStore.getSnapshot().world.dungeon;
     if (!dungeon) return;
-    for (const c of dungeon.chests) {
+    const floor = currentDungeonFloor(dungeon);
+    if (!floor) return;
+    for (const c of floor.chests) {
       const cx = c.tx * TILE + TILE / 2;
       const cy = c.ty * TILE + TILE / 2;
       if (c.opened) {
@@ -349,7 +368,9 @@ export class GameScene extends Phaser.Scene {
     g.clear();
     const dungeon = gameStore.getSnapshot().world.dungeon;
     if (!dungeon) return;
-    for (const r of dungeon.roamers) {
+    const floor = currentDungeonFloor(dungeon);
+    if (!floor) return;
+    for (const r of floor.roamers) {
       const cx = r.tx * TILE + TILE / 2;
       const cy = r.ty * TILE + TILE / 2;
       g.fillStyle(0xbfc0a0, 1);

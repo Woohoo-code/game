@@ -24,7 +24,36 @@ export type ItemKey =
   | "worldTreeDew";
 export type WeaponKey = "woodSword" | "ironSword" | "steelSword" | "mythrilBlade";
 export type ArmorKey = "clothArmor" | "chainMail" | "knightArmor" | "dragonArmor";
-export type SkillKey = "spark" | "iceShard" | "thunderLance" | "meteorBreak";
+export type SkillKey =
+  | "spark"
+  | "steadyGuard"
+  | "ironBones"
+  | "vitalSurge"
+  | "mountainCore"
+  | "iceShard"
+  | "thunderLance"
+  | "meteorBreak"
+  | "cometRush"
+  | "zenithRay"
+  | "emberToughness"
+  | "bloodBond"
+  | "shadowSuture"
+  | "lastEmber";
+
+/** Combat style chosen at character creation (cannot be changed without a new hero). */
+export type FightingClass = "knight" | "wizard" | "thief";
+
+export const FIGHTING_CLASS_ORDER: readonly FightingClass[] = ["knight", "wizard", "thief"] as const;
+
+export const FIGHTING_CLASS_LABELS: Record<FightingClass, string> = {
+  knight: "Knight",
+  wizard: "Wizard",
+  thief: "Thief"
+};
+
+export function normalizeFightingClass(value: unknown): FightingClass {
+  return value === "wizard" || value === "thief" || value === "knight" ? value : "knight";
+}
 
 export type HairStyle =
   | "short"
@@ -108,6 +137,12 @@ export interface PlayerAppearance {
 
 export interface PlayerState {
   name: string;
+  /** Fighting style — set at character creation. */
+  fightingClass: FightingClass;
+  /** Unspent arcane skill tree points (spent in the Skills panel). */
+  skillPoints: number;
+  /** Skills purchased on the tree (Spark is free at rank 0). */
+  learnedSkills: SkillKey[];
   level: number;
   xp: number;
   xpToNext: number;
@@ -128,6 +163,15 @@ export interface PlayerState {
   x: number;
   y: number;
   monstersDefeated: number;
+  /** Royal audience rewards claimed (Crownkeep throne). */
+  kingFavorsClaimed: number;
+  /**
+   * Total beasts struck down for the crown (increments on every victory; never
+   * reduced by guild bounty payouts, unlike {@link monstersDefeated}).
+   */
+  kingAudienceTally: number;
+  /** {@link kingAudienceTally} when the last royal favor was granted. */
+  kingAudienceTallyLastClaim: number;
   bountyTier: number;
   /** True once the Void Titan in the *current* realm has been defeated (cleared when crossing a rift). */
   bossDefeated: boolean;
@@ -144,7 +188,7 @@ export interface PlayerState {
   pets: Pet[];
   /** The currently active pet (follows in overworld, assists in battle). Null = no pet out. */
   activePetId: string | null;
-  /** Owned mounts from the stables; each grants +1 battle speed, capped at five total. */
+  /** Owned mounts from the stables; each improves overworld walk speed (not battle), capped at five total. */
   horsesOwned: HorseKey[];
   /**
    * Stables pet drill in progress: companion levels up when `readyAt` (epoch ms) is reached.
@@ -157,6 +201,15 @@ export interface PlayerState {
    * Legacy saves may still carry debt from the old revival tithe; new knockouts strip gold/gear instead.
    */
   revivalDebtMonstersRemaining: number;
+  /**
+   * Hired taproom muscle: flat +2 attack in battle per remaining count; ticks down
+   * after each non-boss win.
+   */
+  npcMercenaryBattlesLeft: number;
+  /** Matches {@link WorldState.worldTime}-derived bucket for inn patron rotation. */
+  npcPatronRotationBucket: number;
+  /** Patron slots (0–2) already spoken with this rotation. */
+  npcPatronsUsed: string[];
 }
 
 /** A tamed companion. Inherits body shape + colors from the monster species it was tamed from. */
@@ -258,13 +311,19 @@ export const DUNGEON_TILE_FLOOR = 1;
 export const DUNGEON_TILE_EXIT = 2;
 /** Decorative pillar — blocks movement, rendered differently from a wall. */
 export const DUNGEON_TILE_PILLAR = 3;
+/** Descend to the next deeper floor (not on the bottom floor). */
+export const DUNGEON_TILE_STAIRS_DOWN = 4;
+/** Climb toward shallower floors (not on the top floor). */
+export const DUNGEON_TILE_STAIRS_UP = 5;
 
 /** Type-level set of dungeon tile codes for discriminated handling. */
 export type DungeonTileCode =
   | typeof DUNGEON_TILE_WALL
   | typeof DUNGEON_TILE_FLOOR
   | typeof DUNGEON_TILE_EXIT
-  | typeof DUNGEON_TILE_PILLAR;
+  | typeof DUNGEON_TILE_PILLAR
+  | typeof DUNGEON_TILE_STAIRS_DOWN
+  | typeof DUNGEON_TILE_STAIRS_UP;
 
 /** A treasure chest inside a dungeon. */
 export interface DungeonChest {
@@ -286,18 +345,31 @@ export interface DungeonRoamer {
   ty: number;
 }
 
-/** Live state of the currently-loaded dungeon (null when the player isn't inside). */
-export interface DungeonState {
-  seed: number;
+/** One floor of a dungeon (same dimensions as other floors in the same run). */
+export interface DungeonFloorState {
   width: number;
   height: number;
   /** row-major width*height tile codes (see DUNGEON_TILE_* consts) */
   tiles: number[];
-  /** Tile the player materializes on when entering. Also a valid exit tile. */
+  /** West-side anchor tile (exit on floor 1, stairs up on deeper floors). */
   entryTx: number;
   entryTy: number;
   chests: DungeonChest[];
   roamers: DungeonRoamer[];
+  /** Crownkeep throne hall only — standing here enables royal audience. */
+  throneHallAudience?: { tx: number; ty: number };
+}
+
+/** Live state of the currently-loaded dungeon (null when the player isn't inside). */
+export interface DungeonState {
+  seed: number;
+  /** Number of floors in this run (1–4). */
+  depth: number;
+  /** Active floor index, 0 = surface exit level. */
+  levelIndex: number;
+  floors: DungeonFloorState[];
+  /** Crypt crawl vs. short walk to the king in Crownkeep. */
+  kind?: "dungeon" | "throneHall";
 }
 
 /** Body shapes available to both built-in and UGC monsters. */
@@ -309,10 +381,24 @@ export type MonsterBodyShape =
   | "wraith"
   | "drake"
   | "spider"
-  | "scorpion";
+  | "scorpion"
+  /** Built-in only: fruit creature — unique mesh in {@link MonsterModels}. */
+  | "mangoMan";
 
 export interface EnemyState extends EnemyDefinition {
   hp: number;
+  /**
+   * Oil coating — fire-element attacks / skills deal +40% damage while > 0.
+   * Ticks down by one after each enemy turn.
+   */
+  oiled?: number;
+  /** When true, the player's next offensive strike auto-crits then clears the mark. */
+  marked?: boolean;
+  /**
+   * Shred stacks (0..5). Each Shred adds +1 and deals modest damage; when stacks
+   * reach 3+ the next Shred detonates, dealing big damage and clearing all stacks.
+   */
+  shredStacks?: number;
 }
 
 export type BattlePhase =
@@ -329,6 +415,16 @@ export type BattlePhase =
 
 /** Player combat approach — changes outgoing/incoming damage and (for Fortune) win rewards. */
 export type BattleStanceKind = "balanced" | "stealth" | "power" | "fortune";
+
+/** Snapshot of rewards shown on the victory linger screen (cleared when the battle ends). */
+export interface BattleVictorySummary {
+  xpGained: number;
+  goldGained: number;
+  luckyGold: boolean;
+  itemDropName: string | null;
+  levelsGained: number;
+  petTamedName: string | null;
+}
 
 export interface BattleState {
   inBattle: boolean;
@@ -357,6 +453,31 @@ export interface BattleState {
    * Cleared when that hit lands.
    */
   nextHitMitigation?: number;
+  /** Set when {@link BattlePhase} is `victoryPending` after rewards are applied. */
+  victorySummary: BattleVictorySummary | null;
+  /** Tile terrain captured at encounter start — drives positional combat bonuses. */
+  encounterTerrain?: "town" | "road" | "water" | "grass" | "forest" | "hill";
+  /**
+   * Positional edges granted by {@link encounterTerrain}:
+   *  - `highGround` (hill start): +15% outgoing damage for the whole fight.
+   *  - `ambush` (forest / roamer start): +20% damage on the first player offense only.
+   */
+  positional?: { highGround?: boolean; ambush?: boolean };
+  /** `performance.now()` when the player last struck the enemy (drives monster shake anim). */
+  lastPlayerHitAt?: number;
+  /** `performance.now()` when the enemy last struck the player (drives HUD flash anim). */
+  lastEnemyHitAt?: number;
+  /**
+   * Turns the player is "locked out" for — when > 0, the enemy takes another turn
+   * instead of handing control back. Set by Heavy Strike (1). Decremented each
+   * time an enemy turn resolves.
+   */
+  stunTurns?: number;
+  /**
+   * Guard resource (0..3) accumulated by the Guard action; spent by Risk Strike
+   * to raise its hit chance + payoff. Consumed to zero whenever Risk Strike rolls.
+   */
+  guardEnergy?: number;
 }
 
 export interface WorldState {
@@ -404,8 +525,16 @@ export interface WorldState {
   resourceNodes: ResourceNode[];
   /** Standing on the dungeon entrance building (realm 2+ only). */
   canDungeon: boolean;
+  /** South gate of Crownkeep (realm 1) — enter the interior hall toward the king. */
+  canEnterThroneHall: boolean;
+  /** Standing before the king (Crownkeep throne hall end tile, realm tier 1 only). */
+  canThrone: boolean;
   /** Standing on the entry/exit tile inside an active dungeon. */
   canLeaveDungeon: boolean;
+  /** Standing on a descending staircase inside a dungeon (click-to-descend). */
+  canDescendStairs: boolean;
+  /** Standing on an ascending staircase inside a dungeon (click-to-ascend). */
+  canAscendStairs: boolean;
   /** True when the player is inside a dungeon — overworld rendering is suspended. */
   inDungeon: boolean;
   /** Active dungeon map + contents (null when outside a dungeon). */
@@ -517,6 +646,19 @@ export interface StoryState {
   pendingChapterToast: StoryStage | null;
 }
 
+/** Shown once in the level-up modal; per-level gains are +8 max HP, +2 attack, +1 defense, +1 speed. */
+export interface LevelUpCelebrationPayload {
+  newLevel: number;
+  /** How many level-ups were applied in this batch (usually 1). */
+  levelsGained: number;
+  maxHpGained: number;
+  attackGained: number;
+  defenseGained: number;
+  speedGained: number;
+  /** Total skill points gained this batch (class-dependent). */
+  skillPointsGained?: number;
+}
+
 export interface GameSnapshot {
   player: PlayerState;
   battle: BattleState;
@@ -529,4 +671,12 @@ export interface GameSnapshot {
    * trailing "Game saved." line that is written on the next save).
    */
   hasUnsavedChanges: boolean;
+  /** UI consumes this once to show a level-up celebration (e.g. after battle XP). */
+  pendingLevelUpCelebration: LevelUpCelebrationPayload | null;
+  /**
+   * When true, a full-screen "resting" splash is overlaid. Set by
+   * {@link GameStore.healAtInn}; cleared automatically after a short delay
+   * once the in-game clock has been fast-forwarded to the next 07:00.
+   */
+  sleeping: boolean;
 }

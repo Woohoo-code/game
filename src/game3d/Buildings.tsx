@@ -31,6 +31,14 @@ const STYLE: Record<BuildingKind, KindStyle> = {
   chapel: { height: 1.48, wallColor: "#d8d4cc", roof: "gold", accent: "#8a7040", bannerColor: "#d4b060", labelColor: "#fffaf0" },
   stables: { height: 1.4, wallColor: "#a87848", roof: "thatch", accent: "#5c3a18", bannerColor: "#8b6020", labelColor: "#ffe8c8" },
   market: { height: 1.52, wallColor: "#c9a060", roof: "red", accent: "#6a4028", bannerColor: "#b85830", labelColor: "#fff2cc" },
+  throne: {
+    height: 2.12,
+    wallColor: "#6a6e82",
+    roof: "gold",
+    accent: "#2a2840",
+    bannerColor: "#d4a020",
+    labelColor: "#fff8e8"
+  },
   restoreSpring: { height: 0.35, wallColor: "#4a9090", roof: "slate", accent: "#2a6a78", bannerColor: "#3a9aaa", labelColor: "#e8ffff" }
 };
 
@@ -134,7 +142,7 @@ function RestoreSpringBuilding({ x, y, label }: { x: number; y: number; label: s
         <meshStandardMaterial color="#5a5854" roughness={0.92} />
       </mesh>
       <pointLight position={[0, 0.45, 0]} intensity={0.85} distance={3.8} color="#7af0e8" />
-      <Html center position={[0, 0.95, 0]} distanceFactor={10} zIndexRange={[20, 0]} pointerEvents="none">
+      <Html center position={[0, 0.95, 0]} distanceFactor={10} zIndexRange={[2, 0]} pointerEvents="none">
         <div className="building-label-3d" style={{ borderColor: "#3aacb8" }}>
           {label}
         </div>
@@ -233,7 +241,7 @@ function VoidPortalBuilding({
       </mesh>
       <pointLight position={[0, 1.05, 0]} intensity={1.35} distance={4.5} color={p.light} />
       {showLabel && (
-        <Html center position={[0, 1.72, 0]} distanceFactor={10} zIndexRange={[20, 0]} pointerEvents="none">
+        <Html center position={[0, 1.72, 0]} distanceFactor={10} zIndexRange={[2, 0]} pointerEvents="none">
           <div className="building-label-3d" style={{ borderColor: p.border }}>
             {label}
           </div>
@@ -304,7 +312,7 @@ function DungeonEntranceBuilding({
           position={[0, 0.48, 0.05]}
           center
           distanceFactor={4}
-          zIndexRange={[20, 0]}
+          zIndexRange={[2, 0]}
           pointerEvents="none"
         >
           <div
@@ -327,7 +335,7 @@ function DungeonEntranceBuilding({
       </group>
       <pointLight position={[0, 0.35, 0.1]} intensity={0.6} distance={2.2} color="#ff6a4a" />
       {showLabel && (
-        <Html center position={[0, 1.35, 0]} distanceFactor={10} zIndexRange={[20, 0]} pointerEvents="none">
+        <Html center position={[0, 1.35, 0]} distanceFactor={10} zIndexRange={[2, 0]} pointerEvents="none">
           <div className="building-label-3d" style={{ borderColor: "#6a1c1c" }}>
             {label}
           </div>
@@ -436,7 +444,7 @@ function Building({
           center
           position={[0, h + 0.95, 0]}
           distanceFactor={9}
-          zIndexRange={[20, 0]}
+          zIndexRange={[2, 0]}
           pointerEvents="none"
         >
           <div className="building-label-3d" style={{ borderColor: style.bannerColor }}>
@@ -533,7 +541,26 @@ function KindIcon({ kind }: { kind: BoxBuildingKind }): JSX.Element {
       return <HorseshoeIcon />;
     case "market":
       return <StallIcon />;
+    case "throne":
+      return <CrownIcon />;
   }
+}
+
+function CrownIcon(): JSX.Element {
+  return (
+    <group scale={1.08}>
+      <mesh position={[0, 0.02, 0]}>
+        <torusGeometry args={[0.1, 0.022, 8, 20]} />
+        <meshStandardMaterial color="#f0d060" emissive="#a07020" emissiveIntensity={0.35} metalness={0.55} roughness={0.35} />
+      </mesh>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <mesh key={i} position={[Math.sin((i / 5) * Math.PI * 2) * 0.09, 0.08, Math.cos((i / 5) * Math.PI * 2) * 0.09]}>
+          <coneGeometry args={[0.028, 0.07, 5]} />
+          <meshStandardMaterial color="#ffe8a0" emissive="#c89030" emissiveIntensity={0.25} metalness={0.4} roughness={0.4} />
+        </mesh>
+      ))}
+    </group>
+  );
 }
 
 function PortalGlyph(): JSX.Element {

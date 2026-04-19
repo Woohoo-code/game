@@ -1,26 +1,43 @@
 import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
+import { playStepThrottled, unlockAudio } from "../game/audio";
+import { highestOwnedHorseKey, overworldHorseWalkSpeedMultiplier, stableHorseSpeedBonus } from "../game/data";
+import { currentDungeonFloor } from "../game/dungeon";
 import { inputController } from "../game/inputController";
 import { gameStore } from "../game/state";
-import { MAP_H, MAP_W, TILE, dispatchZonesAndEncounter, isBlocked } from "../game/worldMap";
+import type { PlayerAppearance } from "../game/types";
 import { useGameStore } from "../game/useGameStore";
+import {
+  MAP_H,
+  MAP_W,
+  TILE,
+  TERRAIN_SPEED_MULT,
+  dispatchZonesAndEncounter,
+  isBlocked,
+  terrainAt
+} from "../game/worldMap";
 import { CharacterModel } from "./CharacterModel";
+import { MountHorse3D } from "./MountHorse3D";
 
 /** Phaser uses 140 px/s; 1 tile = 32 px, so this is tiles-per-second. */
 const WALK_SPEED_TILES = 140 / TILE;
 const HALF_TILE = 0.5;
 const CAM_OFFSET = new THREE.Vector3(0, 9, 9);
 
-export function Player3D() {
+export function Player3D({ appearance }: { appearance: PlayerAppearance }) {
+  const hud = useGameStore();
+  const horsesOwned = hud.player.horsesOwned ?? [];
+  const riding = stableHorseSpeedBonus(horsesOwned) > 0;
+  const bestMount = highestOwnedHorseKey(horsesOwned);
   const groupRef = useRef<THREE.Group>(null);
   const lastTile = useRef({ x: -1, y: -1 });
   const camTargetLerp = useRef(new THREE.Vector3());
   const camPosLerp = useRef(new THREE.Vector3());
   const desiredCam = useRef(new THREE.Vector3());
   const lookTarget = useRef(new THREE.Vector3());
+  const movingRef = useRef(false);
   const { camera } = useThree();
-  const snapshot = useGameStore();
 
   useEffect(() => {
     if (!groupRef.current) return;
@@ -52,10 +69,24 @@ export function Player3D() {
       if (inputController.isPressed("right")) vx += 1;
       if (inputController.isPressed("up")) vz -= 1;
       if (inputController.isPressed("down")) vz += 1;
+      movingRef.current = vx !== 0 || vz !== 0;
+      const horses = snapshot.player.horsesOwned ?? [];
+      const walkMult = overworldHorseWalkSpeedMultiplier(horses);
+      const dg = snapshot.world.inDungeon ? snapshot.world.dungeon : null;
+      const dFloor = dg ? currentDungeonFloor(dg) : null;
+      const boundW = dFloor ? dFloor.width : MAP_W;
+      const boundH = dFloor ? dFloor.height : MAP_H;
       if (vx !== 0 || vz !== 0) {
-        const step = WALK_SPEED_TILES * delta;
-        const nextX = THREE.MathUtils.clamp(group.position.x + vx * step, HALF_TILE, MAP_W - HALF_TILE);
-        const nextZ = THREE.MathUtils.clamp(group.position.z + vz * step, HALF_TILE, MAP_H - HALF_TILE);
+        unlockAudio();
+        const curTx = Math.floor(group.position.x);
+        const curTy = Math.floor(group.position.z);
+        // In dungeons everything is flat floor; skip terrain multiplier there.
+        const terrainMult = dFloor
+          ? 1
+          : TERRAIN_SPEED_MULT[terrainAt(curTx, curTy)] ?? 1;
+        const step = WALK_SPEED_TILES * walkMult * terrainMult * delta;
+        const nextX = THREE.MathUtils.clamp(group.position.x + vx * step, HALF_TILE, boundW - HALF_TILE);
+        const nextZ = THREE.MathUtils.clamp(group.position.z + vz * step, HALF_TILE, boundH - HALF_TILE);
         const nextPxX = nextX * TILE;
         const nextPxY = nextZ * TILE;
         if (!isBlocked(nextPxX, nextPxY)) {
@@ -70,9 +101,12 @@ export function Player3D() {
           if (tx !== lastTile.current.x || ty !== lastTile.current.y) {
             lastTile.current = { x: tx, y: ty };
             dispatchZonesAndEncounter(tx, ty);
+            playStepThrottled();
           }
         }
       }
+    } else {
+      movingRef.current = false;
     }
 
     desiredCam.current.set(
@@ -88,7 +122,10 @@ export function Player3D() {
 
   return (
     <group ref={groupRef}>
-      <CharacterModel appearance={snapshot.player.appearance} showFaceMarker />
+      {riding && bestMount ? <MountHorse3D mountKey={bestMount} movingRef={movingRef} /> : null}
+      <group position={[0, riding ? 0.52 : 0, 0]}>
+        <CharacterModel appearance={appearance} showFaceMarker />
+      </group>
     </group>
   );
 }

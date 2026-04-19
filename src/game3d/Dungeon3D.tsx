@@ -2,71 +2,87 @@ import { Html } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
+import { currentDungeonFloor } from "../game/dungeon";
 import { ENEMIES } from "../game/data";
-import type { EnemyState } from "../game/types";
+import type { DungeonFloorState, EnemyState } from "../game/types";
 import {
   DUNGEON_TILE_EXIT,
   DUNGEON_TILE_FLOOR,
   DUNGEON_TILE_PILLAR,
+  DUNGEON_TILE_STAIRS_DOWN,
+  DUNGEON_TILE_STAIRS_UP,
   DUNGEON_TILE_WALL
 } from "../game/types";
 import { useGameStore } from "../game/useGameStore";
 import { MonsterModel } from "./MonsterModels";
 
 /**
- * Render a procedurally-generated dungeon room: stone floor tiles, wall blocks,
- * decorative pillars, the exit staircase, treasure chests, and visible undead
- * roamers. Only drawn while `world.inDungeon` is true; the overworld components
- * skip rendering at that time so this scene stands alone.
+ * Render the active dungeon floor: stone tiles, walls, pillars, exit, stairs between
+ * floors, wall lamps, chests, roamers.
  */
 export function Dungeon3D() {
   const snapshot = useGameStore();
   const dungeon = snapshot.world.dungeon;
   if (!snapshot.world.inDungeon || !dungeon) return null;
 
+  const floor = currentDungeonFloor(dungeon);
+  if (!floor) return null;
+
+  const throneHall = dungeon.kind === "throneHall";
+
   return (
     <group name="dungeon-scene">
-      <DungeonAmbient />
-      <DungeonFloor width={dungeon.width} height={dungeon.height} />
-      <DungeonTiles dungeon={dungeon} />
-      <DungeonChests chests={dungeon.chests} />
+      {throneHall ? <ThroneHallAmbient /> : <DungeonAmbient />}
+      <DungeonFloor width={floor.width} height={floor.height} throneHall={throneHall} />
+      <DungeonTiles floor={floor} throneHall={throneHall} />
+      <DungeonWallLamps floor={floor} />
+      <DungeonChests chests={floor.chests} />
       <DungeonRoamers
-        roamers={dungeon.roamers}
-        widthCap={dungeon.width}
-        heightCap={dungeon.height}
+        roamers={floor.roamers}
+        widthCap={floor.width}
+        heightCap={floor.height}
       />
     </group>
   );
 }
 
-/** Dim torch-lit ambient lighting — keeps the dungeon feeling dark without being unplayable. */
 function DungeonAmbient() {
   return (
     <>
-      <ambientLight intensity={0.18} color="#5a4430" />
-      <hemisphereLight args={["#443028", "#0a0608", 0.22]} />
+      <ambientLight intensity={0.14} color="#4a3828" />
+      <hemisphereLight args={["#3a2820", "#0a0608", 0.2]} />
     </>
   );
 }
 
-function DungeonFloor({ width, height }: { width: number; height: number }) {
+function ThroneHallAmbient() {
+  return (
+    <>
+      <ambientLight intensity={0.22} color="#c4a878" />
+      <hemisphereLight args={["#e8dcc8", "#2a2218", 0.35]} />
+      <directionalLight position={[-4, 10, 2]} intensity={0.45} color="#ffe8c8" castShadow />
+    </>
+  );
+}
+
+function DungeonFloor({ width, height, throneHall }: { width: number; height: number; throneHall?: boolean }) {
   return (
     <mesh position={[width / 2, -0.02, height / 2]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
       <planeGeometry args={[width, height]} />
-      <meshStandardMaterial color="#2a2228" roughness={0.96} />
+      <meshStandardMaterial color={throneHall ? "#3a3028" : "#2a2228"} roughness={throneHall ? 0.88 : 0.96} />
     </mesh>
   );
 }
 
-function DungeonTiles({ dungeon }: { dungeon: NonNullable<ReturnType<typeof useGameStore>["world"]["dungeon"]> }) {
+function DungeonTiles({ floor, throneHall }: { floor: DungeonFloorState; throneHall?: boolean }) {
   const walls: { x: number; y: number }[] = [];
   const pillars: { x: number; y: number }[] = [];
   const floors: { x: number; y: number }[] = [];
   let exitTile: { x: number; y: number } | null = null;
 
-  for (let y = 0; y < dungeon.height; y++) {
-    for (let x = 0; x < dungeon.width; x++) {
-      const t = dungeon.tiles[y * dungeon.width + x] ?? DUNGEON_TILE_WALL;
+  for (let y = 0; y < floor.height; y++) {
+    for (let x = 0; x < floor.width; x++) {
+      const t = floor.tiles[y * floor.width + x] ?? DUNGEON_TILE_WALL;
       if (t === DUNGEON_TILE_WALL) {
         walls.push({ x, y });
       } else if (t === DUNGEON_TILE_PILLAR) {
@@ -77,20 +93,29 @@ function DungeonTiles({ dungeon }: { dungeon: NonNullable<ReturnType<typeof useG
       } else if (t === DUNGEON_TILE_EXIT) {
         floors.push({ x, y });
         exitTile = { x, y };
+      } else if (t === DUNGEON_TILE_STAIRS_DOWN || t === DUNGEON_TILE_STAIRS_UP) {
+        floors.push({ x, y });
       }
     }
   }
 
+  const audience = floor.throneHallAudience;
+
   return (
     <group>
       {floors.map((f) => (
-        <mesh
-          key={`f-${f.x}-${f.y}`}
-          position={[f.x + 0.5, 0, f.y + 0.5]}
-          receiveShadow
-        >
+        <mesh key={`f-${f.x}-${f.y}`} position={[f.x + 0.5, 0, f.y + 0.5]} receiveShadow>
           <boxGeometry args={[0.98, 0.06, 0.98]} />
-          <meshStandardMaterial color="#3a2f34" roughness={0.9} />
+          <meshStandardMaterial
+            color={
+              throneHall && audience && f.x === audience.tx && f.y === audience.ty
+                ? "#6a4a2a"
+                : throneHall
+                  ? "#5a2020"
+                  : "#3a2f34"
+            }
+            roughness={throneHall ? 0.82 : 0.9}
+          />
         </mesh>
       ))}
       {walls.map((w) => (
@@ -108,6 +133,224 @@ function DungeonTiles({ dungeon }: { dungeon: NonNullable<ReturnType<typeof useG
         <DungeonPillar key={`p-${p.x}-${p.y}`} x={p.x} y={p.y} />
       ))}
       {exitTile && <DungeonExit x={exitTile.x} y={exitTile.y} />}
+      {throneHall && floor.throneHallAudience && (
+        <ThroneDais x={floor.throneHallAudience.tx} y={floor.throneHallAudience.ty} />
+      )}
+      <DungeonStairs floor={floor} />
+    </group>
+  );
+}
+
+function ThroneDais({ x, y }: { x: number; y: number }) {
+  return (
+    <group position={[x + 0.5, 0, y + 0.5]}>
+      <mesh position={[0, 0.2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[1.15, 0.28, 1.15]} />
+        <meshStandardMaterial color="#4a3a28" roughness={0.85} metalness={0.08} />
+      </mesh>
+      <mesh position={[0, 0.62, -0.12]} castShadow>
+        <boxGeometry args={[0.55, 0.55, 0.35]} />
+        <meshStandardMaterial color="#3a4868" roughness={0.75} />
+      </mesh>
+      <mesh position={[0, 1.05, -0.12]}>
+        <sphereGeometry args={[0.22, 12, 12]} />
+        <meshStandardMaterial color="#ffd080" emissive="#c08040" emissiveIntensity={0.6} />
+      </mesh>
+      <Html center position={[0, 1.55, -0.1]} distanceFactor={10} zIndexRange={[20, 0]} pointerEvents="none">
+        <div className="building-label-3d" style={{ borderColor: "#c9a020", fontSize: "9px" }}>
+          THE KING
+        </div>
+      </Html>
+    </group>
+  );
+}
+
+function DungeonStairs({ floor }: { floor: DungeonFloorState }) {
+  const down: { x: number; y: number }[] = [];
+  const up: { x: number; y: number }[] = [];
+  for (let y = 0; y < floor.height; y++) {
+    for (let x = 0; x < floor.width; x++) {
+      const t = floor.tiles[y * floor.width + x];
+      if (t === DUNGEON_TILE_STAIRS_DOWN) down.push({ x, y });
+      if (t === DUNGEON_TILE_STAIRS_UP) up.push({ x, y });
+    }
+  }
+  return (
+    <group>
+      {down.map((p) => (
+        <group key={`sd-${p.x}-${p.y}`} position={[p.x + 0.5, 0, p.y + 0.5]}>
+          <mesh position={[0, 0.08, 0]} receiveShadow>
+            <boxGeometry args={[0.88, 0.14, 0.88]} />
+            <meshStandardMaterial color="#3a3038" roughness={0.9} />
+          </mesh>
+          {[0, 1, 2].map((i) => (
+            <mesh key={i} position={[0, 0.05 + i * 0.06, 0.12 - i * 0.04]} receiveShadow>
+              <boxGeometry args={[0.75, 0.05, 0.55]} />
+              <meshStandardMaterial color="#4a4248" roughness={0.88} />
+            </mesh>
+          ))}
+          <mesh position={[0, 0.32, -0.18]}>
+            <boxGeometry args={[0.5, 0.04, 0.12]} />
+            <meshStandardMaterial color="#6a5868" emissive="#2a1a28" emissiveIntensity={0.25} />
+          </mesh>
+          <Html center position={[0, 0.55, 0]} distanceFactor={10} zIndexRange={[20, 0]} pointerEvents="none">
+            <div className="building-label-3d" style={{ borderColor: "#6a5080", fontSize: "8px" }}>
+              ↓ DEEPER
+            </div>
+          </Html>
+        </group>
+      ))}
+      {up.map((p) => (
+        <group key={`su-${p.x}-${p.y}`} position={[p.x + 0.5, 0, p.y + 0.5]}>
+          <mesh position={[0, 0.08, 0]} receiveShadow>
+            <boxGeometry args={[0.88, 0.14, 0.88]} />
+            <meshStandardMaterial color="#3a3530" roughness={0.9} />
+          </mesh>
+          {[0, 1, 2].map((i) => (
+            <mesh key={i} position={[0, 0.2 - i * 0.06, -0.08 + i * 0.04]} receiveShadow>
+              <boxGeometry args={[0.75, 0.05, 0.55]} />
+              <meshStandardMaterial color="#4a4438" roughness={0.88} />
+            </mesh>
+          ))}
+          <Html center position={[0, 0.48, 0]} distanceFactor={10} zIndexRange={[20, 0]} pointerEvents="none">
+            <div className="building-label-3d" style={{ borderColor: "#708060", fontSize: "8px" }}>
+              ↑ SHALLOWER
+            </div>
+          </Html>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+/** Wall-mounted oil lamps along interior walls (not a building — props on the wall line). */
+function DungeonWallLamps({ floor }: { floor: DungeonFloorState }) {
+  const placements = useMemo(() => gatherDungeonLampPlacements(floor), [floor]);
+  return (
+    <group name="dungeon-wall-lamps">
+      {placements.map((p, i) => (
+        <DungeonWallLamp key={`lamp-${i}-${p.x}-${p.z}`} {...p} />
+      ))}
+    </group>
+  );
+}
+
+function gatherDungeonLampPlacements(floor: DungeonFloorState): {
+  x: number;
+  z: number;
+  rotY: number;
+  phase: number;
+}[] {
+  const W = floor.width;
+  const H = floor.height;
+  const tiles = floor.tiles;
+  const at = (x: number, y: number) => tiles[y * W + x] ?? DUNGEON_TILE_WALL;
+
+  const raw: { x: number; z: number; rotY: number; pri: number }[] = [];
+
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const t = at(x, y);
+      if (
+        t !== DUNGEON_TILE_FLOOR &&
+        t !== DUNGEON_TILE_EXIT &&
+        t !== DUNGEON_TILE_STAIRS_DOWN &&
+        t !== DUNGEON_TILE_STAIRS_UP
+      ) {
+        continue;
+      }
+
+      const n = at(x, y - 1);
+      const s = at(x, y + 1);
+      const eT = at(x + 1, y);
+      const wT = at(x - 1, y);
+      const wallN = n === DUNGEON_TILE_WALL || n === DUNGEON_TILE_PILLAR;
+      const wallS = s === DUNGEON_TILE_WALL || s === DUNGEON_TILE_PILLAR;
+      const wallE = eT === DUNGEON_TILE_WALL || eT === DUNGEON_TILE_PILLAR;
+      const wallWest = wT === DUNGEON_TILE_WALL || wT === DUNGEON_TILE_PILLAR;
+
+      const h = ((x * 9283711) ^ (y * 689287499)) >>> 0;
+      const pick = (h % 1000) / 1000;
+
+      if (wallN && pick < 0.42) {
+        raw.push({ x: x + 0.5, z: y + 0.18, rotY: 0, pri: pick });
+      } else if (wallS && pick < 0.42) {
+        raw.push({ x: x + 0.5, z: y + 0.82, rotY: Math.PI, pri: pick });
+      } else if (wallE && pick < 0.38) {
+        raw.push({ x: x + 0.82, z: y + 0.5, rotY: -Math.PI / 2, pri: pick });
+      } else if (wallWest && pick < 0.38) {
+        raw.push({ x: x + 0.18, z: y + 0.5, rotY: Math.PI / 2, pri: pick });
+      }
+    }
+  }
+
+  raw.sort((a, b) => a.pri - b.pri);
+  const chosen: { x: number; z: number; rotY: number; phase: number }[] = [];
+  const minD = 1.85;
+  for (const c of raw) {
+    if (chosen.length >= 36) break;
+    let ok = true;
+    for (const p of chosen) {
+      const dx = c.x - p.x;
+      const dz = c.z - p.z;
+      if (dx * dx + dz * dz < minD * minD) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) {
+      chosen.push({ x: c.x, z: c.z, rotY: c.rotY, phase: c.pri * Math.PI * 2 });
+    }
+  }
+  return chosen;
+}
+
+function DungeonWallLamp({
+  x,
+  z,
+  rotY,
+  phase
+}: {
+  x: number;
+  z: number;
+  rotY: number;
+  phase: number;
+}) {
+  const lightRef = useRef<THREE.PointLight>(null);
+  useFrame(({ clock }) => {
+    const L = lightRef.current;
+    if (!L) return;
+    const flicker = 0.82 + 0.18 * Math.sin(clock.elapsedTime * 5.5 + phase);
+    L.intensity = 0.95 * flicker;
+  });
+
+  return (
+    <group position={[x, 0, z]} rotation={[0, rotY, 0]}>
+      <mesh position={[0, 0.38, 0]} castShadow>
+        <cylinderGeometry args={[0.04, 0.05, 0.72, 8]} />
+        <meshStandardMaterial color="#2a1810" roughness={0.9} />
+      </mesh>
+      <mesh position={[0, 0.08, 0.06]} castShadow>
+        <boxGeometry args={[0.14, 0.06, 0.08]} />
+        <meshStandardMaterial color="#3a2820" roughness={0.85} />
+      </mesh>
+      <mesh position={[0, 0.82, 0.02]}>
+        <sphereGeometry args={[0.09, 10, 10]} />
+        <meshStandardMaterial
+          color="#ffc080"
+          emissive="#ff8020"
+          emissiveIntensity={1.2}
+          toneMapped={false}
+        />
+      </mesh>
+      <pointLight
+        ref={lightRef}
+        position={[0, 0.78, 0.1]}
+        color="#ffaa66"
+        intensity={0.95}
+        distance={5.5}
+        decay={2}
+      />
     </group>
   );
 }
@@ -134,7 +377,6 @@ function DungeonPillar({ x, y }: { x: number; y: number }) {
 function DungeonExit({ x, y }: { x: number; y: number }) {
   return (
     <group position={[x + 0.5, 0, y + 0.5]}>
-      {/* Staircase / exit mat. */}
       <mesh position={[0, 0.04, 0]} receiveShadow>
         <boxGeometry args={[0.92, 0.1, 0.92]} />
         <meshStandardMaterial color="#5a4028" roughness={0.85} />
@@ -143,7 +385,6 @@ function DungeonExit({ x, y }: { x: number; y: number }) {
         <boxGeometry args={[0.7, 0.04, 0.7]} />
         <meshStandardMaterial color="#b08850" emissive="#6a4a1a" emissiveIntensity={0.35} />
       </mesh>
-      {/* Torch flame marker so the player can spot the exit from afar. */}
       <mesh position={[0, 1.05, 0]}>
         <sphereGeometry args={[0.12, 10, 10]} />
         <meshStandardMaterial color="#ffb266" emissive="#ff6a28" emissiveIntensity={1.4} />
@@ -161,7 +402,7 @@ function DungeonExit({ x, y }: { x: number; y: number }) {
 function DungeonChests({
   chests
 }: {
-  chests: NonNullable<ReturnType<typeof useGameStore>["world"]["dungeon"]>["chests"];
+  chests: NonNullable<ReturnType<typeof useGameStore>["world"]["dungeon"]>["floors"][number]["chests"];
 }) {
   return (
     <group>
@@ -174,7 +415,6 @@ function DungeonChests({
 
 function DungeonChestModel({ x, y, opened }: { x: number; y: number; opened: boolean }) {
   const lidRef = useRef<THREE.Group>(null);
-  // Gently animate open chests so they read as obviously looted.
   useFrame((_, dt) => {
     const g = lidRef.current;
     if (!g) return;
@@ -201,9 +441,7 @@ function DungeonChestModel({ x, y, opened }: { x: number; y: number; opened: boo
           <meshStandardMaterial color="#d8b048" metalness={0.6} roughness={0.3} />
         </mesh>
       </group>
-      {!opened && (
-        <pointLight position={[0, 0.55, 0]} intensity={0.45} distance={1.4} color="#ffd478" />
-      )}
+      {!opened && <pointLight position={[0, 0.55, 0]} intensity={0.45} distance={1.4} color="#ffd478" />}
     </group>
   );
 }
@@ -213,7 +451,7 @@ function DungeonRoamers({
   widthCap,
   heightCap
 }: {
-  roamers: NonNullable<ReturnType<typeof useGameStore>["world"]["dungeon"]>["roamers"];
+  roamers: NonNullable<ReturnType<typeof useGameStore>["world"]["dungeon"]>["floors"][number]["roamers"];
   widthCap: number;
   heightCap: number;
 }) {

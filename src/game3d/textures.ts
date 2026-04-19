@@ -402,12 +402,46 @@ function drawForest(ctx: CanvasRenderingContext2D, s: number): void {
   addFilmGrain(ctx, s, 9505);
 }
 
+function drawHill(ctx: CanvasRenderingContext2D, s: number): void {
+  const grad = ctx.createRadialGradient(s * 0.5, s * 0.5, s * 0.05, s * 0.5, s * 0.5, s * 0.65);
+  grad.addColorStop(0, "#9f8a5c");
+  grad.addColorStop(0.55, "#7a6a42");
+  grad.addColorStop(1, "#4e4024");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, s, s);
+  const r = seededRng(3771);
+  for (let i = 0; i < density(s, 70); i++) {
+    const x = r() * s;
+    const y = r() * s;
+    ctx.strokeStyle = `rgba(${80 + r() * 30 | 0}, ${64 + r() * 24 | 0}, ${36 + r() * 18 | 0}, ${0.35 + r() * 0.35})`;
+    ctx.lineWidth = 0.8 + r() * 1.1;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + (r() - 0.5) * 8, y + (r() - 0.5) * 6);
+    ctx.stroke();
+  }
+  for (let i = 0; i < density(s, 24); i++) {
+    ctx.fillStyle = `rgba(${60 + r() * 40 | 0}, ${85 + r() * 40 | 0}, ${42 + r() * 24 | 0}, ${0.4 + r() * 0.3})`;
+    ctx.beginPath();
+    ctx.ellipse(r() * s, r() * s, 2 + r() * 3.4, 1.2 + r() * 2.1, r() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (let i = 0; i < density(s, 8); i++) {
+    ctx.fillStyle = `rgba(${120 + r() * 40 | 0}, ${114 + r() * 32 | 0}, ${96 + r() * 28 | 0}, 0.7)`;
+    ctx.beginPath();
+    ctx.ellipse(r() * s, r() * s, 3 + r() * 4, 2 + r() * 2.8, r() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  addFilmGrain(ctx, s, 7711);
+}
+
 const DRAWERS: Record<TerrainKind, (ctx: CanvasRenderingContext2D, size: number) => void> = {
   grass: drawGrass,
   road: drawRoad,
   water: drawWater,
   town: drawTown,
-  forest: drawForest
+  forest: drawForest,
+  hill: drawHill
 };
 
 export function getTerrainTexture(kind: TerrainKind): THREE.CanvasTexture {
@@ -712,44 +746,49 @@ export const BIOME_TINT: Record<BiomeKind, Record<TerrainKind, string>> = {
     road: "#ffffff",
     water: "#ffffff",
     town: "#ffffff",
-    forest: "#ffffff"
+    forest: "#ffffff",
+    hill: "#ffffff"
   },
   forest: {
     grass: "#ffffff",
     road: "#f3ecd8",
     water: "#e5f1f7",
     town: "#f3ecd6",
-    forest: "#ffffff"
+    forest: "#ffffff",
+    hill: "#e6d6b0"
   },
   desert: {
     grass: "#ffffff",
     road: "#f4dca0",
     water: "#c0dce6",
     town: "#f5e3bc",
-    forest: "#d4c690"
+    forest: "#d4c690",
+    hill: "#ffd996"
   },
   swamp: {
     grass: "#ffffff",
     road: "#c9bd9e",
     water: "#a8c485",
     town: "#bcb094",
-    forest: "#a0b07c"
+    forest: "#a0b07c",
+    hill: "#a8a078"
   },
   tundra: {
     grass: "#ffffff",
     road: "#dce0e4",
     water: "#d6e8ee",
     town: "#e3e7ec",
-    forest: "#cdd8dc"
+    forest: "#cdd8dc",
+    hill: "#d4d8de"
   }
 };
 
 const BIOME_TINT_REALM2: Record<BiomeKind, Record<TerrainKind, string>> = {
-  meadow: { grass: "#ffffff", road: "#d7cab0", water: "#6ea2ba", town: "#e7d9c2", forest: "#c4b79a" },
-  forest: { grass: "#ffffff", road: "#c9d3e2", water: "#d9e8ff", town: "#dfe7f6", forest: "#dde8f4" },
-  desert: { grass: "#ffffff", road: "#ffcf8c", water: "#f0b97e", town: "#ffdcb2", forest: "#e8bb77" },
-  swamp: { grass: "#ffffff", road: "#9ba8b8", water: "#6a86a4", town: "#b1becf", forest: "#8897ab" },
-  tundra: { grass: "#ffffff", road: "#b9d5c1", water: "#8eb8a3", town: "#c6decf", forest: "#9ebba9" }
+  meadow: { grass: "#ffffff", road: "#d7cab0", water: "#6ea2ba", town: "#e7d9c2", forest: "#c4b79a", hill: "#c8b088" },
+  forest: { grass: "#ffffff", road: "#c9d3e2", water: "#d9e8ff", town: "#dfe7f6", forest: "#dde8f4", hill: "#b6b3c4" },
+  desert: { grass: "#ffffff", road: "#ffcf8c", water: "#f0b97e", town: "#ffdcb2", forest: "#e8bb77", hill: "#f0a86a" },
+  swamp: { grass: "#ffffff", road: "#9ba8b8", water: "#6a86a4", town: "#b1becf", forest: "#8897ab", hill: "#8d8a78" },
+  tundra: { grass: "#ffffff", road: "#b9d5c1", water: "#8eb8a3", town: "#c6decf", forest: "#9ebba9", hill: "#b8c2cc" }
 };
 
 /** Realm-aware biome tint for non-grass terrain kinds. */
@@ -836,7 +875,8 @@ const WALL_TEXTURE_SEED: Record<
   | "forge"
   | "chapel"
   | "stables"
-  | "market",
+  | "market"
+  | "throne",
   number
 > = {
   inn: 11,
@@ -852,7 +892,8 @@ const WALL_TEXTURE_SEED: Record<
   forge: 88,
   chapel: 99,
   stables: 101,
-  market: 112
+  market: 112,
+  throne: 113
 };
 
 export function getWallTexture(
@@ -877,7 +918,8 @@ export function getWallTexture(
     forge: { base: "#5a5654", accent: "#3a3634", trim: "#2a1810" },
     chapel: { base: "#e4e0d8", accent: "#c8c4b8", trim: "#7a6848" },
     stables: { base: "#9a7048", accent: "#6a4830", trim: "#4a3018" },
-    market: { base: "#d4b078", accent: "#a88850", trim: "#6a4828" }
+    market: { base: "#d4b078", accent: "#a88850", trim: "#6a4828" },
+    throne: { base: "#7a7e90", accent: "#5a5e70", trim: "#3a3848" }
   }[variant];
   const grad = ctx.createLinearGradient(0, 0, size, size * 0.6);
   grad.addColorStop(0, palette.base);

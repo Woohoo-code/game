@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ALL_ITEM_KEYS, ITEM_DATA, formatItemTooltipSummary } from "../game/data";
 import { HOTBAR_KEY_LABELS, HOTBAR_SIZE, itemHotbarAbbr, itemOnHotbarCount, normalizeItemHotbar } from "../game/inventoryHotbar";
 import { gameStore } from "../game/state";
@@ -11,16 +11,16 @@ type Props = {
 };
 
 function slotFromKeyCode(code: string): number {
-  if (code === "Digit1") return 0;
-  if (code === "Digit2") return 1;
-  if (code === "Digit3") return 2;
-  if (code === "Digit4") return 3;
-  if (code === "Digit5") return 4;
-  if (code === "Digit6") return 5;
-  if (code === "Digit7") return 6;
-  if (code === "Digit8") return 7;
-  if (code === "Digit9") return 8;
-  if (code === "Digit0") return 9;
+  if (code === "Digit1" || code === "Numpad1") return 0;
+  if (code === "Digit2" || code === "Numpad2") return 1;
+  if (code === "Digit3" || code === "Numpad3") return 2;
+  if (code === "Digit4" || code === "Numpad4") return 3;
+  if (code === "Digit5" || code === "Numpad5") return 4;
+  if (code === "Digit6" || code === "Numpad6") return 5;
+  if (code === "Digit7" || code === "Numpad7") return 6;
+  if (code === "Digit8" || code === "Numpad8") return 7;
+  if (code === "Digit9" || code === "Numpad9") return 8;
+  if (code === "Digit0" || code === "Numpad0") return 9;
   return -1;
 }
 
@@ -40,16 +40,14 @@ export function InventoryBar({ hotkeysBlocked = false }: Props) {
     ITEM_DATA[a].name.localeCompare(ITEM_DATA[b].name)
   );
 
-  const useSlot = useCallback(
-    (slotIndex: number) => {
-      if (snapshot.battle.inBattle && snapshot.battle.phase === "playerTurn") {
-        gameStore.useHotbarSlot(slotIndex);
-      } else if (!snapshot.battle.inBattle) {
-        gameStore.useHotbarSlotInField(slotIndex);
-      }
-    },
-    [snapshot.battle.inBattle, snapshot.battle.phase]
-  );
+  const useSlot = (slotIndex: number) => {
+    const snap = gameStore.getSnapshot();
+    if (snap.battle.inBattle && snap.battle.phase === "playerTurn") {
+      gameStore.useHotbarSlot(slotIndex);
+    } else if (!snap.battle.inBattle) {
+      gameStore.useHotbarSlotInField(slotIndex);
+    }
+  };
 
   useEffect(() => {
     if (hotkeysBlocked || backpackOpen) return;
@@ -58,12 +56,18 @@ export function InventoryBar({ hotkeysBlocked = false }: Props) {
       if (isTypingTarget(e.target)) return;
       const slot = slotFromKeyCode(e.code);
       if (slot < 0) return;
+      const snap = gameStore.getSnapshot();
+      const bar = normalizeItemHotbar(snap.player.itemHotbar);
+      const item = bar[slot];
+      if (!item || (snap.player.items[item] ?? 0) <= 0) return;
+      if (snap.battle.inBattle && snap.battle.phase !== "playerTurn") return;
       e.preventDefault();
-      useSlot(slot);
+      if (snap.battle.inBattle) gameStore.useHotbarSlot(slot);
+      else gameStore.useHotbarSlotInField(slot);
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [hotkeysBlocked, backpackOpen, useSlot]);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [hotkeysBlocked, backpackOpen]);
 
   useEffect(() => {
     if (!backpackOpen) return;

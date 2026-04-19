@@ -13,6 +13,7 @@ import {
   BIOME_BY_CODE,
   TERRAIN_FOREST,
   TERRAIN_GRASS,
+  TERRAIN_HILL,
   TERRAIN_ROAD,
   TERRAIN_TOWN,
   TERRAIN_WATER,
@@ -85,7 +86,7 @@ export interface BuildingPlacement {
 const BUILDING_LABELS: Record<BuildingKind, string> = {
   inn: "INN",
   shop: "SHOP",
-  train: "TRAIN",
+  train: "TRAINING CENTER",
   guild: "GUILD",
   petShop: "PET SHOP",
   boss: "BOSS",
@@ -97,6 +98,7 @@ const BUILDING_LABELS: Record<BuildingKind, string> = {
   chapel: "CHAPEL",
   stables: "STABLES",
   market: "MARKET",
+  throne: "ROYAL HALL",
   restoreSpring: "RESTORE SPRING"
 };
 
@@ -115,6 +117,7 @@ const BUILDING_COLORS: Record<BuildingKind, number> = {
   chapel: 0x9a8848,
   stables: 0x7a5020,
   market: 0xa87830,
+  throne: 0xc9a020,
   restoreSpring: 0x2a8a9e
 };
 
@@ -215,7 +218,11 @@ export function isForestTile(x: number, y: number): boolean {
   return terrainCodeAt(x, y) === TERRAIN_FOREST;
 }
 
-export type TerrainKind = "town" | "road" | "water" | "grass" | "forest";
+export function isHillTile(x: number, y: number): boolean {
+  return terrainCodeAt(x, y) === TERRAIN_HILL;
+}
+
+export type TerrainKind = "town" | "road" | "water" | "grass" | "forest" | "hill";
 
 export function terrainAt(x: number, y: number): TerrainKind {
   const t = terrainCodeAt(x, y);
@@ -228,10 +235,31 @@ export function terrainAt(x: number, y: number): TerrainKind {
       return "water";
     case TERRAIN_FOREST:
       return "forest";
+    case TERRAIN_HILL:
+      return "hill";
     case TERRAIN_GRASS:
     default:
       return "grass";
   }
+}
+
+/**
+ * Movement speed multiplier by terrain. Hills slow you ~45%, forest (when
+ * traversable elsewhere) is 80%, roads/towns give a small paved bonus.
+ */
+export const TERRAIN_SPEED_MULT: Record<TerrainKind, number> = {
+  grass: 1,
+  road: 1.15,
+  town: 1.1,
+  forest: 0.8,
+  hill: 0.55,
+  water: 0
+};
+
+export function terrainSpeedAt(worldX: number, worldY: number): number {
+  const tx = Math.floor(worldX / TILE);
+  const ty = Math.floor(worldY / TILE);
+  return TERRAIN_SPEED_MULT[terrainAt(tx, ty)] ?? 1;
 }
 
 /** Named settlements on the active map (two per world). */
@@ -310,7 +338,40 @@ export function biomeDisplayName(biome: BiomeKind, realmTier: number = worldReal
   return REALM_BIOME_LABELS[realmTier]?.[biome] ?? biome;
 }
 
-/** World-pixel blocking test used by both renderers. Water and forest block movement. */
+/**
+ * Cached `tx,ty` lookup for Crownkeep curtain-wall perimeter segments — built
+ * lazily the first time {@link isCastleWallTile} is asked and invalidated on
+ * every {@link regenerateWorld}. Keeps per-frame blocking cheap even though
+ * the wall has ~60+ segments.
+ */
+let castleWallTileSet: Set<string> | null = null;
+let castleWallTileSetVersion = -1;
+
+function castleWallLookup(): Set<string> {
+  if (castleWallTileSet && castleWallTileSetVersion === worldVersion) {
+    return castleWallTileSet;
+  }
+  const set = new Set<string>();
+  const segs = activeWorld?.crownkeepCastleWalls;
+  if (segs) {
+    for (const s of segs) set.add(`${s.tx},${s.ty}`);
+  }
+  castleWallTileSet = set;
+  castleWallTileSetVersion = worldVersion;
+  return set;
+}
+
+/**
+ * True when (tx, ty) sits on a Crownkeep curtain-wall perimeter segment.
+ * The three south gate-gap tiles are intentionally absent from the segment
+ * list (see {@link generateWorld}), so they return false and remain walkable.
+ */
+export function isCastleWallTile(tx: number, ty: number): boolean {
+  return castleWallLookup().has(`${tx},${ty}`);
+}
+
+/** World-pixel blocking test used by both renderers. Water, forest, and
+ * the Crownkeep curtain wall block movement; the south gate gap does not. */
 export function isBlocked(worldX: number, worldY: number): boolean {
   const tx = Math.floor(worldX / TILE);
   const ty = Math.floor(worldY / TILE);
@@ -318,6 +379,7 @@ export function isBlocked(worldX: number, worldY: number): boolean {
   if (snap.world.inDungeon && snap.world.dungeon) {
     return isDungeonTileBlocked(snap.world.dungeon, tx, ty);
   }
+  if (isCastleWallTile(tx, ty)) return true;
   const t = terrainCodeAt(tx, ty);
   return t === TERRAIN_WATER || t === TERRAIN_FOREST;
 }
@@ -346,9 +408,18 @@ export function syncZonesAtTile(tx: number, ty: number): void {
   let canRestoreSpring = false;
   let canReturnPortal = false;
   let canDungeon = false;
+  let canEnterThroneHall = false;
+  let canThrone = false;
   for (const b of BUILDINGS) {
     if (b.pos.x === tx && b.pos.y === ty) {
       switch (b.kind) {
+        case "throne":
+          // The Crownkeep royal hall is now an overworld building at the
+          // courtyard's top-centre. Standing on its tile opens the entrance
+          // prompt; the inner throne-room audience is handled separately by
+          // the throne-hall dungeon tile dispatcher.
+          canEnterThroneHall = true;
+          break;
         case "inn":
           canHeal = true;
           break;
@@ -414,7 +485,9 @@ export function syncZonesAtTile(tx: number, ty: number): void {
     canVoidPortal,
     canRestoreSpring,
     canReturnPortal,
-    canDungeon
+    canDungeon,
+    canEnterThroneHall,
+    canThrone
   );
 
   gameStore.storyNoteBiomeVisited(biome);
@@ -446,7 +519,16 @@ function buildingOccupiesTile(tx: number, ty: number): boolean {
   return BUILDINGS.some((b) => b.pos.x === tx && b.pos.y === ty);
 }
 
+/** Crownkeep courtyard + south gate approach — no visible roamers. */
+export function tileInCrownkeepSafeZone(tx: number, ty: number): boolean {
+  const ck = activeWorld?.crownkeep;
+  if (!ck) return false;
+  if (tx >= ck.minX && tx <= ck.maxX && ty >= ck.minY && ty <= ck.maxY) return true;
+  return ck.gateTiles.some((g) => g.tx === tx && g.ty === ty);
+}
+
 function isRoamerSpawnTile(tx: number, ty: number, spawnTx: number, spawnTy: number): boolean {
+  if (tileInCrownkeepSafeZone(tx, ty)) return false;
   const kind = terrainAt(tx, ty);
   if (kind === "town" || kind === "water" || kind === "forest") return false;
   if (buildingOccupiesTile(tx, ty)) return false;
@@ -507,6 +589,7 @@ function isResourceSpawnTile(
   spawnTy: number,
   def: ResourceDefinition
 ): boolean {
+  if (tileInCrownkeepSafeZone(tx, ty)) return false;
   const kind = terrainAt(tx, ty);
   // Flora can live on grass AND in forest clearings (player can't walk in forest, so those
   // stay purely decorative). Roads / towns / water never spawn pickups.

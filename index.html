@@ -12,7 +12,38 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="mobile-web-app-capable" content="yes" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <title>Monster Slayer V1.0.1</title>
+    <title>Monster Slayer V1.0.8</title>
+    <style>
+      #initial-load-splash.initial-load-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #121924;
+        color: #e8eef8;
+        font-family: Arial, system-ui, sans-serif;
+        transition: opacity 0.38s ease;
+      }
+      #initial-load-splash.initial-load-splash.initial-load-splash--out {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .initial-load-splash-inner {
+        text-align: center;
+      }
+      .initial-load-splash-title {
+        font-size: clamp(1.1rem, 4vw, 1.5rem);
+        margin: 0 0 0.5rem;
+        letter-spacing: 0.04em;
+      }
+      .initial-load-splash-msg {
+        margin: 0;
+        color: #9db0cd;
+        font-size: clamp(0.9rem, 2.8vw, 1rem);
+      }
+    </style>
     <script>
       // GitHub Pages SPA redirect receiver — must run before React mounts.
       // Paired with public/404.html which encodes the intended path into ?p=
@@ -33,6 +64,12 @@
     </script>
   </head>
   <body>
+    <div id="initial-load-splash" class="initial-load-splash" role="status" aria-live="polite" aria-busy="true">
+      <div class="initial-load-splash-inner">
+        <p class="initial-load-splash-title">Monster Slayer</p>
+        <p class="initial-load-splash-msg">Loading…</p>
+      </div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

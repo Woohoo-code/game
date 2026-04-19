@@ -23,11 +23,16 @@ import {
   useStoryOverlays
 } from "./ui/Journal";
 import { MobileFullscreenButton } from "./ui/MobileFullscreenButton";
+import { AudioMuteButton } from "./ui/AudioMuteButton";
 import { FullInventoryScreen } from "./ui/FullInventoryScreen";
 import { InventoryBar } from "./ui/InventoryBar";
+import { LevelUpCelebration } from "./ui/LevelUpCelebration";
+import { SleepSplash } from "./ui/SleepSplash";
 import { DownloadPage } from "./ui/DownloadPage";
 import { DOWNLOAD_ROUTE } from "./routes";
 import { ShopItemDetailPanel } from "./ui/ShopItemDetailPanel";
+import { DevCheatConsole } from "./ui/DevCheatConsole";
+import { SkillTreeModal } from "./ui/SkillTreeModal";
 import type { ItemKey } from "./game/types";
 
 /**
@@ -117,6 +122,7 @@ export default function App() {
   const [transferPaste, setTransferPaste] = useState("");
   const [journalOpen, setJournalOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [skillsOpen, setSkillsOpen] = useState(false);
   const [petsOpen, setPetsOpen] = useState(false);
   const [selectedShopItem, setSelectedShopItem] = useState<ItemKey | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
@@ -170,6 +176,35 @@ export default function App() {
   }, [snapshot.battle.inBattle, inventoryOpen]);
 
   useEffect(() => {
+    if (snapshot.battle.inBattle && skillsOpen) {
+      setSkillsOpen(false);
+    }
+  }, [snapshot.battle.inBattle, skillsOpen]);
+
+  // Ctrl/⌘+S → save game. Overrides the browser's "Save Page As…" and the WASD
+  // "S" movement binding. Active on the play screen only.
+  useEffect(() => {
+    if (effectiveScreen !== "play") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.altKey || e.shiftKey) return;
+      if (e.code !== "KeyS" && e.key !== "s" && e.key !== "S") return;
+      const t = e.target;
+      if (t instanceof HTMLElement) {
+        if (t.isContentEditable || t.closest("input, textarea, select")) return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      void gameStore.save().catch(() => {
+        /* save errors are already logged inside gameStore */
+      });
+    };
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () => window.removeEventListener("keydown", onKey, { capture: true } as AddEventListenerOptions);
+  }, [effectiveScreen]);
+
+  useEffect(() => {
     if (effectiveScreen !== "play" || inventoryOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.repeat || e.altKey || e.ctrlKey || e.metaKey) return;
@@ -180,7 +215,7 @@ export default function App() {
       if (e.key !== "i" && e.key !== "I") return;
       const s = gameStore.getSnapshot();
       if (s.battle.inBattle) return;
-      if (journalOpen || petsOpen || ugcOpen) return;
+      if (journalOpen || petsOpen || ugcOpen || skillsOpen) return;
       if (overlays.showPrologue || overlays.showEpilogue || overlays.toastStage) return;
       e.preventDefault();
       setInventoryOpen(true);
@@ -195,7 +230,40 @@ export default function App() {
     ugcOpen,
     overlays.showPrologue,
     overlays.showEpilogue,
-    overlays.toastStage
+    overlays.toastStage,
+    skillsOpen
+  ]);
+
+  useEffect(() => {
+    if (effectiveScreen !== "play" || skillsOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat || e.altKey || e.ctrlKey || e.metaKey) return;
+      const t = e.target;
+      if (t instanceof HTMLElement) {
+        if (t.isContentEditable || t.closest("input, textarea, select")) return;
+      }
+      if (e.key !== "t" && e.key !== "T") return;
+      const s = gameStore.getSnapshot();
+      if (s.battle.inBattle) return;
+      if (journalOpen || petsOpen || ugcOpen || inventoryOpen) return;
+      if (overlays.showPrologue || overlays.showEpilogue || overlays.toastStage) return;
+      if (s.pendingLevelUpCelebration) return;
+      e.preventDefault();
+      setSkillsOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    effectiveScreen,
+    skillsOpen,
+    inventoryOpen,
+    journalOpen,
+    petsOpen,
+    ugcOpen,
+    overlays.showPrologue,
+    overlays.showEpilogue,
+    overlays.toastStage,
+    snapshot.pendingLevelUpCelebration
   ]);
 
   const openUgc = useCallback(() => navigate("/ugc"), [navigate]);
@@ -404,6 +472,12 @@ export default function App() {
         coopGuestLocked={false}
       />
       {petsOpen && <PetsPanel onClose={() => setPetsOpen(false)} />}
+      {skillsOpen && <SkillTreeModal onClose={() => setSkillsOpen(false)} />}
+      <DevCheatConsole />
+      {effectiveScreen === "play" && snapshot.pendingLevelUpCelebration && (
+        <LevelUpCelebration payload={snapshot.pendingLevelUpCelebration} />
+      )}
+      {effectiveScreen === "play" && snapshot.sleeping && <SleepSplash />}
       {showStoryOverlays && overlays.showPrologue && (
         <StoryIntroModal onDismiss={() => gameStore.dismissPrologue()} />
       )}
@@ -415,9 +489,6 @@ export default function App() {
       )}
       <div className="main-column">
         <div className="game-wrap">
-          <div className="app-mobile-fs-bar">
-            <MobileFullscreenButton />
-          </div>
           <div className="game-viewport">
             {USE_3D_OVERWORLD ? (
               <Overworld3D />
@@ -440,12 +511,19 @@ export default function App() {
           <PlayfieldActionOverlays
             onOpenJournal={() => setJournalOpen(true)}
             onOpenInventory={() => setInventoryOpen(true)}
+            onOpenSkills={() => setSkillsOpen(true)}
             onOpenUgc={openUgc}
             onOpenPets={() => setPetsOpen(true)}
             selectedShopItem={selectedShopItem}
             onSelectShopItem={setSelectedShopItem}
           />
           {snapshot.battle.inBattle && <BattleOverlay />}
+          {effectiveScreen === "play" && (
+            <div className="playfield-fullscreen-corner" aria-label="Display options">
+              <AudioMuteButton />
+              <MobileFullscreenButton />
+            </div>
+          )}
         </div>
         {effectiveScreen === "play" && (
           <div className={desktopInventory ? "inventory-bar-desktop" : "inventory-bar-compact"}>
@@ -453,11 +531,13 @@ export default function App() {
               hotkeysBlocked={
                 journalOpen ||
                 inventoryOpen ||
+                skillsOpen ||
                 petsOpen ||
                 ugcOpen ||
                 overlays.showPrologue ||
                 overlays.showEpilogue ||
-                Boolean(overlays.toastStage)
+                Boolean(overlays.toastStage) ||
+                Boolean(snapshot.pendingLevelUpCelebration)
               }
             />
           </div>

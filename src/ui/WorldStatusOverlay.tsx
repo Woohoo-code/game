@@ -1,7 +1,13 @@
 import type { ReactNode } from "react";
-import { ARMOR_STATS, WEAPON_STATS, petAttackBuffForParty, stableHorseSpeedBonus } from "../game/data";
+import {
+  ARMOR_STATS,
+  WEAPON_STATS,
+  overworldHorseWalkSpeedMultiplier,
+  petAttackBuffForParty,
+  stableHorseSpeedBonus
+} from "../game/data";
 import { useGameStore } from "../game/useGameStore";
-import type { WeaponKey } from "../game/types";
+import { FIGHTING_CLASS_LABELS, normalizeFightingClass, type WeaponKey } from "../game/types";
 import { CAMPAIGN_PREMISE, hudCampaignGoal } from "../game/story";
 import { TILE, encounterDangerDisplayPercent, townAtTile } from "../game/worldMap";
 import { GAME_VERSION_LABEL } from "../version";
@@ -130,8 +136,9 @@ export function WorldStatusOverlay() {
   const weaponBonus = WEAPON_STATS[snapshot.player.weapon].attackBonus;
   const armorBonus = ARMOR_STATS[snapshot.player.armor].defenseBonus;
   const petAtk = petAttackBuffForParty(snapshot.player.activePetId, snapshot.player.pets);
-  const horseSpd = stableHorseSpeedBonus(snapshot.player.horsesOwned ?? []);
-  const speedTotal = snapshot.player.speed + horseSpd;
+  const horseCount = stableHorseSpeedBonus(snapshot.player.horsesOwned ?? []);
+  const walkMult = overworldHorseWalkSpeedMultiplier(snapshot.player.horsesOwned ?? []);
+  const battleSpeed = snapshot.player.speed;
   const attackPower = snapshot.player.attack + weaponBonus + petAtk;
   const defensePower = snapshot.player.defense + armorBonus;
   const xpPercent = Math.max(0, Math.min(100, Math.round((snapshot.player.xp / snapshot.player.xpToNext) * 100)));
@@ -184,11 +191,11 @@ export function WorldStatusOverlay() {
   ].join("\n");
 
   const spdTitle = [
-    `Speed: ${speedTotal} in battle`,
-    horseSpd > 0
-      ? `Base ${snapshot.player.speed} + ${horseSpd} from mounts (max +5)`
-      : `Base ${snapshot.player.speed} — buy up to five mounts at stables for +5 max`,
-    "Determines turn order in battle."
+    `Battle speed: ${battleSpeed} (turn order)`,
+    horseCount > 0
+      ? `Mounts: +${Math.round((walkMult - 1) * 100)}% overworld walk speed (${horseCount} stabled, max five)`
+      : `Buy mounts at stables for faster overworld walking — battle speed stays on your base stat.`,
+    "Battle speed does not include mounts."
   ].join("\n");
 
   const cdTitle = [
@@ -213,10 +220,6 @@ export function WorldStatusOverlay() {
   return (
     <div className="world-status-overlay" aria-label="Status">
       <div className="world-status-overlay-inner">
-        <div className="world-status-hero">
-          <div className="world-status-hero-name">{snapshot.player.name}</div>
-          <div className="world-status-hero-level">Lv {snapshot.player.level}</div>
-        </div>
         <h1 className="world-status-title">
           Monster Slayer <span className="world-status-version">{GAME_VERSION_LABEL}</span>
         </h1>
@@ -234,6 +237,18 @@ export function WorldStatusOverlay() {
           </span>
           {nightWilds ? <span className="world-time-night"> · Night danger</span> : null}
         </p>
+        <div className="world-status-hero">
+          <div className="world-status-hero-name" title={snapshot.player.name}>
+            {snapshot.player.name}
+          </div>
+          <div className="world-status-hero-meta">
+            <span className="world-status-hero-level">Lv {snapshot.player.level}</span>
+            <span className="world-status-hero-class" title="Fighting class and unspent skill points">
+              {FIGHTING_CLASS_LABELS[normalizeFightingClass(snapshot.player.fightingClass)]} ·{" "}
+              {snapshot.player.skillPoints ?? 0} skill pt
+            </span>
+          </div>
+        </div>
         {visitingTown ? (
           <div className="world-town-visit" role="status">
             <div className="world-town-visit-name">{visitingTown.name}</div>
@@ -327,10 +342,7 @@ export function WorldStatusOverlay() {
                 <IconShield />
               </HudIconButton>
             </div>
-            <p className="world-hud-consumable-hint">
-              Items vs gear: buy consumables and maps at the <strong>general merchant</strong>; weapons, armor, and buyback at
-              the <strong>forge</strong>. Hotbar 1–9 / 0, backpack, or <strong>Inventory</strong> (<kbd>I</kbd>) for the full list.
-            </p>
+            
           </div>
 
           <div className="world-hud-gear-col">
@@ -342,7 +354,7 @@ export function WorldStatusOverlay() {
               <HudIconButton className="hud-stat-def" ariaLabel={`Defense ${defensePower}`} title={defTitle}>
                 <IconShield />
               </HudIconButton>
-              <HudIconButton className="hud-stat-spd" ariaLabel={`Speed ${speedTotal}`} title={spdTitle}>
+              <HudIconButton className="hud-stat-spd" ariaLabel={`Battle speed ${battleSpeed}`} title={spdTitle}>
                 <IconBolt />
               </HudIconButton>
               <HudIconButton

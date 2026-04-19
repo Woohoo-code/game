@@ -6,10 +6,14 @@ import { useGameStore } from "../game/useGameStore";
 import {
   FACIAL_HAIR_LABELS,
   FACIAL_HAIR_ORDER,
+  FIGHTING_CLASS_LABELS,
+  FIGHTING_CLASS_ORDER,
   HAIR_STYLE_LABELS,
   HAIR_STYLE_ORDER,
   normalizeFacialHair,
+  normalizeFightingClass,
   normalizeHairStyle,
+  type FightingClass,
   type PlayerAppearance
 } from "../game/types";
 
@@ -21,6 +25,12 @@ const PANTS_PRESETS = ["#2a3550", "#3c2a1f", "#1c1f25", "#4a3e68", "#2f5030", "#
 const HAIR_STYLES = HAIR_STYLE_ORDER.map((id) => ({ id, label: HAIR_STYLE_LABELS[id] }));
 
 const FACIAL_STYLES = FACIAL_HAIR_ORDER.map((id) => ({ id, label: FACIAL_HAIR_LABELS[id] }));
+
+const CLASS_HINT: Record<FightingClass, string> = {
+  knight: "+2 Attack — steady melee pressure.",
+  wizard: "+15% skill damage — more tree points per level.",
+  thief: "+2 Speed, +15% wild gold — slip past danger."
+};
 
 function Swatch({
   color,
@@ -48,6 +58,9 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
   const snapshot = useGameStore();
   const [name, setName] = useState(() =>
     snapshot.player.hasCreatedCharacter ? snapshot.player.name : ""
+  );
+  const [fightingClass, setFightingClass] = useState<FightingClass>(() =>
+    snapshot.player.hasCreatedCharacter ? normalizeFightingClass(snapshot.player.fightingClass) : "knight"
   );
   const [appearance, setAppearance] = useState<PlayerAppearance>(() => {
     const base = defaultAppearance();
@@ -80,7 +93,7 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
   };
 
   const submit = () => {
-    gameStore.createCharacter(name || "Hero", appearance);
+    gameStore.createCharacter(name || "Hero", appearance, fightingClass);
     onDone();
   };
 
@@ -123,6 +136,25 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
                 onChange={(e) => setName(e.target.value)}
               />
             </label>
+
+            <div className="form-row">
+              <span>Fighting class</span>
+              <div className="pill-row character-class-row">
+                {FIGHTING_CLASS_ORDER.map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`pill${fightingClass === id ? " active" : ""}`}
+                    disabled={snapshot.player.hasCreatedCharacter}
+                    title={snapshot.player.hasCreatedCharacter ? "Class is set for this hero." : CLASS_HINT[id]}
+                    onClick={() => setFightingClass(id)}
+                  >
+                    {FIGHTING_CLASS_LABELS[id]}
+                  </button>
+                ))}
+              </div>
+              <p className="character-class-hint">{CLASS_HINT[fightingClass]}</p>
+            </div>
 
             <div className="form-row">
               <span>Skin</span>

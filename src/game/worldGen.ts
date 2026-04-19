@@ -7,12 +7,14 @@
 
 import type { BiomeKind } from "./types";
 
-export type TerrainCode = 0 | 1 | 2 | 3 | 4;
+export type TerrainCode = 0 | 1 | 2 | 3 | 4 | 5;
 export const TERRAIN_GRASS: TerrainCode = 0;
 export const TERRAIN_ROAD: TerrainCode = 1;
 export const TERRAIN_WATER: TerrainCode = 2;
 export const TERRAIN_TOWN: TerrainCode = 3;
 export const TERRAIN_FOREST: TerrainCode = 4;
+/** Walkable rough terrain — slows movement (~55% speed) and gives +15% damage when attacking from it. */
+export const TERRAIN_HILL: TerrainCode = 5;
 
 export const BIOME_CODE: Record<BiomeKind, number> = {
   meadow: 0,
@@ -45,6 +47,8 @@ export type BuildingKind =
   | "chapel"
   | "stables"
   | "market"
+  /** Royal audience (spawn castle, realm tier 1 only). */
+  | "throne"
   /** Wilderness landmark — full HP, no gold (one per world). */
   | "restoreSpring";
 
@@ -65,6 +69,25 @@ export interface GeneratedTown {
   epithet: string;
 }
 
+/** One stretch of castle curtain wall (map x → 3D X, map y → 3D Z). */
+export interface CastleWallSegment {
+  tx: number;
+  ty: number;
+  /** East–west wall runs along map X; north–south along map Y. */
+  along: "ew" | "ns";
+}
+
+/** Crownkeep (realm 1 spawn castle): paved interior, south gate triggers, wall mesh. */
+export interface CrownkeepLayout {
+  /** Inclusive tile bounds of the full castle yard inside the curtain wall. */
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  /** Stand on any of these overworld tiles (south of the gate gap) to enter the throne hall interior. */
+  gateTiles: { tx: number; ty: number }[];
+}
+
 export interface GeneratedWorld {
   seed: number;
   realmTier: number;
@@ -80,6 +103,13 @@ export interface GeneratedWorld {
   bossTile: { x: number; y: number };
   /** Named towns (centers + flavor). Used by compass, revival warp, and HUD. */
   towns: GeneratedTown[];
+  /**
+   * Realm tier 1 only: stone curtain wall around Crownkeep (spawn castle), one segment per tile edge.
+   * Not buildings — pure perimeter mesh in 3D.
+   */
+  crownkeepCastleWalls: CastleWallSegment[] | null;
+  /** Realm tier 1 only: castle courtyard footprint + gate interaction tiles. */
+  crownkeep: CrownkeepLayout | null;
 }
 
 /** Deterministic small PRNG — mulberry32. */
@@ -140,6 +170,24 @@ export const WORLD_AREA_MULTIPLIER = 1;
 
 function worldAxisScale(): number {
   return Math.sqrt(WORLD_AREA_MULTIPLIER);
+}
+
+/** Curtain wall bounds + south gate center (shared by paving, walls, gate tiles). */
+function computeCrownkeepWallFootprint(
+  townA: { x: number; y: number },
+  crownPlaza: { halfW: number; halfH: number },
+  wallOut: number
+): { wx0: number; wx1: number; wy0: number; wy1: number; gapC: number } {
+  const ix0 = townA.x - crownPlaza.halfW;
+  const ix1 = townA.x + crownPlaza.halfW;
+  const iy0 = townA.y - crownPlaza.halfH;
+  const iy1 = townA.y + crownPlaza.halfH;
+  const wx0 = ix0 - wallOut;
+  const wx1 = ix1 + wallOut;
+  const wy0 = iy0 - wallOut;
+  const wy1 = iy1 + wallOut;
+  const gapC = Math.floor((wx0 + wx1) / 2);
+  return { wx0, wx1, wy0, wy1, gapC };
 }
 
 export function generateWorld(
@@ -214,6 +262,30 @@ export function generateWorld(
     }
   }
 
+  // ── 2b. Hills (walkable but slower; grown from seed points on grass) ────
+  const hillCount = ri(3, 7);
+  for (let i = 0; i < hillCount; i++) {
+    const cx = ri(2, width - 3);
+    const cy = ri(2, height - 3);
+    const target = ri(3, 8);
+    const queue: [number, number][] = [[cx, cy]];
+    let placed = 0;
+    let guard = 0;
+    while (queue.length && placed < target && guard++ < 120) {
+      const pop = queue.shift();
+      if (!pop) break;
+      const [x, y] = pop;
+      if (!inBounds(x, y) || tiles[idx(x, y)] !== TERRAIN_GRASS) continue;
+      if (rng() < 0.25) continue;
+      setT(x, y, TERRAIN_HILL);
+      placed++;
+      if (rng() < 0.6) queue.push([x + 1, y]);
+      if (rng() < 0.6) queue.push([x - 1, y]);
+      if (rng() < 0.6) queue.push([x, y + 1]);
+      if (rng() < 0.6) queue.push([x, y - 1]);
+    }
+  }
+
   // ── 3. Towns ────────────────────────────────────────────────────────────
   const pickTownCenter = (xMin: number, xMax: number, yMin: number, yMax: number) => {
     for (let tries = 0; tries < 80; tries++) {
@@ -252,8 +324,9 @@ export function generateWorld(
         setT(nx, ny, TERRAIN_TOWN);
       }
     }
+    return { halfW, halfH };
   };
-  carveTownPlaza(townA);
+  const crownPlaza = carveTownPlaza(townA);
   carveTownPlaza(townB);
 
   // ── 4. Buildings ────────────────────────────────────────────────────────
@@ -266,31 +339,27 @@ export function generateWorld(
     townABuildingKinds = [...villageCore, "library", "forge", "market", "chapel", "stables"];
     townBBuildingKinds = [...villageCore, "library", "forge", "market", "chapel", "stables", "train", "petShop"];
   } else {
+    // First settlement is the crown's castle — royal audience is inside the keep (see throne hall interior).
     townABuildingKinds = [...villageCore, "library", "forge", "market"];
     townBBuildingKinds = [...villageCore, "train", "petShop", "chapel", "stables"];
   }
 
   const shuffleBuildingOffsets = (center: { x: number; y: number }): { dx: number; dy: number }[] => {
+    // Two concentric rings around the town plaza; every offset is at least
+    // Chebyshev distance 2 from the plaza center and from every other ring slot,
+    // so buildings never touch — there's always at least one grass tile between
+    // them once the min-distance check below picks them.
     const offsets: { dx: number; dy: number }[] = [
-      { dx: 0, dy: 0 },
-      { dx: -2, dy: 0 },
-      { dx: 2, dy: 0 },
-      { dx: -3, dy: -1 },
-      { dx: 3, dy: -1 },
-      { dx: -1, dy: 1 },
-      { dx: 1, dy: 1 },
-      { dx: -3, dy: 1 },
-      { dx: 3, dy: 1 },
-      { dx: 0, dy: -1 },
-      { dx: 0, dy: 1 },
-      { dx: -4, dy: 0 },
-      { dx: 4, dy: 0 },
-      { dx: -2, dy: -1 },
-      { dx: 2, dy: -1 },
-      { dx: -1, dy: -1 },
-      { dx: 1, dy: -1 },
-      { dx: -3, dy: 0 },
-      { dx: 3, dy: 0 }
+      // Inner ring (distance 2)
+      { dx: -2, dy: -2 }, { dx: 0, dy: -2 }, { dx: 2, dy: -2 },
+      { dx: -2, dy: 0 },                     { dx: 2, dy: 0 },
+      { dx: -2, dy: 2 },  { dx: 0, dy: 2 },  { dx: 2, dy: 2 },
+      // Outer ring (distance 3–4) for larger towns
+      { dx: -4, dy: -2 }, { dx: -4, dy: 0 }, { dx: -4, dy: 2 },
+      { dx: 4, dy: -2 },  { dx: 4, dy: 0 },  { dx: 4, dy: 2 },
+      { dx: -2, dy: -4 }, { dx: 0, dy: -4 }, { dx: 2, dy: -4 },
+      { dx: -2, dy: 4 },  { dx: 0, dy: 4 },  { dx: 2, dy: 4 },
+      { dx: -4, dy: -4 }, { dx: 4, dy: -4 }, { dx: -4, dy: 4 }, { dx: 4, dy: 4 }
     ];
     for (let i = offsets.length - 1; i > 0; i--) {
       const j = Math.floor(rng() * (i + 1));
@@ -303,22 +372,49 @@ export function generateWorld(
     });
   };
 
+  // Crownkeep royal hall (realm 1 only) — claim the top-centre plaza tile
+  // *before* the other town buildings fill the ring so nothing else gets
+  // dropped on top of it.
+  let royalHallTile: { x: number; y: number } | null = null;
+  if (realmTier === 1) {
+    const rx = townA.x;
+    const ry = townA.y - crownPlaza.halfH;
+    if (rx >= 0 && rx < width && ry >= 0 && ry < height) {
+      royalHallTile = { x: rx, y: ry };
+      setT(rx, ry, TERRAIN_TOWN);
+      buildings.push({ kind: "throne", x: rx, y: ry, townId: 0 });
+    }
+  }
+
   const placeBuildingsAround = (center: { x: number; y: number }, kinds: BuildingKind[], townId: 0 | 1) => {
     const offsets = shuffleBuildingOffsets(center);
-    const used = new Set<string>();
+    // Enforce Chebyshev distance ≥ 2 between any two placed buildings so they
+    // never sit on neighbouring tiles (at least one gap tile between them).
+    const MIN_CHEBYSHEV = 2;
+    const placed: { x: number; y: number }[] = [];
+    // Treat the royal hall as already placed for spacing purposes so the
+    // shops around Crownkeep respect its top-centre footprint.
+    if (townId === 0 && royalHallTile) placed.push(royalHallTile);
+    const farEnough = (bx: number, by: number): boolean =>
+      placed.every((p) => Math.max(Math.abs(p.x - bx), Math.abs(p.y - by)) >= MIN_CHEBYSHEV);
     for (const kind of kinds) {
-      let placed = false;
-      for (let tries = 0; tries < offsets.length && !placed; tries++) {
-        const off = offsets[tries];
-        if (!off) break;
-        const key = `${off.dx},${off.dy}`;
-        if (used.has(key)) continue;
-        const bx = Math.max(0, Math.min(width - 1, center.x + off.dx));
-        const by = Math.max(0, Math.min(height - 1, center.y + off.dy));
-        buildings.push({ kind, x: bx, y: by, townId });
-        setT(bx, by, TERRAIN_TOWN);
-        used.add(key);
-        placed = true;
+      let didPlace = false;
+      // Two passes: first honour the spacing rule; if the ring has no valid
+      // slot left (small-map edge case) fall back to any in-bounds offset so
+      // we still place every requested service.
+      for (const requireSpacing of [true, false]) {
+        if (didPlace) break;
+        for (const off of offsets) {
+          const bx = Math.max(0, Math.min(width - 1, center.x + off.dx));
+          const by = Math.max(0, Math.min(height - 1, center.y + off.dy));
+          if (placed.some((p) => p.x === bx && p.y === by)) continue;
+          if (requireSpacing && !farEnough(bx, by)) continue;
+          buildings.push({ kind, x: bx, y: by, townId });
+          setT(bx, by, TERRAIN_TOWN);
+          placed.push({ x: bx, y: by });
+          didPlace = true;
+          break;
+        }
       }
     }
   };
@@ -468,15 +564,73 @@ export function generateWorld(
     step();
   };
 
-  carveRoad(townA.x, townA.y, townB.x, townB.y);
+  // Roads enter Crownkeep through the south gate (the "front" of the castle)
+  // — on realm 1 we anchor every road-exit at the tile just south of the gate
+  // gap instead of routing from townA's center, which used to punch a
+  // non-existent path straight through the east curtain wall.
+  const crownFootprint =
+    realmTier === 1 ? computeCrownkeepWallFootprint(townA, crownPlaza, 4) : null;
+  const townAExit = crownFootprint
+    ? { x: crownFootprint.gapC, y: Math.min(height - 1, crownFootprint.wy1 + 2) }
+    : { x: townA.x, y: townA.y };
+
+  carveRoad(townAExit.x, townAExit.y, townB.x, townB.y);
   carveRoad(townB.x, townB.y, boss.x, boss.y);
   if (rng() < 0.6) {
     // A wandering detour for flavor
-    carveRoad(townA.x, townA.y, midX, midY);
+    carveRoad(townAExit.x, townAExit.y, midX, midY);
+  }
+
+  // ── 6b. Crownkeep courtyard (realm 1): no lakes or wild grass inside the walls —
+  //      paved as town so roamers & random encounters never appear there.
+  let crownkeep: CrownkeepLayout | null = null;
+  if (realmTier === 1 && crownFootprint) {
+    const fp = crownFootprint;
+    for (let y = fp.wy0; y <= fp.wy1; y++) {
+      for (let x = fp.wx0; x <= fp.wx1; x++) {
+        if (inBounds(x, y)) setT(x, y, TERRAIN_TOWN);
+      }
+    }
+    const gateTiles: { tx: number; ty: number }[] = [];
+    const southRow = fp.wy1 + 1;
+    for (let gx = fp.gapC - 1; gx <= fp.gapC + 1; gx++) {
+      if (inBounds(gx, southRow)) {
+        setT(gx, southRow, TERRAIN_TOWN);
+        gateTiles.push({ tx: gx, ty: southRow });
+      }
+    }
+    // Extend the gate approach a couple of tiles further south as a stub of
+    // road so the courtyard visibly meets the overworld path network.
+    for (let dy = 2; dy <= 3; dy++) {
+      const gy = fp.wy1 + dy;
+      if (!inBounds(fp.gapC, gy)) break;
+      const t = tiles[idx(fp.gapC, gy)] as TerrainCode;
+      if (t !== TERRAIN_TOWN) setT(fp.gapC, gy, TERRAIN_ROAD);
+    }
+    crownkeep = {
+      minX: fp.wx0,
+      maxX: fp.wx1,
+      minY: fp.wy0,
+      maxY: fp.wy1,
+      gateTiles
+    };
   }
 
   // ── 7. Biome regions (Voronoi with meadow anchored at town A) ───────────
   const biomes = generateBiomeMap(width, height, townA, townB, rng, realmTier);
+
+  // Keep the castle interior visually consistent (meadow stone / banners), not swamp etc.
+  if (crownkeep) {
+    const meadow = BIOME_CODE.meadow;
+    for (let y = crownkeep.minY; y <= crownkeep.maxY; y++) {
+      for (let x = crownkeep.minX; x <= crownkeep.maxX; x++) {
+        if (inBounds(x, y)) biomes[idx(x, y)] = meadow;
+      }
+    }
+    for (const g of crownkeep.gateTiles) {
+      if (inBounds(g.tx, g.ty)) biomes[idx(g.tx, g.ty)] = meadow;
+    }
+  }
 
   // ── 7b. Restore spring (wilderness — walkable grass/road, away from towns) ─
   const tileOccupied = new Set(buildings.map((b) => `${b.x},${b.y}`));
@@ -538,8 +692,11 @@ export function generateWorld(
     id: 0,
     x: townA.x,
     y: townA.y,
-    name: profiles.a.name,
-    epithet: profiles.a.epithet
+    name: realmTier === 1 ? "Crownkeep" : profiles.a.name,
+    epithet:
+      realmTier === 1
+        ? "The King's castle — petition the throne after hunts in the wilds."
+        : profiles.a.epithet
   };
   const townMetaB: GeneratedTown = {
     id: 1,
@@ -548,6 +705,27 @@ export function generateWorld(
     name: profiles.b.name,
     epithet: profiles.b.epithet
   };
+
+  /** Big stone curtain around Crownkeep (realm 1): many segments, not a single building mesh. */
+  let crownkeepCastleWalls: CastleWallSegment[] | null = null;
+  if (realmTier === 1 && crownkeep) {
+    const { minX: wx0, maxX: wx1, minY: wy0, maxY: wy1 } = crownkeep;
+    const segs: CastleWallSegment[] = [];
+    const gapC = Math.floor((wx0 + wx1) / 2);
+    const southGateSkip = new Set<number>([gapC - 1, gapC, gapC + 1]);
+
+    for (let x = wx0; x <= wx1; x++) {
+      segs.push({ tx: x, ty: wy0, along: "ew" });
+      if (!southGateSkip.has(x)) {
+        segs.push({ tx: x, ty: wy1, along: "ew" });
+      }
+    }
+    for (let y = wy0 + 1; y <= wy1 - 1; y++) {
+      segs.push({ tx: wx0, ty: y, along: "ns" });
+      segs.push({ tx: wx1, ty: y, along: "ns" });
+    }
+    crownkeepCastleWalls = segs;
+  }
 
   return {
     seed,
@@ -560,7 +738,9 @@ export function generateWorld(
     spawnX,
     spawnY,
     bossTile: { x: boss.x, y: boss.y },
-    towns: [townMetaA, townMetaB]
+    towns: [townMetaA, townMetaB],
+    crownkeepCastleWalls,
+    crownkeep
   };
 }
 

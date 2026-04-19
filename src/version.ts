@@ -1,5 +1,5 @@
 /** Release label (browser tab, PWA, title screen, in-game HUD). */
-export const GAME_VERSION_LABEL = "V1.0.3";
+export const GAME_VERSION_LABEL = "V1.0.8";
 
 /**
  * Semver of the latest Windows portable EXE on GitHub Releases — keep in sync when

@@ -146,9 +146,10 @@ export function PetsPanel({ onClose }: { onClose: () => void }) {
                       type="button"
                       className="danger"
                       onClick={() => {
-                        if (!window.confirm(`Release ${selected.name} back into the wild?`)) return;
-                        gameStore.releasePet(selected.id);
-                        setSelectedId(null);
+                        const id = selected.id;
+                        gameStore.releasePet(id);
+                        const next = gameStore.getSnapshot().player.pets[0];
+                        setSelectedId(next?.id ?? null);
                       }}
                     >
                       Release

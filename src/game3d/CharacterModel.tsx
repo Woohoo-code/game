@@ -11,36 +11,96 @@ interface CharacterModelProps {
   showFaceMarker?: boolean;
 }
 
+/**
+ * Central anatomy constants. Tweak these and the whole body scales together;
+ * feature positions below are all anchored to HEAD_Y / HEAD_R.
+ */
+const HEAD_Y = 0.9;
+const HEAD_R = 0.185;
+/** Base shoulder ring Y — arm upper joint hangs from here. */
+const SHOULDER_Y = 0.68;
+/** Waist / belt line Y — chest tapers down to this. */
+const WAIST_Y = 0.42;
+/** Pelvis top — thighs start here. */
+const HIP_Y = 0.40;
+
+/* ── Materials ──────────────────────────────────────────────────────────── */
+
+/** Skin: physical material with subtle clearcoat + sheen for soft highlights. */
+const SkinMat = ({ color }: { color: string }) => (
+  <meshPhysicalMaterial
+    color={color}
+    roughness={0.52}
+    clearcoat={0.14}
+    clearcoatRoughness={0.45}
+    sheen={0.12}
+    sheenColor="#ffd6c2"
+    sheenRoughness={0.9}
+  />
+);
+
+/** Cloth tunic / coat — matte with a faint sheen so folds don't read plastic. */
+const ClothMat = ({ color, roughness = 0.78 }: { color: string; roughness?: number }) => (
+  <meshPhysicalMaterial
+    color={color}
+    roughness={roughness}
+    sheen={0.25}
+    sheenRoughness={0.85}
+    sheenColor="#1a1a1a"
+  />
+);
+
+/** Pants / leather — slightly waxier than tunic. */
+const LeatherMat = ({ color }: { color: string }) => (
+  <meshPhysicalMaterial
+    color={color}
+    roughness={0.6}
+    clearcoat={0.25}
+    clearcoatRoughness={0.55}
+  />
+);
+
 const hairMat = (color: string) => (
-  <meshStandardMaterial color={color} roughness={0.78} metalness={0.08} />
+  <meshPhysicalMaterial
+    color={color}
+    roughness={0.62}
+    sheen={0.4}
+    sheenRoughness={0.5}
+    sheenColor={color}
+    clearcoat={0.08}
+  />
 );
 
 const beardMat = (color: string) => (
-  <meshStandardMaterial color={color} roughness={0.88} metalness={0.04} />
+  <meshStandardMaterial color={color} roughness={0.9} metalness={0.02} />
 );
 
-/** Chin / jaw facial hair in front-of-face space (same −Z hemisphere as mouth). */
+/* ── Facial hair ────────────────────────────────────────────────────────── */
+
 function Beard({ style, color }: { style: FacialHairStyle; color: string }) {
   if (style === "none") return null;
 
+  const chinY = HEAD_Y - 0.1; // was 0.8
+  const jawZ = -0.158; // pulled in slightly to sit on the smaller head surface
+
   if (style === "stubble") {
     const dots: [number, number, number][] = [
-      [-0.1, 0.84, -0.168],
-      [-0.05, 0.82, -0.174],
-      [0, 0.805, -0.178],
-      [0.05, 0.82, -0.174],
-      [0.1, 0.84, -0.168],
-      [-0.08, 0.78, -0.165],
-      [0.08, 0.78, -0.165],
-      [0, 0.772, -0.178],
-      [-0.04, 0.798, -0.176],
-      [0.04, 0.798, -0.176]
+      [-0.09, chinY + 0.04, jawZ],
+      [-0.045, chinY + 0.025, jawZ - 0.006],
+      [0, chinY + 0.01, jawZ - 0.01],
+      [0.045, chinY + 0.025, jawZ - 0.006],
+      [0.09, chinY + 0.04, jawZ],
+      [-0.07, chinY - 0.02, jawZ + 0.003],
+      [0.07, chinY - 0.02, jawZ + 0.003],
+      [0, chinY - 0.03, jawZ - 0.008],
+      [-0.035, chinY, jawZ - 0.005],
+      [0.035, chinY, jawZ - 0.005]
     ];
     return (
       <group>
         {dots.map((p, i) => (
           <mesh key={i} position={p} castShadow>
-            <sphereGeometry args={[0.018, 6, 6]} />
+            <sphereGeometry args={[0.014, 6, 6]} />
             {beardMat(color)}
           </mesh>
         ))}
@@ -51,12 +111,12 @@ function Beard({ style, color }: { style: FacialHairStyle; color: string }) {
   if (style === "goatee") {
     return (
       <group>
-        <mesh position={[0, 0.798, -0.186]} rotation={[0.25, 0, 0]} castShadow>
-          <capsuleGeometry args={[0.038, 0.1, 5, 8]} />
+        <mesh position={[0, chinY - 0.01, jawZ - 0.014]} rotation={[0.25, 0, 0]} castShadow>
+          <capsuleGeometry args={[0.032, 0.09, 5, 8]} />
           {beardMat(color)}
         </mesh>
-        <mesh position={[0, 0.758, -0.172]} castShadow>
-          <sphereGeometry args={[0.045, 10, 8]} />
+        <mesh position={[0, chinY - 0.05, jawZ - 0.002]} castShadow>
+          <sphereGeometry args={[0.038, 10, 8]} />
           {beardMat(color)}
         </mesh>
       </group>
@@ -66,16 +126,16 @@ function Beard({ style, color }: { style: FacialHairStyle; color: string }) {
   if (style === "shortBeard") {
     return (
       <group>
-        <mesh position={[0, 0.8, -0.168]} rotation={[0.12, 0, 0]} castShadow>
-          <boxGeometry args={[0.22, 0.1, 0.1]} />
+        <mesh position={[0, chinY + 0.005, jawZ + 0.002]} rotation={[0.12, 0, 0]} castShadow>
+          <boxGeometry args={[0.2, 0.09, 0.09]} />
           {beardMat(color)}
         </mesh>
-        <mesh position={[-0.1, 0.82, -0.15]} rotation={[0.08, 0, 0.12]} castShadow>
-          <boxGeometry args={[0.08, 0.09, 0.08]} />
+        <mesh position={[-0.09, chinY + 0.03, jawZ + 0.014]} rotation={[0.08, 0, 0.12]} castShadow>
+          <boxGeometry args={[0.07, 0.08, 0.075]} />
           {beardMat(color)}
         </mesh>
-        <mesh position={[0.1, 0.82, -0.15]} rotation={[0.08, 0, -0.12]} castShadow>
-          <boxGeometry args={[0.08, 0.09, 0.08]} />
+        <mesh position={[0.09, chinY + 0.03, jawZ + 0.014]} rotation={[0.08, 0, -0.12]} castShadow>
+          <boxGeometry args={[0.07, 0.08, 0.075]} />
           {beardMat(color)}
         </mesh>
       </group>
@@ -85,20 +145,20 @@ function Beard({ style, color }: { style: FacialHairStyle; color: string }) {
   if (style === "fullBeard") {
     return (
       <group>
-        <mesh position={[0, 0.795, -0.162]} rotation={[0.1, 0, 0]} castShadow>
-          <boxGeometry args={[0.26, 0.14, 0.12]} />
+        <mesh position={[0, chinY + 0.002, jawZ + 0.008]} rotation={[0.1, 0, 0]} castShadow>
+          <boxGeometry args={[0.235, 0.13, 0.11]} />
           {beardMat(color)}
         </mesh>
-        <mesh position={[-0.12, 0.825, -0.138]} rotation={[0.05, 0, 0.18]} castShadow>
-          <boxGeometry args={[0.1, 0.14, 0.1]} />
+        <mesh position={[-0.11, chinY + 0.03, jawZ + 0.028]} rotation={[0.05, 0, 0.18]} castShadow>
+          <boxGeometry args={[0.09, 0.13, 0.09]} />
           {beardMat(color)}
         </mesh>
-        <mesh position={[0.12, 0.825, -0.138]} rotation={[0.05, 0, -0.18]} castShadow>
-          <boxGeometry args={[0.1, 0.14, 0.1]} />
+        <mesh position={[0.11, chinY + 0.03, jawZ + 0.028]} rotation={[0.05, 0, -0.18]} castShadow>
+          <boxGeometry args={[0.09, 0.13, 0.09]} />
           {beardMat(color)}
         </mesh>
-        <mesh position={[0, 0.752, -0.168]} castShadow>
-          <sphereGeometry args={[0.055, 10, 8]} />
+        <mesh position={[0, chinY - 0.04, jawZ - 0.002]} castShadow>
+          <sphereGeometry args={[0.05, 12, 10]} />
           {beardMat(color)}
         </mesh>
       </group>
@@ -108,104 +168,191 @@ function Beard({ style, color }: { style: FacialHairStyle; color: string }) {
   return null;
 }
 
-/** Eyes, brows, nose, mouth, ears — sits on the head sphere. */
+/* ── Face ──────────────────────────────────────────────────────────────── */
+
 function Face({ skin }: { skin: string }) {
-  const sclera = "#e8eef8";
-  const iris = "#2a3a55";
+  const sclera = "#ededf2";
+  const iris = "#3a4a6a";
   const pupil = "#0a0c10";
-  const brow = "#2c2218";
-  const lip = "#a85a5a";
+  const browCol = "#2c2018";
+  const lipCol = "#9b5050";
+
+  // Head surface pulled-in radius — features sit just under the sphere skin.
+  const eyeY = HEAD_Y + 0.012;
+  const eyeZ = -HEAD_R + 0.042; // inset so eyeballs don't bulge
+  const eyeX = 0.063;
 
   return (
     <group>
-      {/* Sclera */}
-      <mesh position={[-0.072, 0.918, -0.166]}>
-        <sphereGeometry args={[0.03, 14, 12]} />
-        <meshStandardMaterial color={sclera} roughness={0.35} />
+      {/* Eye sockets — very slight dark tint so the eyes read as inset even without shadows. */}
+      <mesh position={[-eyeX, eyeY, eyeZ + 0.004]}>
+        <sphereGeometry args={[0.032, 16, 12]} />
+        <meshStandardMaterial color="#1a1412" roughness={1} />
       </mesh>
-      <mesh position={[0.072, 0.918, -0.166]}>
-        <sphereGeometry args={[0.03, 14, 12]} />
-        <meshStandardMaterial color={sclera} roughness={0.35} />
+      <mesh position={[eyeX, eyeY, eyeZ + 0.004]}>
+        <sphereGeometry args={[0.032, 16, 12]} />
+        <meshStandardMaterial color="#1a1412" roughness={1} />
       </mesh>
+
+      {/* Sclera (whites) — smaller than before for a more human read. */}
+      <mesh position={[-eyeX, eyeY, eyeZ]}>
+        <sphereGeometry args={[0.022, 18, 14]} />
+        <meshPhysicalMaterial color={sclera} roughness={0.22} clearcoat={0.6} clearcoatRoughness={0.1} />
+      </mesh>
+      <mesh position={[eyeX, eyeY, eyeZ]}>
+        <sphereGeometry args={[0.022, 18, 14]} />
+        <meshPhysicalMaterial color={sclera} roughness={0.22} clearcoat={0.6} clearcoatRoughness={0.1} />
+      </mesh>
+
       {/* Irises */}
-      <mesh position={[-0.072, 0.916, -0.178]}>
-        <sphereGeometry args={[0.017, 12, 10]} />
-        <meshStandardMaterial color={iris} roughness={0.45} />
+      <mesh position={[-eyeX, eyeY - 0.001, eyeZ - 0.009]}>
+        <sphereGeometry args={[0.011, 14, 12]} />
+        <meshPhysicalMaterial color={iris} roughness={0.35} clearcoat={0.7} clearcoatRoughness={0.2} />
       </mesh>
-      <mesh position={[0.072, 0.916, -0.178]}>
-        <sphereGeometry args={[0.017, 12, 10]} />
-        <meshStandardMaterial color={iris} roughness={0.45} />
+      <mesh position={[eyeX, eyeY - 0.001, eyeZ - 0.009]}>
+        <sphereGeometry args={[0.011, 14, 12]} />
+        <meshPhysicalMaterial color={iris} roughness={0.35} clearcoat={0.7} clearcoatRoughness={0.2} />
       </mesh>
+
       {/* Pupils */}
-      <mesh position={[-0.072, 0.914, -0.186]}>
-        <sphereGeometry args={[0.009, 8, 8]} />
-        <meshStandardMaterial color={pupil} roughness={0.25} />
+      <mesh position={[-eyeX, eyeY - 0.001, eyeZ - 0.013]}>
+        <sphereGeometry args={[0.006, 10, 8]} />
+        <meshStandardMaterial color={pupil} roughness={0.2} />
       </mesh>
-      <mesh position={[0.072, 0.914, -0.186]}>
-        <sphereGeometry args={[0.009, 8, 8]} />
-        <meshStandardMaterial color={pupil} roughness={0.25} />
+      <mesh position={[eyeX, eyeY - 0.001, eyeZ - 0.013]}>
+        <sphereGeometry args={[0.006, 10, 8]} />
+        <meshStandardMaterial color={pupil} roughness={0.2} />
       </mesh>
-      {/* Catchlights */}
-      <mesh position={[-0.078, 0.926, -0.192]}>
-        <sphereGeometry args={[0.0045, 6, 6]} />
-        <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={0.35} />
+
+      {/* Catchlights — offset to sell the eye curvature. */}
+      <mesh position={[-eyeX - 0.006, eyeY + 0.006, eyeZ - 0.015]}>
+        <sphereGeometry args={[0.003, 6, 6]} />
+        <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={0.55} />
       </mesh>
-      <mesh position={[0.066, 0.926, -0.192]}>
-        <sphereGeometry args={[0.0045, 6, 6]} />
-        <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={0.35} />
+      <mesh position={[eyeX - 0.006, eyeY + 0.006, eyeZ - 0.015]}>
+        <sphereGeometry args={[0.003, 6, 6]} />
+        <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={0.55} />
       </mesh>
-      {/* Eyebrows */}
-      <mesh position={[-0.07, 0.968, -0.158]} rotation={[0.12, 0, -0.12]}>
-        <boxGeometry args={[0.095, 0.016, 0.014]} />
-        <meshStandardMaterial color={brow} roughness={0.92} />
+
+      {/* Upper eyelids — thin curved caps that drop the cartoon-eye vibe. */}
+      <mesh position={[-eyeX, eyeY + 0.014, eyeZ + 0.002]} rotation={[0.35, 0, -0.08]}>
+        <sphereGeometry args={[0.028, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <SkinMat color={skin} />
       </mesh>
-      <mesh position={[0.07, 0.968, -0.158]} rotation={[0.12, 0, 0.12]}>
-        <boxGeometry args={[0.095, 0.016, 0.014]} />
-        <meshStandardMaterial color={brow} roughness={0.92} />
+      <mesh position={[eyeX, eyeY + 0.014, eyeZ + 0.002]} rotation={[0.35, 0, 0.08]}>
+        <sphereGeometry args={[0.028, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <SkinMat color={skin} />
       </mesh>
-      {/* Nose bridge + tip */}
-      <mesh position={[0, 0.895, -0.188]} rotation={[0.35, 0, 0]}>
-        <capsuleGeometry args={[0.038, 0.07, 4, 8]} />
-        <meshStandardMaterial color={skin} roughness={0.62} />
+
+      {/* Eyebrows — softer, lower-profile strokes. */}
+      <mesh position={[-0.068, HEAD_Y + 0.048, -HEAD_R + 0.05]} rotation={[0.18, 0, -0.14]}>
+        <boxGeometry args={[0.082, 0.012, 0.01]} />
+        <meshStandardMaterial color={browCol} roughness={0.95} />
       </mesh>
-      {/* Mouth */}
-      <mesh position={[0, 0.818, -0.182]} rotation={[0.08, 0, 0]}>
-        <boxGeometry args={[0.065, 0.018, 0.012]} />
-        <meshStandardMaterial color={lip} roughness={0.55} />
+      <mesh position={[0.068, HEAD_Y + 0.048, -HEAD_R + 0.05]} rotation={[0.18, 0, 0.14]}>
+        <boxGeometry args={[0.082, 0.012, 0.01]} />
+        <meshStandardMaterial color={browCol} roughness={0.95} />
       </mesh>
-      {/* Ears */}
-      <mesh position={[-0.195, 0.898, -0.015]} rotation={[0, 0, -0.15]} castShadow>
-        <sphereGeometry args={[0.045, 12, 10]} />
-        <meshStandardMaterial color={skin} roughness={0.65} />
+
+      {/* Cheek / jaw shading — extra skin lobes that thicken the lower face
+          so the head isn't a perfect sphere. */}
+      <mesh position={[-0.1, HEAD_Y - 0.05, -HEAD_R + 0.08]} castShadow>
+        <sphereGeometry args={[0.068, 14, 12]} />
+        <SkinMat color={skin} />
       </mesh>
-      <mesh position={[0.195, 0.898, -0.015]} rotation={[0, 0, 0.15]} castShadow>
-        <sphereGeometry args={[0.045, 12, 10]} />
-        <meshStandardMaterial color={skin} roughness={0.65} />
+      <mesh position={[0.1, HEAD_Y - 0.05, -HEAD_R + 0.08]} castShadow>
+        <sphereGeometry args={[0.068, 14, 12]} />
+        <SkinMat color={skin} />
+      </mesh>
+
+      {/* Nose — bridge + subtle tip + nostril shadow */}
+      <mesh position={[0, HEAD_Y - 0.015, -HEAD_R + 0.008]} rotation={[0.3, 0, 0]}>
+        <capsuleGeometry args={[0.026, 0.058, 6, 10]} />
+        <SkinMat color={skin} />
+      </mesh>
+      <mesh position={[0, HEAD_Y - 0.05, -HEAD_R - 0.002]}>
+        <sphereGeometry args={[0.024, 12, 10]} />
+        <SkinMat color={skin} />
+      </mesh>
+      <mesh position={[-0.011, HEAD_Y - 0.058, -HEAD_R - 0.004]}>
+        <sphereGeometry args={[0.006, 6, 6]} />
+        <meshStandardMaterial color="#1a1210" roughness={1} />
+      </mesh>
+      <mesh position={[0.011, HEAD_Y - 0.058, -HEAD_R - 0.004]}>
+        <sphereGeometry args={[0.006, 6, 6]} />
+        <meshStandardMaterial color="#1a1210" roughness={1} />
+      </mesh>
+
+      {/* Upper + lower lip — thin boxes with subtle offset for a shaped mouth */}
+      <mesh position={[0, HEAD_Y - 0.085, -HEAD_R + 0.012]} rotation={[0.12, 0, 0]}>
+        <boxGeometry args={[0.058, 0.009, 0.012]} />
+        <meshStandardMaterial color={lipCol} roughness={0.4} />
+      </mesh>
+      <mesh position={[0, HEAD_Y - 0.098, -HEAD_R + 0.01]} rotation={[0.08, 0, 0]}>
+        <boxGeometry args={[0.05, 0.013, 0.013]} />
+        <meshStandardMaterial color={lipCol} roughness={0.5} />
+      </mesh>
+
+      {/* Chin bump */}
+      <mesh position={[0, HEAD_Y - 0.13, -HEAD_R + 0.04]} castShadow>
+        <sphereGeometry args={[0.048, 14, 12]} />
+        <SkinMat color={skin} />
+      </mesh>
+
+      {/* Ears — tucked tighter to the head with a flat, oval outline */}
+      <mesh
+        position={[-HEAD_R - 0.008, HEAD_Y - 0.01, 0.004]}
+        rotation={[0, 0, -0.12]}
+        scale={[0.7, 1, 0.55]}
+        castShadow
+      >
+        <sphereGeometry args={[0.04, 14, 12]} />
+        <SkinMat color={skin} />
+      </mesh>
+      <mesh
+        position={[HEAD_R + 0.008, HEAD_Y - 0.01, 0.004]}
+        rotation={[0, 0, 0.12]}
+        scale={[0.7, 1, 0.55]}
+        castShadow
+      >
+        <sphereGeometry args={[0.04, 14, 12]} />
+        <SkinMat color={skin} />
       </mesh>
     </group>
   );
 }
 
+/* ── Hair ──────────────────────────────────────────────────────────────── */
+
 function Hair({ style, color }: { style: HairStyle; color: string }) {
   if (style === "bald") return null;
+  const crownY = HEAD_Y + 0.12;
 
   if (style === "spiky") {
     return (
-      <group position={[0, 1.05, 0]}>
+      <group position={[0, crownY, 0]}>
         <mesh castShadow>
-          <coneGeometry args={[0.19, 0.24, 12]} />
+          <sphereGeometry args={[0.175, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
           {hairMat(color)}
         </mesh>
-        <mesh position={[-0.12, 0.02, 0]} rotation={[0, 0, -0.3]} castShadow>
-          <coneGeometry args={[0.05, 0.14, 8]} />
+        <mesh position={[-0.09, 0.06, -0.02]} rotation={[0.2, 0, -0.35]} castShadow>
+          <coneGeometry args={[0.04, 0.16, 10]} />
           {hairMat(color)}
         </mesh>
-        <mesh position={[0.12, 0.02, 0]} rotation={[0, 0, 0.3]} castShadow>
-          <coneGeometry args={[0.05, 0.14, 8]} />
+        <mesh position={[0.09, 0.06, -0.02]} rotation={[0.2, 0, 0.35]} castShadow>
+          <coneGeometry args={[0.04, 0.16, 10]} />
           {hairMat(color)}
         </mesh>
-        <mesh position={[0, 0.12, -0.06]} rotation={[0.5, 0, 0]} castShadow>
-          <coneGeometry args={[0.045, 0.12, 8]} />
+        <mesh position={[0, 0.08, -0.06]} rotation={[0.5, 0, 0]} castShadow>
+          <coneGeometry args={[0.038, 0.14, 10]} />
+          {hairMat(color)}
+        </mesh>
+        <mesh position={[-0.04, 0.09, 0.03]} rotation={[-0.3, 0, -0.1]} castShadow>
+          <coneGeometry args={[0.033, 0.12, 8]} />
+          {hairMat(color)}
+        </mesh>
+        <mesh position={[0.04, 0.09, 0.03]} rotation={[-0.3, 0, 0.1]} castShadow>
+          <coneGeometry args={[0.033, 0.12, 8]} />
           {hairMat(color)}
         </mesh>
       </group>
@@ -215,16 +362,16 @@ function Hair({ style, color }: { style: HairStyle; color: string }) {
   if (style === "long") {
     return (
       <group>
-        <mesh position={[0, 1.0, 0]} castShadow>
-          <sphereGeometry args={[0.21, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <mesh position={[0, crownY - 0.02, 0]} castShadow>
+          <sphereGeometry args={[0.198, 26, 18, 0, Math.PI * 2, 0, Math.PI / 2]} />
           {hairMat(color)}
         </mesh>
-        <mesh position={[0, 0.68, 0.14]} castShadow>
-          <boxGeometry args={[0.36, 0.52, 0.09]} />
+        <mesh position={[0, 0.6, 0.12]} castShadow>
+          <boxGeometry args={[0.34, 0.5, 0.08]} />
           {hairMat(color)}
         </mesh>
-        <mesh position={[0, 0.52, 0.12]} castShadow>
-          <boxGeometry args={[0.28, 0.22, 0.07]} />
+        <mesh position={[0, 0.48, 0.11]} castShadow>
+          <boxGeometry args={[0.26, 0.2, 0.065]} />
           {hairMat(color)}
         </mesh>
       </group>
@@ -233,8 +380,8 @@ function Hair({ style, color }: { style: HairStyle; color: string }) {
 
   if (style === "buzz") {
     return (
-      <mesh position={[0, 1.01, 0]} scale={[1, 0.42, 1]} castShadow>
-        <sphereGeometry args={[0.2, 18, 14, 0, Math.PI * 2, 0, Math.PI / 2]} />
+      <mesh position={[0, crownY - 0.02, 0]} scale={[1, 0.38, 1]} castShadow>
+        <sphereGeometry args={[0.192, 24, 18, 0, Math.PI * 2, 0, Math.PI / 2]} />
         {hairMat(color)}
       </mesh>
     );
@@ -243,16 +390,16 @@ function Hair({ style, color }: { style: HairStyle; color: string }) {
   if (style === "ponytail") {
     return (
       <group>
-        <mesh position={[0, 1.0, 0]} castShadow>
-          <sphereGeometry args={[0.2, 18, 14, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <mesh position={[0, crownY - 0.02, 0]} castShadow>
+          <sphereGeometry args={[0.192, 24, 18, 0, Math.PI * 2, 0, Math.PI / 2]} />
           {hairMat(color)}
         </mesh>
-        <mesh position={[0, 0.88, 0.22]} rotation={[-0.85, 0, 0]} castShadow>
-          <capsuleGeometry args={[0.055, 0.26, 6, 10]} />
+        <mesh position={[0, 0.82, 0.2]} rotation={[-0.75, 0, 0]} castShadow>
+          <capsuleGeometry args={[0.05, 0.24, 6, 12]} />
           {hairMat(color)}
         </mesh>
-        <mesh position={[0, 0.72, 0.28]} castShadow>
-          <sphereGeometry args={[0.07, 12, 10]} />
+        <mesh position={[0, 0.66, 0.26]} castShadow>
+          <sphereGeometry args={[0.065, 14, 12]} />
           {hairMat(color)}
         </mesh>
       </group>
@@ -261,24 +408,26 @@ function Hair({ style, color }: { style: HairStyle; color: string }) {
 
   if (style === "curly") {
     const curls: [number, number, number][] = [
-      [-0.1, 1.05, 0.06],
-      [0, 1.1, 0.08],
-      [0.1, 1.05, 0.06],
-      [-0.14, 1.0, 0.02],
-      [0.14, 1.0, 0.02],
-      [-0.06, 1.06, 0.06],
-      [0.06, 1.06, 0.06],
-      [0, 1.12, 0.04]
+      [-0.09, crownY, 0.04],
+      [0, crownY + 0.04, 0.06],
+      [0.09, crownY, 0.04],
+      [-0.13, crownY - 0.04, 0],
+      [0.13, crownY - 0.04, 0],
+      [-0.055, crownY + 0.01, 0.04],
+      [0.055, crownY + 0.01, 0.04],
+      [0, crownY + 0.06, 0.02],
+      [-0.11, crownY + 0.02, -0.04],
+      [0.11, crownY + 0.02, -0.04]
     ];
     return (
       <group>
-        <mesh position={[0, 0.98, 0]} castShadow>
-          <sphereGeometry args={[0.18, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <mesh position={[0, crownY - 0.04, 0]} castShadow>
+          <sphereGeometry args={[0.17, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2]} />
           {hairMat(color)}
         </mesh>
         {curls.map((p, i) => (
           <mesh key={i} position={p} castShadow>
-            <sphereGeometry args={[0.06, 10, 8]} />
+            <sphereGeometry args={[0.054, 12, 10]} />
             {hairMat(color)}
           </mesh>
         ))}
@@ -289,16 +438,16 @@ function Hair({ style, color }: { style: HairStyle; color: string }) {
   if (style === "sidePart") {
     return (
       <group>
-        <mesh position={[0, 1.02, 0]} rotation={[0, 0, 0.1]} castShadow>
-          <sphereGeometry args={[0.2, 18, 14, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <mesh position={[0, crownY - 0.02, 0]} rotation={[0, 0, 0.08]} castShadow>
+          <sphereGeometry args={[0.192, 24, 18, 0, Math.PI * 2, 0, Math.PI / 2]} />
           {hairMat(color)}
         </mesh>
-        <mesh position={[-0.1, 0.98, 0.04]} rotation={[0.15, 0, -0.35]} castShadow>
-          <boxGeometry args={[0.14, 0.2, 0.16]} />
+        <mesh position={[-0.095, crownY - 0.05, 0.02]} rotation={[0.2, 0, -0.4]} castShadow>
+          <boxGeometry args={[0.12, 0.18, 0.14]} />
           {hairMat(color)}
         </mesh>
-        <mesh position={[0.06, 1.0, -0.02]} castShadow>
-          <boxGeometry args={[0.12, 0.08, 0.14]} />
+        <mesh position={[0.05, crownY - 0.01, -0.02]} castShadow>
+          <boxGeometry args={[0.1, 0.07, 0.12]} />
           {hairMat(color)}
         </mesh>
       </group>
@@ -308,16 +457,16 @@ function Hair({ style, color }: { style: HairStyle; color: string }) {
   if (style === "braids") {
     return (
       <group>
-        <mesh position={[0, 1.0, 0]} castShadow>
-          <sphereGeometry args={[0.19, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <mesh position={[0, crownY - 0.02, 0]} castShadow>
+          <sphereGeometry args={[0.185, 22, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
           {hairMat(color)}
         </mesh>
-        <mesh position={[-0.11, 0.82, 0.1]} rotation={[0.15, 0, -0.12]} castShadow>
-          <capsuleGeometry args={[0.04, 0.34, 5, 8]} />
+        <mesh position={[-0.105, 0.76, 0.08]} rotation={[0.15, 0, -0.12]} castShadow>
+          <capsuleGeometry args={[0.035, 0.32, 6, 10]} />
           {hairMat(color)}
         </mesh>
-        <mesh position={[0.11, 0.82, 0.1]} rotation={[0.15, 0, 0.12]} castShadow>
-          <capsuleGeometry args={[0.04, 0.34, 5, 8]} />
+        <mesh position={[0.105, 0.76, 0.08]} rotation={[0.15, 0, 0.12]} castShadow>
+          <capsuleGeometry args={[0.035, 0.32, 6, 10]} />
           {hairMat(color)}
         </mesh>
       </group>
@@ -327,16 +476,16 @@ function Hair({ style, color }: { style: HairStyle; color: string }) {
   if (style === "mohawk") {
     return (
       <group>
-        <mesh position={[0, 1.06, 0]} castShadow>
-          <boxGeometry args={[0.09, 0.14, 0.22]} />
+        <mesh position={[0, crownY, 0]} castShadow>
+          <boxGeometry args={[0.082, 0.13, 0.2]} />
           {hairMat(color)}
         </mesh>
-        <mesh position={[0, 1.18, 0]} castShadow>
-          <boxGeometry args={[0.08, 0.12, 0.2]} />
+        <mesh position={[0, crownY + 0.1, 0]} castShadow>
+          <boxGeometry args={[0.072, 0.11, 0.18]} />
           {hairMat(color)}
         </mesh>
-        <mesh position={[0, 1.28, -0.02]} castShadow>
-          <boxGeometry args={[0.065, 0.1, 0.16]} />
+        <mesh position={[0, crownY + 0.19, -0.02]} castShadow>
+          <boxGeometry args={[0.058, 0.09, 0.14]} />
           {hairMat(color)}
         </mesh>
       </group>
@@ -345,12 +494,133 @@ function Hair({ style, color }: { style: HairStyle; color: string }) {
 
   // short (default)
   return (
-    <mesh position={[0, 1.02, 0]} castShadow>
-      <sphereGeometry args={[0.21, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2]} />
+    <mesh position={[0, crownY - 0.02, 0]} castShadow>
+      <sphereGeometry args={[0.192, 24, 18, 0, Math.PI * 2, 0, Math.PI / 2]} />
       {hairMat(color)}
     </mesh>
   );
 }
+
+/* ── Limb helpers — articulated upper / lower segments with a visible joint. */
+
+function Arm({
+  side,
+  outfit,
+  skin
+}: {
+  /** −1 = left, +1 = right */
+  side: -1 | 1;
+  outfit: string;
+  skin: string;
+}) {
+  const sx = 0.255 * side;
+  return (
+    <group>
+      {/* Shoulder cap */}
+      <mesh position={[sx, SHOULDER_Y + 0.02, 0]} castShadow>
+        <sphereGeometry args={[0.09, 18, 14]} />
+        <ClothMat color={outfit} roughness={0.7} />
+      </mesh>
+      {/* Upper arm */}
+      <mesh
+        position={[sx + 0.012 * side, SHOULDER_Y - 0.09, 0]}
+        rotation={[0, 0, 0.12 * -side]}
+        castShadow
+      >
+        <capsuleGeometry args={[0.062, 0.14, 8, 14]} />
+        <ClothMat color={outfit} roughness={0.72} />
+      </mesh>
+      {/* Elbow joint */}
+      <mesh position={[sx + 0.026 * side, SHOULDER_Y - 0.2, 0]} castShadow>
+        <sphereGeometry args={[0.055, 14, 12]} />
+        <ClothMat color={outfit} roughness={0.75} />
+      </mesh>
+      {/* Forearm — slight inward bend */}
+      <mesh
+        position={[sx + 0.036 * side, SHOULDER_Y - 0.29, 0.015]}
+        rotation={[-0.15, 0, 0.05 * -side]}
+        castShadow
+      >
+        <capsuleGeometry args={[0.05, 0.13, 8, 14]} />
+        <SkinMat color={skin} />
+      </mesh>
+      {/* Wrist cuff — tiny stripe that reads as sleeve edge */}
+      <mesh position={[sx + 0.048 * side, SHOULDER_Y - 0.22, 0.008]} castShadow>
+        <cylinderGeometry args={[0.055, 0.055, 0.025, 16]} />
+        <ClothMat color={outfit} roughness={0.6} />
+      </mesh>
+      {/* Hand — flattened ellipsoid, not a sphere */}
+      <group
+        position={[sx + 0.05 * side, SHOULDER_Y - 0.38, 0.028]}
+        rotation={[0, 0, 0.2 * -side]}
+      >
+        <mesh castShadow scale={[0.8, 1.2, 0.55]}>
+          <sphereGeometry args={[0.06, 14, 12]} />
+          <SkinMat color={skin} />
+        </mesh>
+        {/* Thumb */}
+        <mesh
+          position={[-0.022 * side, -0.006, 0.022]}
+          rotation={[0.1, 0, 0.3 * side]}
+          castShadow
+        >
+          <capsuleGeometry args={[0.014, 0.022, 4, 8]} />
+          <SkinMat color={skin} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+function Leg({
+  side,
+  pants,
+  bootCol
+}: {
+  side: -1 | 1;
+  pants: string;
+  bootCol: string;
+}) {
+  const sx = 0.09 * side;
+  return (
+    <group>
+      {/* Thigh */}
+      <mesh position={[sx, HIP_Y - 0.1, 0]} castShadow>
+        <capsuleGeometry args={[0.088, 0.16, 8, 14]} />
+        <LeatherMat color={pants} />
+      </mesh>
+      {/* Knee */}
+      <mesh position={[sx, HIP_Y - 0.22, 0.008]} castShadow>
+        <sphereGeometry args={[0.075, 14, 12]} />
+        <LeatherMat color={pants} />
+      </mesh>
+      {/* Calf */}
+      <mesh position={[sx, HIP_Y - 0.32, 0.002]} castShadow>
+        <capsuleGeometry args={[0.072, 0.16, 8, 14]} />
+        <LeatherMat color={pants} />
+      </mesh>
+      {/* Boot shaft — slightly wider than calf for silhouette */}
+      <mesh position={[sx, 0.06, 0.012]} castShadow>
+        <cylinderGeometry args={[0.08, 0.086, 0.08, 16]} />
+        <meshPhysicalMaterial color={bootCol} roughness={0.42} clearcoat={0.45} clearcoatRoughness={0.4} />
+      </mesh>
+      {/* Boot foot — elongated forward so the character reads oriented */}
+      <group position={[sx, 0.028, 0.05]}>
+        <mesh castShadow scale={[1, 0.55, 1.5]}>
+          <sphereGeometry args={[0.08, 16, 12]} />
+          <meshPhysicalMaterial color={bootCol} roughness={0.4} clearcoat={0.5} clearcoatRoughness={0.35} />
+        </mesh>
+        {/* Sole lip */}
+        <mesh position={[0, -0.028, -0.01]} scale={[1.02, 0.16, 1.45]}>
+          <sphereGeometry args={[0.08, 16, 10]} />
+          <meshStandardMaterial color="#1a1410" roughness={0.85} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+/* ── Root model ────────────────────────────────────────────────────────── */
 
 export function CharacterModel({ appearance, turntable = false, showFaceMarker = false }: CharacterModelProps) {
   const rootRef = useRef<THREE.Group>(null);
@@ -358,52 +628,74 @@ export function CharacterModel({ appearance, turntable = false, showFaceMarker =
     if (!turntable || !rootRef.current) return;
     rootRef.current.rotation.y += dt * 0.4;
   });
+
   const skin = appearance.skin;
   const hair = appearance.hair;
   const outfit = appearance.outfit;
   const pants = appearance.pants;
+  const bootCol = "#2a1a12";
+  const buckleCol = "#c8a24a";
+
   return (
     <group ref={rootRef}>
+      {/* Soft ground contact shadow */}
       <mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[0.34, 22]} />
+        <circleGeometry args={[0.34, 28]} />
         <meshBasicMaterial color="#000" transparent opacity={0.28} />
       </mesh>
 
-      <mesh position={[0, 0.18, 0]} castShadow>
-        <cylinderGeometry args={[0.2, 0.22, 0.25, 16]} />
-        <meshStandardMaterial color={pants} roughness={0.72} />
+      {/* Legs + boots */}
+      <Leg side={-1} pants={pants} bootCol={bootCol} />
+      <Leg side={1} pants={pants} bootCol={bootCol} />
+
+      {/* Pelvis — small cylinder that bridges thighs */}
+      <mesh position={[0, HIP_Y + 0.008, 0]} castShadow>
+        <cylinderGeometry args={[0.16, 0.175, 0.07, 18]} />
+        <LeatherMat color={pants} />
       </mesh>
 
-      <mesh position={[0, 0.47, 0]} castShadow>
-        <capsuleGeometry args={[0.22, 0.32, 8, 14]} />
-        <meshStandardMaterial color={outfit} roughness={0.58} />
+      {/* Belt */}
+      <mesh position={[0, WAIST_Y + 0.02, 0]} castShadow>
+        <cylinderGeometry args={[0.18, 0.18, 0.048, 22]} />
+        <meshPhysicalMaterial color="#2a2030" roughness={0.55} clearcoat={0.35} clearcoatRoughness={0.4} />
+      </mesh>
+      {/* Belt buckle */}
+      <mesh position={[0, WAIST_Y + 0.02, -0.18]} castShadow>
+        <boxGeometry args={[0.06, 0.038, 0.018]} />
+        <meshPhysicalMaterial color={buckleCol} roughness={0.3} metalness={0.75} clearcoat={0.8} />
       </mesh>
 
-      <mesh position={[0, 0.32, 0]}>
-        <cylinderGeometry args={[0.228, 0.228, 0.05, 18]} />
-        <meshStandardMaterial color="#2a2030" roughness={0.88} />
+      {/* Torso — tapered waist + broader chest gives a more athletic silhouette
+          than a single capsule. Built from two stacked meshes. */}
+      <mesh position={[0, WAIST_Y + 0.12, 0]} castShadow>
+        <cylinderGeometry args={[0.185, 0.175, 0.18, 22]} />
+        <ClothMat color={outfit} />
+      </mesh>
+      <mesh position={[0, SHOULDER_Y - 0.04, 0]} castShadow>
+        <capsuleGeometry args={[0.21, 0.08, 10, 18]} />
+        <ClothMat color={outfit} />
       </mesh>
 
-      <mesh position={[-0.3, 0.5, 0]} rotation={[0, 0, 0.15]} castShadow>
-        <capsuleGeometry args={[0.075, 0.26, 6, 10]} />
-        <meshStandardMaterial color={outfit} roughness={0.68} />
-      </mesh>
-      <mesh position={[0.3, 0.5, 0]} rotation={[0, 0, -0.15]} castShadow>
-        <capsuleGeometry args={[0.075, 0.26, 6, 10]} />
-        <meshStandardMaterial color={outfit} roughness={0.68} />
-      </mesh>
-      <mesh position={[-0.36, 0.3, 0]} castShadow>
-        <sphereGeometry args={[0.075, 14, 12]} />
-        <meshStandardMaterial color={skin} roughness={0.68} />
-      </mesh>
-      <mesh position={[0.36, 0.3, 0]} castShadow>
-        <sphereGeometry args={[0.075, 14, 12]} />
-        <meshStandardMaterial color={skin} roughness={0.68} />
+      {/* Chest V-neck / tunic collar */}
+      <mesh position={[0, SHOULDER_Y - 0.02, -0.185]} rotation={[0.35, 0, 0]} castShadow>
+        <boxGeometry args={[0.14, 0.06, 0.015]} />
+        <SkinMat color={skin} />
       </mesh>
 
-      <mesh position={[0, 0.9, 0]} castShadow>
-        <sphereGeometry args={[0.2, 28, 22]} />
-        <meshStandardMaterial color={skin} roughness={0.58} />
+      {/* Arms (articulated) */}
+      <Arm side={-1} outfit={outfit} skin={skin} />
+      <Arm side={1} outfit={outfit} skin={skin} />
+
+      {/* Neck — shorter + slightly narrower than head */}
+      <mesh position={[0, HEAD_Y - 0.18, 0]} castShadow>
+        <cylinderGeometry args={[0.072, 0.082, 0.09, 18]} />
+        <SkinMat color={skin} />
+      </mesh>
+
+      {/* Head — egg-shaped rather than perfect sphere */}
+      <mesh position={[0, HEAD_Y, 0]} castShadow>
+        <sphereGeometry args={[HEAD_R, 32, 24]} />
+        <SkinMat color={skin} />
       </mesh>
 
       <Face skin={skin} />
@@ -411,8 +703,8 @@ export function CharacterModel({ appearance, turntable = false, showFaceMarker =
       <Hair style={appearance.hairStyle} color={hair} />
 
       {showFaceMarker && (
-        <mesh position={[0, 0.9, -0.208]}>
-          <sphereGeometry args={[0.022, 8, 8]} />
+        <mesh position={[0, HEAD_Y, -HEAD_R - 0.016]}>
+          <sphereGeometry args={[0.018, 8, 8]} />
           <meshStandardMaterial color="#fff6dd" emissive="#ffe8aa" emissiveIntensity={0.22} />
         </mesh>
       )}

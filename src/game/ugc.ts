@@ -57,7 +57,8 @@ export const MONSTER_BODY_SHAPES: readonly MonsterBodyShape[] = [
   "wraith",
   "drake",
   "spider",
-  "scorpion"
+  "scorpion",
+  "mangoMan"
 ] as const;
 
 function elementForBodyShape(shape: MonsterBodyShape): ElementKind {
@@ -69,7 +70,8 @@ function elementForBodyShape(shape: MonsterBodyShape): ElementKind {
     wraith: "air",
     drake: "fire",
     spider: "earth",
-    scorpion: "fire"
+    scorpion: "fire",
+    mangoMan: "earth"
   };
   return m[shape];
 }
@@ -82,7 +84,8 @@ export const BODY_SHAPE_LABEL: Record<MonsterBodyShape, string> = {
   wraith: "Spirit",
   drake: "Drake",
   spider: "Arachnid",
-  scorpion: "Scorpion"
+  scorpion: "Scorpion",
+  mangoMan: "Fruit folk"
 };
 
 /** Suggested stat baselines per body shape, used when creating a new monster draft. */
@@ -95,7 +98,8 @@ export function defaultMonsterDraft(shape: MonsterBodyShape, playerLevel: number
     wraith: { hp: 48, atk: 16, def: 7, spd: 10, xp: 38, gold: 34 },
     drake: { hp: 66, atk: 21, def: 11, spd: 8, xp: 55, gold: 46 },
     spider: { hp: 30, atk: 11, def: 3, spd: 8, xp: 22, gold: 18 },
-    scorpion: { hp: 40, atk: 14, def: 6, spd: 7, xp: 30, gold: 26 }
+    scorpion: { hp: 40, atk: 14, def: 6, spd: 7, xp: 30, gold: 26 },
+    mangoMan: { hp: 55, atk: 15, def: 8, spd: 8, xp: 38, gold: 28 }
   };
   const b = base[shape];
   return {

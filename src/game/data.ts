@@ -4,6 +4,7 @@ import type {
   BiomeKind,
   ElementKind,
   EnemyDefinition,
+  FightingClass,
   HorseKey,
   ItemKey,
   MonsterBodyShape,
@@ -106,7 +107,7 @@ export const STABLE_HORSES: Record<HorseKey, { name: string; price: number }> = 
   stormcharger: { name: "Stormcharger", price: 185 }
 };
 
-/** Total battle speed from owned mounts (each mount +1, max +5). */
+/** Count of distinct stabled mounts (each counts once, max five) — used for overworld walk speed. */
 export function stableHorseSpeedBonus(owned: readonly HorseKey[] | null | undefined): number {
   if (!owned?.length) return 0;
   const set = new Set<HorseKey>();
@@ -114,6 +115,21 @@ export function stableHorseSpeedBonus(owned: readonly HorseKey[] | null | undefi
     if (STABLE_HORSES[k]) set.add(k);
   }
   return Math.min(5, set.size);
+}
+
+/** Overworld tiles/sec multiplier from mounts: 1 + (0.12 × mount count), max +60% at five mounts. */
+export function overworldHorseWalkSpeedMultiplier(owned: readonly HorseKey[] | null | undefined): number {
+  return 1 + 0.12 * stableHorseSpeedBonus(owned);
+}
+
+/** Best mount the player owns (highest tier in {@link STABLE_HORSE_ORDER}) for visuals. */
+export function highestOwnedHorseKey(owned: readonly HorseKey[] | null | undefined): HorseKey | null {
+  if (!owned?.length) return null;
+  for (let i = STABLE_HORSE_ORDER.length - 1; i >= 0; i--) {
+    const k = STABLE_HORSE_ORDER[i];
+    if (owned.includes(k)) return k;
+  }
+  return null;
 }
 
 export function petAttackBuffForParty(
@@ -199,19 +215,19 @@ const REALM1_ENEMIES_RAW: EnemyDefinition[] = [
     id: "mangoMan",
     name: "Mango Man",
     element: "earth",
-    maxHp: 43,
+    maxHp: 100,
     attack: 15,
-    defense: 7,
+    defense: 10,
     speed: 8,
-    xpReward: 36,
-    goldReward: 30,
+    xpReward:40,
+    goldReward: 25,
     minLevel: 5,
     baseWeight: 1.35,
     weightGrowthPerLevel: 0.52,
     maxWeight: 8,
     biomes: ["meadow", "forest", "desert"],
-    bodyShape: "goblin",
-    customColors: { primary: "#e8a030", accent: "#2d6b38" }
+    bodyShape: "mangoMan",
+    customColors: { primary: "#f4a020", accent: "#1e6b32" }
   },
 
   // ── Forest biome ───────────────────────────────────────────────────────
@@ -1265,20 +1281,42 @@ export const BOSS_ENEMY: EnemyDefinition = {
   maxWeight: 0
 };
 
-/** Arena boss for the active realm — same id for story/3D; stronger from the second world onward. */
+/** Second realm onward — distinct arena guardian (not a recolored Void Titan). */
+export const REALM_TWO_BOSS_ENEMY: EnemyDefinition = {
+  id: "cinderRegent",
+  name: "Cinder Regent",
+  element: "fire",
+  maxHp: 290,
+  attack: 47,
+  defense: 24,
+  speed: 14,
+  xpReward: 320,
+  goldReward: 340,
+  minLevel: 1,
+  baseWeight: 0,
+  weightGrowthPerLevel: 0,
+  maxWeight: 0
+};
+
+/** True for any fixed arena boss (tier 1 Void Titan, tier 2+ Cinder Regent, …). */
+export function isRealmBossEnemyId(id: string): boolean {
+  return id === BOSS_ENEMY.id || id === REALM_TWO_BOSS_ENEMY.id;
+}
+
+/** Arena boss for the active realm — tier 1 Void Titan; tier 2+ Cinder Regent (scaled deeper). */
 export function bossEnemyForRealm(realmTier: number): EnemyDefinition {
   const tier = Math.max(1, Math.floor(realmTier));
   if (tier <= 1) return BOSS_ENEMY;
-  const mult = 1 + (tier - 1) * 0.32;
+  const base = REALM_TWO_BOSS_ENEMY;
+  const mult = 1 + (tier - 2) * 0.32;
   return {
-    ...BOSS_ENEMY,
-    name: "Abyss-Touched Void Titan",
-    maxHp: Math.round(BOSS_ENEMY.maxHp * mult),
-    attack: Math.round(BOSS_ENEMY.attack * mult),
-    defense: Math.round(BOSS_ENEMY.defense * mult),
-    speed: Math.round(BOSS_ENEMY.speed * mult),
-    xpReward: Math.round(BOSS_ENEMY.xpReward * mult),
-    goldReward: Math.round(BOSS_ENEMY.goldReward * mult)
+    ...base,
+    maxHp: Math.round(base.maxHp * mult),
+    attack: Math.round(base.attack * mult),
+    defense: Math.round(base.defense * mult),
+    speed: Math.round(base.speed * mult),
+    xpReward: Math.round(base.xpReward * mult),
+    goldReward: Math.round(base.goldReward * mult)
   };
 }
 
@@ -1363,7 +1401,7 @@ const DROP_POOL_ELITE: readonly ItemKey[] = [
  * (scaled encounter) so harder fights skew slightly better loot. Boss never drops here.
  */
 export function rollMonsterConsumableDrop(enemy: Pick<EnemyDefinition, "id" | "xpReward" | "maxHp">): ItemKey | null {
-  if (enemy.id === BOSS_ENEMY.id) return null;
+  if (isRealmBossEnemyId(enemy.id)) return null;
   if (Math.random() >= MONSTER_ITEM_DROP_CHANCE) return null;
   const score = enemy.xpReward + enemy.maxHp * 0.12;
   const pool =
@@ -1511,13 +1549,146 @@ export const SHOP_WEAPONS: WeaponKey[] = ["ironSword", "steelSword", "mythrilBla
 /** `cooldown` = shared skill lockout turns after that skill is cast (all skills unusable until it ticks down). */
 export const SKILL_DATA = {
   spark: { name: "Spark", minLevel: 1, powerBonus: 4, cooldown: 2, element: "air" as const },
+  steadyGuard: { name: "Steady Guard", minLevel: 2, powerBonus: 5, cooldown: 2, element: "earth" as const },
+  ironBones: { name: "Iron Bones", minLevel: 3, powerBonus: 7, cooldown: 3, element: "earth" as const },
+  vitalSurge: { name: "Vital Surge", minLevel: 4, powerBonus: 9, cooldown: 3, element: "earth" as const },
+  mountainCore: { name: "Mountain Core", minLevel: 6, powerBonus: 14, cooldown: 4, element: "earth" as const },
   iceShard: { name: "Ice Shard", minLevel: 3, powerBonus: 8, cooldown: 3, element: "water" as const },
   thunderLance: { name: "Thunder Lance", minLevel: 5, powerBonus: 12, cooldown: 4, element: "air" as const },
-  meteorBreak: { name: "Meteor Break", minLevel: 8, powerBonus: 18, cooldown: 5, element: "earth" as const }
+  meteorBreak: { name: "Meteor Break", minLevel: 8, powerBonus: 18, cooldown: 5, element: "earth" as const },
+  cometRush: { name: "Comet Rush", minLevel: 9, powerBonus: 20, cooldown: 5, element: "fire" as const },
+  zenithRay: { name: "Zenith Ray", minLevel: 12, powerBonus: 24, cooldown: 6, element: "air" as const },
+  emberToughness: { name: "Ember Toughness", minLevel: 2, powerBonus: 5, cooldown: 2, element: "fire" as const },
+  bloodBond: { name: "Blood Bond", minLevel: 3, powerBonus: 7, cooldown: 3, element: "fire" as const },
+  shadowSuture: { name: "Shadow Suture", minLevel: 5, powerBonus: 11, cooldown: 4, element: "water" as const },
+  lastEmber: { name: "Last Ember", minLevel: 7, powerBonus: 16, cooldown: 5, element: "fire" as const }
 } as const satisfies Record<SkillKey, { name: string; minLevel: number; powerBonus: number; cooldown: number; element: ElementKind }>;
 
-export const SKILL_ORDER: SkillKey[] = ["spark", "iceShard", "thunderLance", "meteorBreak"];
+/** Stable order for saves, battle bar, and migrations. */
+export const SKILL_ORDER: SkillKey[] = [
+  "spark",
+  "steadyGuard",
+  "ironBones",
+  "vitalSurge",
+  "mountainCore",
+  "iceShard",
+  "thunderLance",
+  "meteorBreak",
+  "cometRush",
+  "zenithRay",
+  "emberToughness",
+  "bloodBond",
+  "shadowSuture",
+  "lastEmber"
+];
 
+/**
+ * Three branches from Spark — Conditioning (body), Arcane (mobility/magic), Survival (sustain).
+ * Each skill (except Spark) has one parent and a point cost.
+ */
+export const SKILL_TREE: Record<SkillKey, { parent: SkillKey | null; pointCost: number }> = {
+  spark: { parent: null, pointCost: 0 },
+  steadyGuard: { parent: "spark", pointCost: 1 },
+  ironBones: { parent: "steadyGuard", pointCost: 1 },
+  vitalSurge: { parent: "ironBones", pointCost: 2 },
+  mountainCore: { parent: "vitalSurge", pointCost: 2 },
+  iceShard: { parent: "spark", pointCost: 1 },
+  thunderLance: { parent: "iceShard", pointCost: 2 },
+  meteorBreak: { parent: "thunderLance", pointCost: 2 },
+  cometRush: { parent: "meteorBreak", pointCost: 2 },
+  zenithRay: { parent: "cometRush", pointCost: 3 },
+  emberToughness: { parent: "spark", pointCost: 1 },
+  bloodBond: { parent: "emberToughness", pointCost: 1 },
+  shadowSuture: { parent: "bloodBond", pointCost: 2 },
+  lastEmber: { parent: "shadowSuture", pointCost: 3 }
+};
+
+export type SkillBranchId = "conditioning" | "arcane" | "survival";
+
+/** Visual / UX grouping (Spark sits at the shared root). */
+export const SKILL_BRANCH: Record<SkillKey, SkillBranchId | "core"> = {
+  spark: "core",
+  steadyGuard: "conditioning",
+  ironBones: "conditioning",
+  vitalSurge: "conditioning",
+  mountainCore: "conditioning",
+  iceShard: "arcane",
+  thunderLance: "arcane",
+  meteorBreak: "arcane",
+  cometRush: "arcane",
+  zenithRay: "arcane",
+  emberToughness: "survival",
+  bloodBond: "survival",
+  shadowSuture: "survival",
+  lastEmber: "survival"
+};
+
+/** Percent positions in the skill panel (0–100). Used for tree edges and nodes. */
+export const SKILL_TREE_POS: Record<SkillKey, { x: number; y: number }> = {
+  spark: { x: 50, y: 90 },
+  steadyGuard: { x: 18, y: 74 },
+  ironBones: { x: 14, y: 58 },
+  vitalSurge: { x: 12, y: 42 },
+  mountainCore: { x: 10, y: 26 },
+  iceShard: { x: 50, y: 74 },
+  thunderLance: { x: 50, y: 58 },
+  meteorBreak: { x: 50, y: 42 },
+  cometRush: { x: 50, y: 26 },
+  zenithRay: { x: 50, y: 10 },
+  emberToughness: { x: 82, y: 74 },
+  bloodBond: { x: 86, y: 58 },
+  shadowSuture: { x: 88, y: 42 },
+  lastEmber: { x: 90, y: 26 }
+};
+
+export function pointsSpentInBranch(learned: readonly SkillKey[], branch: SkillBranchId): number {
+  let n = 0;
+  for (const s of learned) {
+    if (SKILL_BRANCH[s] === branch) n += SKILL_TREE[s]?.pointCost ?? 0;
+  }
+  return n;
+}
+
+export function skillPointsPerLevel(fightingClass: FightingClass): number {
+  return fightingClass === "wizard" ? 2 : 1;
+}
+
+export function skillPowerClassMultiplier(fightingClass: FightingClass): number {
+  return fightingClass === "wizard" ? 1.15 : 1;
+}
+
+export function battleGoldClassMultiplier(fightingClass: FightingClass): number {
+  return fightingClass === "thief" ? 1.15 : 1;
+}
+
+export function orderedLearnedSkills(learned: readonly SkillKey[] | null | undefined): SkillKey[] {
+  return SKILL_ORDER.filter((s) => learned?.includes(s));
+}
+
+export function totalPointCostOnTree(learned: readonly SkillKey[]): number {
+  let sum = 0;
+  for (const s of learned) {
+    sum += SKILL_TREE[s]?.pointCost ?? 0;
+  }
+  return sum;
+}
+
+export type SkillLearnStatus = "yes" | "locked" | "owned" | "points";
+
+export function canLearnSkillNow(
+  learned: readonly SkillKey[],
+  skill: SkillKey,
+  skillPoints: number
+): SkillLearnStatus {
+  const node = SKILL_TREE[skill];
+  if (!node) return "locked";
+  if (learned.includes(skill)) return "owned";
+  if (node.parent && !learned.includes(node.parent)) return "locked";
+  if (skillPoints < node.pointCost) return "points";
+  return "yes";
+}
+
+/** Legacy level-gate list — used only to migrate older saves into {@link PlayerState.learnedSkills}. */
 export function getUnlockedSkills(level: number): SkillKey[] {
   return SKILL_ORDER.filter((skill) => level >= SKILL_DATA[skill].minLevel);
 }
@@ -1527,6 +1698,7 @@ export function defaultElementForEnemyId(id: string): ElementKind {
   const row = ENEMIES.find((e) => e.id === id);
   if (row) return row.element;
   if (id === BOSS_ENEMY.id) return BOSS_ENEMY.element;
+  if (id === REALM_TWO_BOSS_ENEMY.id) return REALM_TWO_BOSS_ENEMY.element;
   return "earth";
 }
 

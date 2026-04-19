@@ -12,7 +12,8 @@ const HEIGHT_BY_TERRAIN: Record<TerrainKind, number> = {
   road: 0.012,
   water: -0.18,
   town: 0.025,
-  forest: 0
+  forest: 0,
+  hill: 0.12
 };
 
 const MAX_TORCHES = 30;

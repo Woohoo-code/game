@@ -12,10 +12,11 @@ const HEIGHT_BY_TERRAIN: Record<TerrainKind, number> = {
   road: 0.012,
   water: -0.18,
   town: 0.025,
-  forest: 0
+  forest: 0,
+  hill: 0.12
 };
 
-const TERRAIN_RENDER_ORDER: TerrainKind[] = ["water", "grass", "forest", "road", "town"];
+const TERRAIN_RENDER_ORDER: TerrainKind[] = ["water", "grass", "forest", "hill", "road", "town"];
 const BIOME_ORDER: BiomeKind[] = ["meadow", "forest", "desert", "swamp", "tundra"];
 
 interface TerrainGroup {
@@ -41,7 +42,8 @@ function buildTerrainGroups(): TerrainGroup[] {
     road: { meadow: emptyAcc(), forest: emptyAcc(), desert: emptyAcc(), swamp: emptyAcc(), tundra: emptyAcc() },
     water: { meadow: emptyAcc(), forest: emptyAcc(), desert: emptyAcc(), swamp: emptyAcc(), tundra: emptyAcc() },
     town: { meadow: emptyAcc(), forest: emptyAcc(), desert: emptyAcc(), swamp: emptyAcc(), tundra: emptyAcc() },
-    forest: { meadow: emptyAcc(), forest: emptyAcc(), desert: emptyAcc(), swamp: emptyAcc(), tundra: emptyAcc() }
+    forest: { meadow: emptyAcc(), forest: emptyAcc(), desert: emptyAcc(), swamp: emptyAcc(), tundra: emptyAcc() },
+    hill: { meadow: emptyAcc(), forest: emptyAcc(), desert: emptyAcc(), swamp: emptyAcc(), tundra: emptyAcc() }
   };
 
   const tGrid = new Array<TerrainKind>(n);
