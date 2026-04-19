@@ -309,10 +309,17 @@ export function generateWorld(
   const townB = pickTownCenter(midX + 5, width - 3, midY - 2, height - 3);
   const profiles = pickTwoTownProfiles(rng);
 
-  /** Carve a wider plaza (rough rectangle with softened corners) for each settlement. */
+  /**
+   * Carve a wider plaza (rough rectangle with softened corners) for each
+   * settlement. halfW / halfH must fully contain the building-offset ring
+   * below (which reaches Chebyshev distance 4), otherwise outer-ring slots
+   * would land on grass/forest/water tiles and produce isolated huts that
+   * visually read as "outside of town". That bug shipped with the old
+   * halfH = 2–3, which couldn't hold the dy=±4 offsets.
+   */
   const carveTownPlaza = (c: { x: number; y: number }) => {
     const halfW = 4 + (rng() < 0.55 ? 1 : 0);
-    const halfH = 2 + (rng() < 0.45 ? 1 : 0);
+    const halfH = 4 + (rng() < 0.45 ? 1 : 0);
     for (let dy = -halfH; dy <= halfH; dy++) {
       for (let dx = -halfW; dx <= halfW; dx++) {
         const nx = c.x + dx;
@@ -368,7 +375,13 @@ export function generateWorld(
     return offsets.filter((off) => {
       const bx = center.x + off.dx;
       const by = center.y + off.dy;
-      return bx >= 0 && bx < width && by >= 0 && by < height;
+      if (bx < 0 || bx >= width || by < 0 || by >= height) return false;
+      // Only accept offsets that actually landed inside the plaza the
+      // caller just carved. Belt-and-suspenders safety net for edge cases
+      // where the plaza gets clipped (near map borders, or inside the
+      // Crownkeep curtain wall footprint) so buildings never spawn on
+      // grass/water/forest tiles surrounded by wilderness.
+      return getT(bx, by) === TERRAIN_TOWN;
     });
   };
 

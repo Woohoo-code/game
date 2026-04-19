@@ -283,6 +283,16 @@ export function dungeonTileAt(dungeon: DungeonState, tx: number, ty: number): nu
 export function isDungeonTileBlocked(dungeon: DungeonState, tx: number, ty: number): boolean {
   const t = dungeonTileAt(dungeon, tx, ty);
   if (t === DUNGEON_TILE_WALL || t === DUNGEON_TILE_PILLAR) return true;
+  // Unopened chests act as waist-high obstacles: the player bumps into them
+  // from an adjacent tile, then opens via the PlayfieldActionOverlays button.
+  // Once opened the tile becomes walkable again so the player isn't trapped
+  // in a dead-end room full of loot.
+  const f = currentDungeonFloor(dungeon);
+  if (f) {
+    for (const c of f.chests) {
+      if (!c.opened && c.tx === tx && c.ty === ty) return true;
+    }
+  }
   return false;
 }
 

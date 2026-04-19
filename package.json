@@ -1,7 +1,7 @@
 {
   "name": "monster-slayer",
   "private": true,
-  "version": "1.0.8",
+  "version": "1.0.9",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -47,7 +47,9 @@
     ],
     "asar": true,
     "win": {
-      "target": ["portable"],
+      "target": [
+        "portable"
+      ],
       "artifactName": "MonsterSlayer-${version}-Portable.${ext}",
       "signAndEditExecutable": false
     }

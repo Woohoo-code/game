@@ -123,8 +123,17 @@ export function Player3D({ appearance }: { appearance: PlayerAppearance }) {
   return (
     <group ref={groupRef}>
       {riding && bestMount ? <MountHorse3D mountKey={bestMount} movingRef={movingRef} /> : null}
-      <group position={[0, riding ? 0.52 : 0, 0]}>
-        <CharacterModel appearance={appearance} showFaceMarker />
+      {/* When riding, drop the pelvis onto the horse's back (saddle top sits
+          at ~y=0.44; the character's local HIP_Y is 0.40, so 0.06 plants the
+          pelvis on the saddle with a small seat bump). On foot, feet stay on
+          the ground at y=0. */}
+      <group position={[0, riding ? 0.06 : 0, 0]}>
+        <CharacterModel
+          appearance={appearance}
+          showFaceMarker
+          movingRef={movingRef}
+          riding={riding}
+        />
       </group>
     </group>
   );

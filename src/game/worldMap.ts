@@ -387,8 +387,15 @@ export function isBlocked(worldX: number, worldY: number): boolean {
 /**
  * Updates town / building zone flags, story biome hooks, and encounter HUD rate
  * for a tile — without rolling a battle. Used after teleport (e.g. knockout revival).
+ *
+ * No-op while the player is inside a dungeon: dungeon coordinates share the
+ * same (tx, ty) namespace as the overworld, so running this would incorrectly
+ * match overworld BUILDINGS at those tiles and flip on `canShop` / `canHeal`
+ * / etc. from inside a crypt. The dungeon action flags (`canDescendStairs`,
+ * etc.) are managed separately by {@link GameStore.dispatchDungeonTile}.
  */
 export function syncZonesAtTile(tx: number, ty: number): void {
+  if (gameStore.getSnapshot().world.inDungeon) return;
   const kind = terrainAt(tx, ty);
   const inTown = kind === "town";
   const biome = biomeAt(tx, ty);
@@ -411,13 +418,22 @@ export function syncZonesAtTile(tx: number, ty: number): void {
   let canEnterThroneHall = false;
   let canThrone = false;
   for (const b of BUILDINGS) {
-    if (b.pos.x === tx && b.pos.y === ty) {
+    const onTile = b.pos.x === tx && b.pos.y === ty;
+    // The Royal Hall is a 1-tile building on an unblocked town tile, so the
+    // player would otherwise walk straight through it and see the "Enter the
+    // Royal Hall" prompt for a single frame. Detect adjacency (Chebyshev ≤ 1)
+    // so the button stays visible for the whole approach. Other shops still
+    // require standing on the tile — they're placed with a ≥2-tile gap around
+    // town so adjacency wouldn't collide, but the narrow fix here targets the
+    // actual reported issue without changing everyone else's button timing.
+    const adjacent = Math.abs(b.pos.x - tx) <= 1 && Math.abs(b.pos.y - ty) <= 1;
+    if (b.kind === "throne" && adjacent) {
+      canEnterThroneHall = true;
+      continue;
+    }
+    if (onTile) {
       switch (b.kind) {
         case "throne":
-          // The Crownkeep royal hall is now an overworld building at the
-          // courtyard's top-centre. Standing on its tile opens the entrance
-          // prompt; the inner throne-room audience is handled separately by
-          // the throne-hall dungeon tile dispatcher.
           canEnterThroneHall = true;
           break;
         case "inn":

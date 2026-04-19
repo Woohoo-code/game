@@ -81,7 +81,13 @@ import {
   type WeaponKey,
   type WorldState
 } from "./types";
-import { STORY_CHAPTERS, initialStory, isStageComplete } from "./story";
+import {
+  STORY_CHAPTERS,
+  STORY_CH1_MONSTERS_TO_SLAY,
+  STORY_CH4_LEVEL_REQUIRED,
+  initialStory,
+  isStageComplete
+} from "./story";
 import {
   UGC_MARKET_TICK_MS,
   UGC_TAX_RATE,
@@ -525,7 +531,14 @@ class GameStore {
     const s = this.state.story;
     // Don't auto-advance prologue/epilogue — those are gated on the UI modal.
     if (s.stage === "prologue" || s.stage === "epilogue") return;
-    if (isStageComplete(s.stage, s)) {
+    // Pass the player level so Chapter 4 ("Whispers of the Titan") advances
+    // the moment the objective is met — including the edge case where the
+    // player was already past the level threshold when they reached ch4 via
+    // chain-advancement from an earlier chapter's reward. Previously ch4
+    // was only advanced inside `resolveLevelUps` at the exact moment of a
+    // level-up, so a player who arrived at ch4 at level 8 would be stuck
+    // until they hit level 9.
+    if (isStageComplete(s.stage, s, this.state.player.level)) {
       this.completeCurrentChapter();
     }
   }
@@ -3166,10 +3179,10 @@ class GameStore {
         s.stage = "ch1_firstHunts";
         for (const stage of chain) {
           s.stage = stage;
-          if (stage === "ch1_firstHunts" && s.monstersSlain < 5) break;
+          if (stage === "ch1_firstHunts" && s.monstersSlain < STORY_CH1_MONSTERS_TO_SLAY) break;
           if (stage === "ch2_gearUp" && !s.boughtBetterGear) break;
           if (stage === "ch3_wanderer") break; // need biomes visited — start this fresh
-          if (stage === "ch4_whispers" && p.level < 5) break;
+          if (stage === "ch4_whispers" && p.level < STORY_CH4_LEVEL_REQUIRED) break;
           if (stage === "ch5_trials") break; // need species list — start fresh
         }
       }
@@ -3541,12 +3554,13 @@ class GameStore {
       this.state.player.skillPoints = (this.state.player.skillPoints ?? 0) + spp;
       skillPointsBatch += spp;
       this.logEvent(`Level up! You are now level ${this.state.player.level}. +${spp} skill point${spp === 1 ? "" : "s"} — spend them in Skills.`);
-      // Story: Chapter 4 ("Whispers of the Titan") completes at level 5.
-      if (this.state.story.stage === "ch4_whispers" && this.state.player.level >= 5) {
-        this.completeCurrentChapter();
-      }
     }
     if (this.state.player.level > levelStart) {
+      // Chapter 4 ("Whispers of the Titan") is the only stage gated on
+      // player level, so re-evaluate here. `evaluateStoryProgress` is
+      // idempotent and no-ops on prologue/epilogue, so it's safe to call
+      // on every real level-up.
+      this.evaluateStoryProgress();
       const n = this.state.player.level - levelStart;
       this.state.pendingLevelUpCelebration = {
         newLevel: this.state.player.level,

@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, type MutableRefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { FacialHairStyle, HairStyle, PlayerAppearance } from "../game/types";
@@ -9,7 +9,33 @@ interface CharacterModelProps {
   turntable?: boolean;
   /** When true, adds a soft forward marker so facing reads clearly in gameplay. */
   showFaceMarker?: boolean;
+  /**
+   * Optional per-frame flag for "the character is walking". When present the
+   * arms and legs pivot at the shoulders / hips to produce an alternating
+   * walk cycle; when absent (or `.current === false`) the limbs rest. Passed
+   * through from {@link Player3D}, whose movement input already drives a
+   * ref of this exact shape.
+   */
+  movingRef?: MutableRefObject<boolean>;
+  /**
+   * When true the character adopts a seated riding pose: legs splay outward
+   * at the hips to straddle the mount, arms tilt forward as if holding reins,
+   * and the walking swing cycle is suppressed. Player3D toggles this based
+   * on horse ownership.
+   */
+  riding?: boolean;
 }
+
+/** Peak swing angle at each shoulder / hip (radians). ~17° reads as a brisk walk without looking cartoony. */
+const LIMB_SWING_AMP = 0.3;
+/** Swing frequency (rad/s). 2π·1.4 ≈ 8.8 gives ~1.4 full cycles/sec — natural human cadence. */
+const LIMB_SWING_FREQ = 8.8;
+/** How fast the swing amplitude ramps up when starting/stopping (1/s — `damp` rate). */
+const LIMB_SWING_ATTACK = 10;
+/** Legs splay outward (rad, Z-axis) when riding so boots clear the horse's body. */
+const RIDING_LEG_SPREAD = 0.7;
+/** Arms tilt forward (rad, X-axis) when riding to mimic holding reins. */
+const RIDING_ARM_FORWARD = -0.3;
 
 /**
  * Central anatomy constants. Tweak these and the whole body scales together;
@@ -506,16 +532,47 @@ function Hair({ style, color }: { style: HairStyle; color: string }) {
 function Arm({
   side,
   outfit,
-  skin
+  skin,
+  movingRef,
+  riding
 }: {
   /** −1 = left, +1 = right */
   side: -1 | 1;
   outfit: string;
   skin: string;
+  movingRef?: MutableRefObject<boolean>;
+  riding?: boolean;
 }) {
   const sx = 0.255 * side;
+  // Pivot group sits AT the shoulder; inner group cancels the translation so
+  // the original child positions (written in body-local space) still land in
+  // the right place at rotation = 0. Rotating the pivot swings the whole
+  // articulated chain around the shoulder joint.
+  const pivotRef = useRef<THREE.Group>(null);
+  const amp = useRef(0);
+  useFrame((state, dt) => {
+    const pivot = pivotRef.current;
+    if (!pivot) return;
+    if (riding) {
+      // Eased toward a static reins-holding pose rather than snapping, so the
+      // transition between walking and mounting doesn't pop.
+      pivot.rotation.x = THREE.MathUtils.damp(pivot.rotation.x, RIDING_ARM_FORWARD, 10, dt);
+      pivot.rotation.z = THREE.MathUtils.damp(pivot.rotation.z, 0, 10, dt);
+      amp.current = 0;
+      return;
+    }
+    const moving = movingRef?.current ?? false;
+    amp.current = THREE.MathUtils.damp(amp.current, moving ? 1 : 0, LIMB_SWING_ATTACK, dt);
+    // Arms swing opposite to the same-side leg: left arm forward when left leg
+    // back, etc. `side` flips phase between left/right; the leading minus
+    // inverts relative to Leg's swing so arm and leg on the same side oppose.
+    const swing = -Math.sin(state.clock.elapsedTime * LIMB_SWING_FREQ) * side * LIMB_SWING_AMP * amp.current;
+    pivot.rotation.x = THREE.MathUtils.damp(pivot.rotation.x, swing, 20, dt);
+    pivot.rotation.z = THREE.MathUtils.damp(pivot.rotation.z, 0, 10, dt);
+  });
   return (
-    <group>
+    <group position={[sx, SHOULDER_Y, 0]} ref={pivotRef}>
+    <group position={[-sx, -SHOULDER_Y, 0]}>
       {/* Shoulder cap */}
       <mesh position={[sx, SHOULDER_Y + 0.02, 0]} castShadow>
         <sphereGeometry args={[0.09, 18, 14]} />
@@ -569,21 +626,48 @@ function Arm({
         </mesh>
       </group>
     </group>
+    </group>
   );
 }
 
 function Leg({
   side,
   pants,
-  bootCol
+  bootCol,
+  movingRef,
+  riding
 }: {
   side: -1 | 1;
   pants: string;
   bootCol: string;
+  movingRef?: MutableRefObject<boolean>;
+  riding?: boolean;
 }) {
   const sx = 0.09 * side;
+  // Pivot at the hip, inner group cancels translation — same trick as Arm.
+  const pivotRef = useRef<THREE.Group>(null);
+  const amp = useRef(0);
+  useFrame((state, dt) => {
+    const pivot = pivotRef.current;
+    if (!pivot) return;
+    if (riding) {
+      // Splay outward to straddle the horse; keep X rotation flat so the leg
+      // hangs vertically from the rotated hip. Damp for smooth mount / dismount.
+      pivot.rotation.z = THREE.MathUtils.damp(pivot.rotation.z, side * RIDING_LEG_SPREAD, 10, dt);
+      pivot.rotation.x = THREE.MathUtils.damp(pivot.rotation.x, 0, 10, dt);
+      amp.current = 0;
+      return;
+    }
+    const moving = movingRef?.current ?? false;
+    amp.current = THREE.MathUtils.damp(amp.current, moving ? 1 : 0, LIMB_SWING_ATTACK, dt);
+    // Left leg (-1) and right leg (+1) swing out of phase via `side`.
+    const swing = Math.sin(state.clock.elapsedTime * LIMB_SWING_FREQ) * side * LIMB_SWING_AMP * amp.current;
+    pivot.rotation.x = THREE.MathUtils.damp(pivot.rotation.x, swing, 20, dt);
+    pivot.rotation.z = THREE.MathUtils.damp(pivot.rotation.z, 0, 10, dt);
+  });
   return (
-    <group>
+    <group position={[sx, HIP_Y, 0]} ref={pivotRef}>
+    <group position={[-sx, -HIP_Y, 0]}>
       {/* Thigh */}
       <mesh position={[sx, HIP_Y - 0.1, 0]} castShadow>
         <capsuleGeometry args={[0.088, 0.16, 8, 14]} />
@@ -617,12 +701,13 @@ function Leg({
         </mesh>
       </group>
     </group>
+    </group>
   );
 }
 
 /* ── Root model ────────────────────────────────────────────────────────── */
 
-export function CharacterModel({ appearance, turntable = false, showFaceMarker = false }: CharacterModelProps) {
+export function CharacterModel({ appearance, turntable = false, showFaceMarker = false, movingRef, riding = false }: CharacterModelProps) {
   const rootRef = useRef<THREE.Group>(null);
   useFrame((_, dt) => {
     if (!turntable || !rootRef.current) return;
@@ -645,8 +730,8 @@ export function CharacterModel({ appearance, turntable = false, showFaceMarker =
       </mesh>
 
       {/* Legs + boots */}
-      <Leg side={-1} pants={pants} bootCol={bootCol} />
-      <Leg side={1} pants={pants} bootCol={bootCol} />
+      <Leg side={-1} pants={pants} bootCol={bootCol} movingRef={movingRef} riding={riding} />
+      <Leg side={1} pants={pants} bootCol={bootCol} movingRef={movingRef} riding={riding} />
 
       {/* Pelvis — small cylinder that bridges thighs */}
       <mesh position={[0, HIP_Y + 0.008, 0]} castShadow>
@@ -683,8 +768,8 @@ export function CharacterModel({ appearance, turntable = false, showFaceMarker =
       </mesh>
 
       {/* Arms (articulated) */}
-      <Arm side={-1} outfit={outfit} skin={skin} />
-      <Arm side={1} outfit={outfit} skin={skin} />
+      <Arm side={-1} outfit={outfit} skin={skin} movingRef={movingRef} riding={riding} />
+      <Arm side={1} outfit={outfit} skin={skin} movingRef={movingRef} riding={riding} />
 
       {/* Neck — shorter + slightly narrower than head */}
       <mesh position={[0, HEAD_Y - 0.18, 0]} castShadow>

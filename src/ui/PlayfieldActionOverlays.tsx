@@ -705,19 +705,26 @@ export function PlayfieldActionOverlays({
                 if (!floor) return null;
                 const ptx = Math.floor(snapshot.player.x / TILE);
                 const pty = Math.floor(snapshot.player.y / TILE);
-                const chestHere = floor.chests.find(
-                  (c) => !c.opened && c.tx === ptx && c.ty === pty
+                // Chests block movement, so the player ends up on an adjacent
+                // tile when they bump into one. Detect chests within Chebyshev
+                // distance 1 so the "Open" button stays visible for the whole
+                // approach instead of flickering for a single frame.
+                const chestNearby = floor.chests.find(
+                  (c) =>
+                    !c.opened &&
+                    Math.abs(c.tx - ptx) <= 1 &&
+                    Math.abs(c.ty - pty) <= 1
                 );
-                if (!chestHere) return null;
+                if (!chestNearby) return null;
                 return (
                   <div className="box">
                     <strong>Treasure chest</strong>
                     <p className="boss-arena-hint">
-                      A sturdy chest waits at your feet. Crack the lid to claim the haul.
+                      A sturdy chest blocks the way. Crack the lid to claim the haul.
                     </p>
                     <button
                       type="button"
-                      onClick={() => gameStore.openDungeonChest(chestHere.id)}
+                      onClick={() => gameStore.openDungeonChest(chestNearby.id)}
                       disabled={snapshot.battle.inBattle}
                     >
                       Open chest
