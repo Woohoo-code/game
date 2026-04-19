@@ -28,7 +28,8 @@ const STYLE: Record<BuildingKind, KindStyle> = {
   forge: { height: 1.58, wallColor: "#6a6260", roof: "red", accent: "#8b3a28", bannerColor: "#c45c38", labelColor: "#ffe8d8" },
   chapel: { height: 1.48, wallColor: "#d8d4cc", roof: "gold", accent: "#8a7040", bannerColor: "#d4b060", labelColor: "#fffaf0" },
   stables: { height: 1.4, wallColor: "#a87848", roof: "thatch", accent: "#5c3a18", bannerColor: "#8b6020", labelColor: "#ffe8c8" },
-  market: { height: 1.52, wallColor: "#c9a060", roof: "red", accent: "#6a4028", bannerColor: "#b85830", labelColor: "#fff2cc" }
+  market: { height: 1.52, wallColor: "#c9a060", roof: "red", accent: "#6a4028", bannerColor: "#b85830", labelColor: "#fff2cc" },
+  restoreSpring: { height: 0.35, wallColor: "#4a9090", roof: "slate", accent: "#2a6a78", bannerColor: "#3a9aaa", labelColor: "#e8ffff" }
 };
 
 const W = 0.9;
@@ -40,11 +41,68 @@ export function Buildings() {
       {BUILDINGS.map((b, i) =>
         b.kind === "voidPortal" ? (
           <VoidPortalBuilding key={`void-portal-${b.pos.x}-${b.pos.y}-${i}`} x={b.pos.x} y={b.pos.y} label={b.label} />
+        ) : b.kind === "restoreSpring" ? (
+          <RestoreSpringBuilding key={`spring-${b.pos.x}-${b.pos.y}-${i}`} x={b.pos.x} y={b.pos.y} label={b.label} />
         ) : (
           <Building key={`${b.kind}-${b.pos.x}-${b.pos.y}-${i}`} kind={b.kind} x={b.pos.x} y={b.pos.y} label={b.label} />
         )
       )}
     </>
+  );
+}
+
+function RestoreSpringBuilding({ x, y, label }: { x: number; y: number; label: string }) {
+  const ripple = useRef<THREE.Mesh>(null);
+  useFrame(() => {
+    const m = ripple.current;
+    if (m) {
+      const s = 1 + Math.sin(performance.now() * 0.0022) * 0.04;
+      m.scale.setScalar(s);
+    }
+  });
+  return (
+    <group position={[x + 0.5, 0, y + 0.5]}>
+      <mesh position={[0, 0.04, 0]} receiveShadow>
+        <cylinderGeometry args={[0.42, 0.48, 0.08, 24]} />
+        <meshStandardMaterial color="#5a7870" roughness={0.88} />
+      </mesh>
+      <mesh ref={ripple} position={[0, 0.09, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[0.36, 28]} />
+        <meshStandardMaterial
+          color="#4ad8d0"
+          emissive="#1a7088"
+          emissiveIntensity={0.55}
+          metalness={0.15}
+          roughness={0.35}
+          transparent
+          opacity={0.92}
+        />
+      </mesh>
+      <mesh position={[0, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.12, 0.18, 20]} />
+        <meshStandardMaterial
+          color="#b8f8ff"
+          emissive="#6ae0f0"
+          emissiveIntensity={0.9}
+          metalness={0.2}
+          roughness={0.25}
+        />
+      </mesh>
+      <mesh position={[-0.28, 0.12, 0.22]} castShadow>
+        <dodecahedronGeometry args={[0.1, 0]} />
+        <meshStandardMaterial color="#6a6862" roughness={0.9} />
+      </mesh>
+      <mesh position={[0.26, 0.1, -0.2]} castShadow>
+        <dodecahedronGeometry args={[0.08, 0]} />
+        <meshStandardMaterial color="#5a5854" roughness={0.92} />
+      </mesh>
+      <pointLight position={[0, 0.45, 0]} intensity={0.85} distance={3.8} color="#7af0e8" />
+      <Html center position={[0, 0.95, 0]} distanceFactor={10} zIndexRange={[20, 0]} pointerEvents="none">
+        <div className="building-label-3d" style={{ borderColor: "#3aacb8" }}>
+          {label}
+        </div>
+      </Html>
+    </group>
   );
 }
 
@@ -96,7 +154,9 @@ function VoidPortalBuilding({ x, y, label }: { x: number; y: number; label: stri
   );
 }
 
-function Building({ kind, x, y, label }: { kind: BuildingKind; x: number; y: number; label: string }) {
+type BuildingMeshKind = Exclude<BuildingKind, "voidPortal" | "restoreSpring">;
+
+function Building({ kind, x, y, label }: { kind: BuildingMeshKind; x: number; y: number; label: string }) {
   const style = STYLE[kind];
   const h = style.height;
   const wallTex = getWallTexture(kind);
@@ -169,8 +229,8 @@ function Building({ kind, x, y, label }: { kind: BuildingKind; x: number; y: num
       <Lantern position={[-0.36, 0.55, W / 2 + 0.02]} />
       <Lantern position={[0.36, 0.55, W / 2 + 0.02]} />
 
-      {/* Chimney (skip boss / rift landmarks) */}
-      {kind !== "boss" && kind !== "voidPortal" && (
+      {/* Chimney (skip boss landmark) */}
+      {kind !== "boss" && (
         <mesh position={[W / 2 - 0.2, h + 0.25, -W / 2 + 0.2]} castShadow>
           <boxGeometry args={[0.14, 0.3, 0.14]} />
           <meshStandardMaterial color="#454049" roughness={0.9} />
@@ -254,7 +314,7 @@ function Lantern({ position }: { position: [number, number, number] }): JSX.Elem
   );
 }
 
-function KindIcon({ kind }: { kind: BuildingKind }): JSX.Element {
+function KindIcon({ kind }: { kind: BuildingMeshKind }): JSX.Element {
   switch (kind) {
     case "inn":
       return <BedIcon />;
@@ -268,8 +328,6 @@ function KindIcon({ kind }: { kind: BuildingKind }): JSX.Element {
       return <PawIcon />;
     case "boss":
       return <SkullIcon />;
-    case "voidPortal":
-      return <PortalGlyph />;
     case "library":
       return <BookIcon />;
     case "forge":

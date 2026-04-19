@@ -13,6 +13,7 @@ import { Buildings } from "./Buildings";
 import { AmbientSparkles, GroundDecorations, TownFencing } from "./Decorations";
 import { Pet3D } from "./Pet3D";
 import { Player3D } from "./Player3D";
+import { DungeonTorches } from "./DungeonTorches";
 import { Forests, Terrain } from "./Terrain";
 
 const KEY_TO_DIR: Record<string, MoveDirection> = {
@@ -224,6 +225,7 @@ export function Overworld3D() {
 
         <Terrain />
         <Forests />
+        <DungeonTorches />
         <GroundDecorations />
         <TownFencing />
         <AmbientSparkles />

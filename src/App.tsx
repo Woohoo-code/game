@@ -24,7 +24,10 @@ import {
   useStoryOverlays
 } from "./ui/Journal";
 import { MobileFullscreenButton } from "./ui/MobileFullscreenButton";
+import { FullInventoryScreen } from "./ui/FullInventoryScreen";
 import { InventoryBar } from "./ui/InventoryBar";
+import { DownloadPage } from "./ui/DownloadPage";
+import { DOWNLOAD_ROUTE } from "./routes";
 
 /**
  * Feature flag for the 3D prototype overworld.
@@ -120,6 +123,7 @@ export default function App() {
   const [titleNotice, setTitleNotice] = useState<{ text: string; error: boolean } | null>(null);
   const [transferPaste, setTransferPaste] = useState("");
   const [journalOpen, setJournalOpen] = useState(false);
+  const [inventoryOpen, setInventoryOpen] = useState(false);
   const [petsOpen, setPetsOpen] = useState(false);
   const gameRef = useRef<Phaser.Game | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
@@ -128,6 +132,10 @@ export default function App() {
   const desktopInventory = useDesktopInventoryBar();
   const overlays = useStoryOverlays();
   const { path, navigate } = useRoute();
+
+  if (path === DOWNLOAD_ROUTE) {
+    return <DownloadPage onBack={() => navigate("/", true)} />;
+  }
 
   // The UGC Studio is rendered when the URL is `/ugc`.
   // Gating: the player must have created a character *and* defeated the boss.
@@ -154,6 +162,41 @@ export default function App() {
     document.documentElement.setAttribute("data-app-screen", effectiveScreen);
     return () => document.documentElement.removeAttribute("data-app-screen");
   }, [effectiveScreen]);
+
+  useEffect(() => {
+    if (snapshot.battle.inBattle && inventoryOpen) {
+      setInventoryOpen(false);
+    }
+  }, [snapshot.battle.inBattle, inventoryOpen]);
+
+  useEffect(() => {
+    if (effectiveScreen !== "play" || inventoryOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat || e.altKey || e.ctrlKey || e.metaKey) return;
+      const t = e.target;
+      if (t instanceof HTMLElement) {
+        if (t.isContentEditable || t.closest("input, textarea, select")) return;
+      }
+      if (e.key !== "i" && e.key !== "I") return;
+      const s = gameStore.getSnapshot();
+      if (s.battle.inBattle) return;
+      if (journalOpen || petsOpen || ugcOpen) return;
+      if (overlays.showPrologue || overlays.showEpilogue || overlays.toastStage) return;
+      e.preventDefault();
+      setInventoryOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    effectiveScreen,
+    inventoryOpen,
+    journalOpen,
+    petsOpen,
+    ugcOpen,
+    overlays.showPrologue,
+    overlays.showEpilogue,
+    overlays.toastStage
+  ]);
 
   const openUgc = useCallback(() => navigate("/ugc"), [navigate]);
   const closeUgc = useCallback(() => navigate("/"), [navigate]);
@@ -243,6 +286,16 @@ export default function App() {
           <p className="title-screen-tagline">Roam the wilds, brave towns, and cut down what lurks beyond the road.</p>
           <p className="title-screen-campaign-goal" title={CAMPAIGN_TAGLINE}>
             {CAMPAIGN_TAGLINE}
+          </p>
+
+          <p className="title-screen-download-line">
+            <button
+              type="button"
+              className="title-screen-download-link"
+              onClick={() => navigate(DOWNLOAD_ROUTE)}
+            >
+              Windows portable app (.exe)
+            </button>
           </p>
 
           <div className="title-screen-gate" role="group" aria-label="Start or restore a game">
@@ -345,6 +398,11 @@ export default function App() {
     <div className="app">
       {ugcOpen && <UgcStudio onClose={closeUgc} />}
       {journalOpen && <Journal onClose={() => setJournalOpen(false)} />}
+      <FullInventoryScreen
+        open={inventoryOpen}
+        onClose={() => setInventoryOpen(false)}
+        coopGuestLocked={lanRole === "guest"}
+      />
       {petsOpen && <PetsPanel onClose={() => setPetsOpen(false)} />}
       {showStoryOverlays && overlays.showPrologue && (
         <StoryIntroModal onDismiss={() => gameStore.dismissPrologue()} />
@@ -381,6 +439,7 @@ export default function App() {
           </div>
           <PlayfieldActionOverlays
             onOpenJournal={() => setJournalOpen(true)}
+            onOpenInventory={() => setInventoryOpen(true)}
             onOpenUgc={openUgc}
             onOpenPets={() => setPetsOpen(true)}
           />
@@ -411,6 +470,7 @@ export default function App() {
             hotkeysBlocked={
               lanRole === "guest" ||
               journalOpen ||
+              inventoryOpen ||
               petsOpen ||
               ugcOpen ||
               overlays.showPrologue ||

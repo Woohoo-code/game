@@ -131,6 +131,23 @@ export const ENEMIES: EnemyDefinition[] = [
     maxWeight: 12,
     biomes: ["meadow", "forest", "desert"]
   },
+  {
+    id: "mangoMan",
+    name: "Mango Man",
+    maxHp: 43,
+    attack: 15,
+    defense: 7,
+    speed: 8,
+    xpReward: 36,
+    goldReward: 30,
+    minLevel: 5,
+    baseWeight: 1.35,
+    weightGrowthPerLevel: 0.52,
+    maxWeight: 8,
+    biomes: ["meadow", "forest", "desert"],
+    bodyShape: "goblin",
+    customColors: { primary: "#e8a030", accent: "#2d6b38" }
+  },
 
   // ── Forest biome ───────────────────────────────────────────────────────
   {
@@ -379,6 +396,55 @@ export function scaleEncounterForPlayerLevel(def: EnemyDefinition, playerLevel: 
   };
 }
 
+/** Per-defeat chance a non-boss foe leaves one consumable (independent of gold luck). */
+export const MONSTER_ITEM_DROP_CHANCE = 0.24;
+
+const DROP_POOL_WEAK: readonly ItemKey[] = [
+  "potion",
+  "sipsGinseng",
+  "berryTonic",
+  "dewdropVial",
+  "honeySalve"
+];
+const DROP_POOL_MID: readonly ItemKey[] = [
+  "potion",
+  "hiPotion",
+  "mossDraught",
+  "riverWater",
+  "herbalPaste",
+  "minersAle",
+  "wyrmTea"
+];
+const DROP_POOL_STRONG: readonly ItemKey[] = [
+  "hiPotion",
+  "megaPotion",
+  "wyrmTea",
+  "spiritBandage",
+  "elixirLight",
+  "sunOrchidMix"
+];
+const DROP_POOL_ELITE: readonly ItemKey[] = [
+  "megaPotion",
+  "sunOrchidMix",
+  "frostleafBrew",
+  "shadowTincture",
+  "amberSerum",
+  "cometDrop"
+];
+
+/**
+ * After a victory, roll whether this enemy drops a consumable. Uses live stats
+ * (scaled encounter) so harder fights skew slightly better loot. Boss never drops here.
+ */
+export function rollMonsterConsumableDrop(enemy: Pick<EnemyDefinition, "id" | "xpReward" | "maxHp">): ItemKey | null {
+  if (enemy.id === BOSS_ENEMY.id) return null;
+  if (Math.random() >= MONSTER_ITEM_DROP_CHANCE) return null;
+  const score = enemy.xpReward + enemy.maxHp * 0.12;
+  const pool =
+    score < 20 ? DROP_POOL_WEAK : score < 36 ? DROP_POOL_MID : score < 56 ? DROP_POOL_STRONG : DROP_POOL_ELITE;
+  return pool[Math.floor(Math.random() * pool.length)]!;
+}
+
 export const WEAPON_STATS = {
   woodSword: { name: "Wood Sword", attackBonus: 0, price: 0 },
   ironSword: { name: "Iron Sword", attackBonus: 3, price: 60 },
@@ -392,6 +458,42 @@ export const ARMOR_STATS = {
   knightArmor: { name: "Knight Armor", defenseBonus: 6, price: 170 },
   dragonArmor: { name: "Dragon Armor", defenseBonus: 10, price: 320 }
 } as const satisfies Record<ArmorKey, { name: string; defenseBonus: number; price: number }>;
+
+/** Guild buyback in town: gold returned is this fraction of the sold tier's shop list price. */
+export const GEAR_SELLBACK_FRACTION = 0.4;
+
+export function gearSellRefundGold(listPrice: number): number {
+  if (!Number.isFinite(listPrice) || listPrice <= 0) return 0;
+  return Math.max(0, Math.floor(listPrice * GEAR_SELLBACK_FRACTION));
+}
+
+/** One step down when selling a weapon back to the shop (starter tier cannot be sold). */
+export function weaponSellDowngrade(w: WeaponKey): WeaponKey | null {
+  switch (w) {
+    case "mythrilBlade":
+      return "steelSword";
+    case "steelSword":
+      return "ironSword";
+    case "ironSword":
+      return "woodSword";
+    default:
+      return null;
+  }
+}
+
+/** One step down when selling armor back to the shop (starter tier cannot be sold). */
+export function armorSellDowngrade(a: ArmorKey): ArmorKey | null {
+  switch (a) {
+    case "dragonArmor":
+      return "knightArmor";
+    case "knightArmor":
+      return "chainMail";
+    case "chainMail":
+      return "clothArmor";
+    default:
+      return null;
+  }
+}
 
 /** Extra effects when a consumable is used in battle (field use is heal-only). */
 export type ItemBattleExtra = {

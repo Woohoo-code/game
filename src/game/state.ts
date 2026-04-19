@@ -1,5 +1,6 @@
 import {
   ARMOR_STATS,
+  armorSellDowngrade,
   BOSS_ENEMY,
   ENEMIES,
   ITEM_DATA,
@@ -9,10 +10,14 @@ import {
   SKILL_ORDER,
   TOWN_MAP,
   WEAPON_STATS,
+  GEAR_SELLBACK_FRACTION,
+  gearSellRefundGold,
+  weaponSellDowngrade,
   PET_ATTACK_BUFF_CAP,
   PET_SHOP_OFFERS,
   getUnlockedSkills,
   petAttackBuffForParty,
+  rollMonsterConsumableDrop,
   scaleEncounterForPlayerLevel
 } from "./data";
 import { LocalSaveRepository, type SaveRepository } from "./save";
@@ -79,6 +84,7 @@ const BUILTIN_SHAPE_BY_ID: Record<string, MonsterBodyShape> = {
   slime: "slime",
   bat: "bat",
   goblin: "goblin",
+  mangoMan: "goblin",
   wolf: "wolf",
   wraith: "wraith",
   drake: "drake",
@@ -160,6 +166,9 @@ const initialBattle = (): BattleState => ({
 /** Tile moves on grass/road after a battle before random encounters can roll again. */
 export const POST_ENCOUNTER_GRACE_STEPS = 10;
 
+/** After a win, keep the battle overlay up this long so defeat + reward lines stay visible. */
+const VICTORY_BATTLE_LINGER_MS = 3200;
+
 const initialWorld = (): WorldState => ({
   inTown: false,
   canHeal: false,
@@ -174,6 +183,7 @@ const initialWorld = (): WorldState => ({
   canStables: false,
   canMarket: false,
   canVoidPortal: false,
+  canRestoreSpring: false,
   voidPortalActive: false,
   encounterRate: 0,
   encounterGraceSteps: 0,
@@ -186,11 +196,14 @@ class GameStore {
   private events = new EventTarget();
   private saveRepository: SaveRepository = new LocalSaveRepository();
   private marketInterval: ReturnType<typeof setInterval> | null = null;
+  private victoryExitTimer: ReturnType<typeof setTimeout> | null = null;
   private state: GameSnapshot = {
     player: initialPlayer(),
     battle: initialBattle(),
     world: initialWorld(),
-    eventLog: ["Reach town tiles to shop or rest at the inn."],
+    eventLog: [
+      "Reach town tiles — general merchant for consumables and maps, forge for weapons and armor, inn to rest. A relic restore spring somewhere in the wilds heals you for free."
+    ],
     ugc: initialUgc(),
     story: initialStory(),
     hasUnsavedChanges: true
@@ -381,7 +394,8 @@ class GameStore {
     canChapel: boolean,
     canStables: boolean,
     canMarket: boolean,
-    canVoidPortal: boolean
+    canVoidPortal: boolean,
+    canRestoreSpring: boolean
   ): void {
     this.state.world.inTown = inTown;
     this.state.world.canHeal = canHeal;
@@ -396,6 +410,7 @@ class GameStore {
     this.state.world.canStables = canStables;
     this.state.world.canMarket = canMarket;
     this.state.world.canVoidPortal = canVoidPortal;
+    this.state.world.canRestoreSpring = canRestoreSpring;
     this.emit();
   }
 
@@ -435,6 +450,7 @@ class GameStore {
       return;
     }
     const enemy: EnemyState = { ...BOSS_ENEMY, hp: BOSS_ENEMY.maxHp };
+    this.clearVictoryExitTimer();
     this.state.battle = {
       inBattle: true,
       phase: this.playerSpeed() >= enemy.speed ? "playerTurn" : "enemyTurn",
@@ -464,6 +480,7 @@ class GameStore {
       }
       regenerateWorld(randomSeed());
       this.lastPersistedVersion = -1;
+      this.clearVictoryExitTimer();
       this.state = {
         player: initialPlayer(),
         battle: initialBattle(),
@@ -508,6 +525,7 @@ class GameStore {
       canStables: false,
       canMarket: false,
       canVoidPortal: false,
+      canRestoreSpring: false,
       voidPortalActive: false,
       encounterRate: 0,
       encounterGraceSteps: 0
@@ -736,6 +754,7 @@ class GameStore {
           }
         : {})
     };
+    this.clearVictoryExitTimer();
     this.state.battle = {
       inBattle: true,
       phase: this.playerSpeed() >= enemy.speed ? "playerTurn" : "enemyTurn",
@@ -820,9 +839,9 @@ class GameStore {
         if (enemy.hp <= 0) {
           msg.push(`${enemy.name} falls!`);
           this.logBattle(msg.join(" "));
-          this.state.battle.phase = "won";
+          this.state.battle.phase = "victoryPending";
           this.applyRewards(enemy);
-          this.endBattle();
+          this.scheduleVictoryBattleExit();
           this.emit();
           return;
         }
@@ -916,6 +935,20 @@ class GameStore {
     this.buyItem(item);
   }
 
+  /**
+   * After the enemy's killing blow, the player stays at 0 HP until they click through
+   * the knockout screen (LAN guests wait for the host).
+   */
+  acknowledgeKnockout(): void {
+    if (!this.state.battle.inBattle || this.state.battle.phase !== "knockoutPending") {
+      return;
+    }
+    this.state.player.hp = this.state.player.maxHp;
+    this.state.battle.phase = "lost";
+    this.onKnockoutRevival();
+    this.endBattle();
+  }
+
   attemptRun(): void {
     if (!this.canPlayerAct()) return;
     const success = Math.random() < 0.65;
@@ -945,6 +978,11 @@ class GameStore {
 
   /** One-time purchase of the Town Map — enables the compass overlay. */
   buyTownMap(): void {
+    if (!this.state.world.canShop) {
+      this.logEvent("Buy a Town Map from the general merchant.");
+      this.emit();
+      return;
+    }
     if (this.revivalDebtActive()) {
       this.logEvent(this.revivalDebtBlockMessage());
       this.emit();
@@ -963,14 +1001,19 @@ class GameStore {
     this.state.player.gold -= TOWN_MAP.price;
     this.state.player.hasTownMap = true;
     this.state.player.townMapEquipped = false;
-    this.logEvent(`Bought the ${TOWN_MAP.name}. Press Equip Map in any shop to show the compass in the wilds.`);
+    this.logEvent(`Bought the ${TOWN_MAP.name}. Press Equip Map at the general merchant to show the compass in the wilds.`);
     this.emit();
   }
 
-  /** Toggle the Town Map compass while you own the map (shop context or future UI). */
+  /** Toggle the Town Map compass while you own the map (general merchant). */
   setTownMapEquipped(equipped: boolean): void {
+    if (!this.state.world.canShop) {
+      this.logEvent("Equip or stow your Town Map at the general merchant.");
+      this.emit();
+      return;
+    }
     if (!this.state.player.hasTownMap) {
-      this.logEvent("Buy a Town Map at a shop first.");
+      this.logEvent("Buy a Town Map at the general merchant first.");
       this.emit();
       return;
     }
@@ -983,6 +1026,11 @@ class GameStore {
   }
 
   private buyItem(item: ItemKey): void {
+    if (!this.state.world.canShop) {
+      this.logEvent("Visit the general merchant to buy consumables.");
+      this.emit();
+      return;
+    }
     if (this.revivalDebtActive()) {
       this.logEvent(this.revivalDebtBlockMessage());
       this.emit();
@@ -1024,7 +1072,84 @@ class GameStore {
     this.buyArmor("dragonArmor");
   }
 
+  /** Sell equipped weapon one tier down; gain 40% of the sold tier's list price (forge armory). */
+  sellWeaponToShop(): void {
+    if (this.state.battle.inBattle) {
+      this.logEvent("You can't sell gear during a battle.");
+      this.emit();
+      return;
+    }
+    if (!this.state.world.canForge) {
+      this.logEvent("Sell weapons at the forge armory.");
+      this.emit();
+      return;
+    }
+    if (this.revivalDebtActive()) {
+      this.logEvent(this.revivalDebtBlockMessage());
+      this.emit();
+      return;
+    }
+    const w = this.state.player.weapon;
+    const down = weaponSellDowngrade(w);
+    if (!down) {
+      this.logEvent("Nothing to sell — you're already on the guild-issue wood sword.");
+      this.emit();
+      return;
+    }
+    const sold = WEAPON_STATS[w];
+    const refund = gearSellRefundGold(sold.price);
+    this.state.player.weapon = down;
+    this.state.player.gold += refund;
+    if (down === "woodSword") {
+      this.state.story.boughtBetterGear = false;
+      this.evaluateStoryProgress();
+    }
+    this.logEvent(
+      `Sold ${sold.name} for ${refund}g (${Math.round(GEAR_SELLBACK_FRACTION * 100)}% buyback). Equipped ${WEAPON_STATS[down].name}.`
+    );
+    this.emit();
+  }
+
+  /** Sell equipped armor one tier down; gain 40% of the sold tier's list price (forge armory). */
+  sellArmorToShop(): void {
+    if (this.state.battle.inBattle) {
+      this.logEvent("You can't sell gear during a battle.");
+      this.emit();
+      return;
+    }
+    if (!this.state.world.canForge) {
+      this.logEvent("Sell armor at the forge armory.");
+      this.emit();
+      return;
+    }
+    if (this.revivalDebtActive()) {
+      this.logEvent(this.revivalDebtBlockMessage());
+      this.emit();
+      return;
+    }
+    const a = this.state.player.armor;
+    const down = armorSellDowngrade(a);
+    if (!down) {
+      this.logEvent("Nothing to sell — you're already on guild-issue cloth armor.");
+      this.emit();
+      return;
+    }
+    const sold = ARMOR_STATS[a];
+    const refund = gearSellRefundGold(sold.price);
+    this.state.player.armor = down;
+    this.state.player.gold += refund;
+    this.logEvent(
+      `Sold ${sold.name} for ${refund}g (${Math.round(GEAR_SELLBACK_FRACTION * 100)}% buyback). Equipped ${ARMOR_STATS[down].name}.`
+    );
+    this.emit();
+  }
+
   private buyWeapon(weapon: WeaponKey): void {
+    if (!this.state.world.canForge) {
+      this.logEvent("Buy weapons at the forge armory.");
+      this.emit();
+      return;
+    }
     if (this.revivalDebtActive()) {
       this.logEvent(this.revivalDebtBlockMessage());
       this.emit();
@@ -1054,6 +1179,11 @@ class GameStore {
   }
 
   private buyArmor(armor: ArmorKey): void {
+    if (!this.state.world.canForge) {
+      this.logEvent("Buy armor at the forge armory.");
+      this.emit();
+      return;
+    }
     if (this.revivalDebtActive()) {
       this.logEvent(this.revivalDebtBlockMessage());
       this.emit();
@@ -1097,6 +1227,28 @@ class GameStore {
     this.state.player.gold -= fee;
     this.state.player.hp = this.state.player.maxHp;
     this.logEvent("You feel refreshed after resting.");
+    this.emit();
+  }
+
+  /** Wilderness restore spring — full heal, no gold (works even under revival guild lock). */
+  healAtRestoreSpring(): void {
+    if (this.state.battle.inBattle) {
+      this.logEvent("You can't use the spring during a battle.");
+      this.emit();
+      return;
+    }
+    if (!this.state.world.canRestoreSpring) {
+      this.logEvent("Move onto the glowing spring to drink.");
+      this.emit();
+      return;
+    }
+    if (this.state.player.hp >= this.state.player.maxHp) {
+      this.logEvent("The spring's water is cool and clear — you're already at full vigor.");
+      this.emit();
+      return;
+    }
+    this.state.player.hp = this.state.player.maxHp;
+    this.logEvent("You cup the relic spring's water — warmth spreads through you. HP restored.");
     this.emit();
   }
 
@@ -1258,7 +1410,7 @@ class GameStore {
     slot = "slot1"
   ): Promise<{ ok: true } | { ok: false; error: string }> {
     if (this.state.battle.inBattle) {
-      const error = "Finish or flee the battle before importing a transfer.";
+      const error = "Finish the battle (or acknowledge a knockout) before importing a transfer.";
       this.logEvent(error);
       this.emit();
       return { ok: false, error };
@@ -1400,6 +1552,9 @@ class GameStore {
     if (this.state.world.canVoidPortal === undefined) {
       this.state.world.canVoidPortal = false;
     }
+    if (this.state.world.canRestoreSpring === undefined) {
+      this.state.world.canRestoreSpring = false;
+    }
     if (this.state.world.voidPortalActive === undefined) {
       this.state.world.voidPortalActive = false;
     }
@@ -1498,10 +1653,11 @@ class GameStore {
     const enemy = this.state.battle.enemy;
     if (!enemy) return;
     if (enemy.hp <= 0) {
-      this.state.battle.phase = "won";
+      this.state.battle.phase = "victoryPending";
       this.logBattle(`${enemy.name} defeated!`);
       this.applyRewards(enemy);
-      this.endBattle();
+      this.scheduleVictoryBattleExit();
+      this.emit();
       return;
     }
     this.state.battle.phase = "enemyTurn";
@@ -1516,11 +1672,9 @@ class GameStore {
     this.state.player.hp = Math.max(0, this.state.player.hp - damage);
     this.logBattle(`${enemy.name} hits you for ${damage} damage.`);
     if (this.state.player.hp <= 0) {
-      this.state.battle.phase = "lost";
+      this.state.battle.phase = "knockoutPending";
       this.logBattle("You were knocked out.");
-      this.state.player.hp = this.state.player.maxHp;
-      this.onKnockoutRevival();
-      this.endBattle();
+      this.emit();
       return;
     }
     this.state.battle.phase = "playerTurn";
@@ -1565,6 +1719,12 @@ class GameStore {
       this.logBattle(`Lucky drop! Gained ${enemy.xpReward} XP and ${goldGained} gold.`);
     } else {
       this.logBattle(`Gained ${enemy.xpReward} XP and ${goldGained} gold.`);
+    }
+
+    const itemDrop = rollMonsterConsumableDrop(enemy);
+    if (itemDrop) {
+      this.state.player.items[itemDrop] += 1;
+      this.logBattle(`${enemy.name} dropped ${ITEM_DATA[itemDrop].name}!`);
     }
 
     // Taming: a defeated monster may decide to follow the player. Chance is
@@ -1661,17 +1821,17 @@ class GameStore {
     return `The Guild seizes town privileges until you settle your revival tithe: ${n} more monster${n === 1 ? "" : "s"} to slay in the wilds.`;
   }
 
-  /** Knockout: 10g tithe (partial gold applies), debt = gold shortfall in kills, warp to nearest town. */
+  /** Knockout: lose all gold and equipped shop gear (reset to starter sword & cloth), warp to nearest town. */
   private onKnockoutRevival(): void {
-    const fee = 10;
-    const had = this.state.player.gold;
-    const pay = Math.min(had, fee);
-    this.state.player.gold = had - pay;
-    const short = fee - pay;
-    if (short > 0) {
-      this.state.player.revivalDebtMonstersRemaining =
-        (this.state.player.revivalDebtMonstersRemaining ?? 0) + short;
-    }
+    const goldLost = this.state.player.gold;
+    const hadWeapon = this.state.player.weapon;
+    const hadArmor = this.state.player.armor;
+    const lostGear = hadWeapon !== "woodSword" || hadArmor !== "clothArmor";
+
+    this.state.player.gold = 0;
+    this.state.player.weapon = "woodSword";
+    this.state.player.armor = "clothArmor";
+    this.state.story.boughtBetterGear = false;
 
     const tx = Math.floor(this.state.player.x / TILE);
     const ty = Math.floor(this.state.player.y / TILE);
@@ -1688,18 +1848,37 @@ class GameStore {
     const nty = Math.floor(this.state.player.y / TILE);
     syncZonesAtTile(ntx, nty);
 
-    const debt = this.state.player.revivalDebtMonstersRemaining ?? 0;
-    if (short > 0) {
-      this.logBattle(
-        `The Guild drags you to the nearest village. You paid ${pay}g of the ${fee}g revival tithe — slay ${debt} more beast${debt === 1 ? "" : "s"} before shops, the inn, pets, training, or guild pay unlock.`
+    const parts: string[] = [
+      `The Guild hauls you to the nearest village. Your purse is emptied (${goldLost}g seized).`
+    ];
+    if (lostGear) {
+      parts.push(
+        `Your arms are stripped — ${WEAPON_STATS[hadWeapon].name} and ${ARMOR_STATS[hadArmor].name} are gone.`
       );
-      this.logEvent(this.revivalDebtBlockMessage());
-    } else {
-      this.logBattle(`The Guild revives you in the nearest village. Tithe paid (${fee}g).`);
+    }
+    this.logBattle(parts.join(" "));
+    this.logEvent("Knockout: all gold lost; weapon and armor reset to guild-issued gear.");
+  }
+
+  private clearVictoryExitTimer(): void {
+    if (this.victoryExitTimer !== null) {
+      clearTimeout(this.victoryExitTimer);
+      this.victoryExitTimer = null;
     }
   }
 
+  /** Close the battle overlay after {@link VICTORY_BATTLE_LINGER_MS} so reward lines stay visible. */
+  private scheduleVictoryBattleExit(): void {
+    this.clearVictoryExitTimer();
+    this.victoryExitTimer = setTimeout(() => {
+      this.victoryExitTimer = null;
+      if (!this.state.battle.inBattle || this.state.battle.phase !== "victoryPending") return;
+      this.endBattle();
+    }, VICTORY_BATTLE_LINGER_MS);
+  }
+
   private endBattle(): void {
+    this.clearVictoryExitTimer();
     this.state.battle.inBattle = false;
     this.state.battle.enemy = null;
     this.state.battle.itemAttackBonus = 0;

@@ -88,14 +88,16 @@ export class GameScene extends Phaser.Scene {
       forge: { sprite: "shopSprite", tint: 0x704040 },
       chapel: { sprite: "innSprite", tint: 0xc8c0b0 },
       stables: { sprite: "innSprite", tint: 0x8b5a32 },
-      market: { sprite: "shopSprite", tint: 0xc49a48 }
+      market: { sprite: "shopSprite", tint: 0xc49a48 },
+      restoreSpring: { sprite: "springSprite" }
     };
 
     for (const b of BUILDINGS) {
       const info = SPRITE_BY_KIND[b.kind];
+      const scale = b.kind === "restoreSpring" ? 2.4 : 2;
       const s = this.add
         .sprite(b.pos.x * TILE + TILE / 2, b.pos.y * TILE + TILE / 2, info.sprite)
-        .setScale(2);
+        .setScale(scale);
       if (info.tint !== undefined) s.setTint(info.tint);
       this.addBuildingMarquee(b.pos.x, b.pos.y, b.label, b.color);
     }
@@ -201,6 +203,7 @@ export class GameScene extends Phaser.Scene {
     this.makePlayerTexture();
     this.makeInnTexture();
     this.makeShopTexture();
+    this.makeSpringTexture();
     this.makeTreeTexture();
     this.makeRockTexture();
     this.makeFlowerTexture();
@@ -292,6 +295,25 @@ export class GameScene extends Phaser.Scene {
     g.fillRect(9, 7, 1, 1);
     g.fillRect(11, 7, 1, 1);
     g.generateTexture("shopSprite", 16, 16);
+    g.destroy();
+  }
+
+  private makeSpringTexture(): void {
+    if (this.textures.exists("springSprite")) return;
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    g.fillStyle(0x4a7068, 1);
+    g.fillEllipse(8, 10, 12, 5);
+    g.fillStyle(0x3a9ea8, 1);
+    g.fillEllipse(8, 9, 9, 4);
+    g.fillStyle(0x7af0e8, 0.85);
+    g.fillEllipse(8, 8, 6, 3);
+    g.fillStyle(0xc8ffff, 1);
+    g.fillCircle(6, 7, 1);
+    g.fillCircle(10, 8, 1);
+    g.fillStyle(0x5a5850, 1);
+    g.fillRect(2, 6, 2, 2);
+    g.fillRect(12, 7, 2, 2);
+    g.generateTexture("springSprite", 16, 16);
     g.destroy();
   }
 
