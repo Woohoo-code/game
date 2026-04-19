@@ -1480,6 +1480,23 @@ button.danger:hover:not(:disabled) {
   opacity: 0.9;
 }
 
+.dungeon-entrance {
+  border-color: #6a1c1c !important;
+  background: linear-gradient(180deg, rgba(42, 18, 18, 0.55), rgba(28, 14, 14, 0.7)) !important;
+}
+.dungeon-entrance strong {
+  color: #f4d0c8;
+  text-shadow: 0 0 6px rgba(200, 40, 40, 0.35);
+}
+.dungeon-entrance button {
+  background: linear-gradient(180deg, #8a2d2d, #4a1010);
+  border-color: #6a1c1c;
+  color: #ffe2d8;
+}
+.dungeon-entrance button:hover:not(:disabled) {
+  background: linear-gradient(180deg, #a03838, #601818);
+}
+
 .log p {
   margin: 4px 0;
   font-size: 14px;
