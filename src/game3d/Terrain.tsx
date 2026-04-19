@@ -4,7 +4,7 @@ import * as THREE from "three";
 import type { BiomeKind } from "../game/types";
 import { MAP_H, MAP_W, type TerrainKind, biomeAt, terrainAt } from "../game/worldMap";
 import { useGameStore } from "../game/useGameStore";
-import { BIOME_TINT, getBiomeGroundTexture, getTerrainTexture } from "./textures";
+import { biomeTerrainTint, getBiomeGroundTexture, getTerrainTexture } from "./textures";
 
 /** Each terrain kind sits at a slightly different height so water dips and road rides slightly above grass. */
 const HEIGHT_BY_TERRAIN: Record<TerrainKind, number> = {
@@ -121,6 +121,7 @@ function buildTerrainGroups(): TerrainGroup[] {
 export function Terrain() {
   const snapshot = useGameStore();
   const worldVersion = snapshot.world.worldVersion;
+  const realmTier = Math.max(1, Math.floor(snapshot.world.realmTier ?? 1));
 
   const terrainGroups = useMemo(buildTerrainGroups, [worldVersion]);
   const waterMats = useRef<THREE.MeshStandardMaterial[]>([]);
@@ -141,8 +142,8 @@ export function Terrain() {
       {terrainGroups.map(({ kind, biome, geometry }, i) => {
         // For "grass" kind we use a biome-specific texture (sand/snow/mud/meadow/forest-floor).
         // For other kinds we use the shared texture and tint it per biome.
-        const tex = kind === "grass" ? getBiomeGroundTexture(biome) : getTerrainTexture(kind);
-        const tint = kind === "grass" ? "#ffffff" : BIOME_TINT[biome][kind];
+        const tex = kind === "grass" ? getBiomeGroundTexture(biome, realmTier) : getTerrainTexture(kind);
+        const tint = kind === "grass" ? "#ffffff" : biomeTerrainTint(biome, kind, realmTier);
         const key = `${kind}-${biome}-${i}`;
         if (kind === "water") {
           return (
@@ -206,10 +207,19 @@ const FOLIAGE_BY_BIOME: Record<BiomeKind, { base: THREE.Color; top: THREE.Color;
   }
 };
 
+const FOLIAGE_BY_BIOME_REALM2: Record<BiomeKind, { base: THREE.Color; top: THREE.Color; trunk: THREE.Color }> = {
+  meadow: { base: new THREE.Color("#5d4d44"), top: new THREE.Color("#89766a"), trunk: new THREE.Color("#3a2a22") },
+  forest: { base: new THREE.Color("#b8d6f5"), top: new THREE.Color("#ecf7ff"), trunk: new THREE.Color("#6a7284") },
+  desert: { base: new THREE.Color("#d6843b"), top: new THREE.Color("#ffbd73"), trunk: new THREE.Color("#6f3f1f") },
+  swamp: { base: new THREE.Color("#56749a"), top: new THREE.Color("#8bb3de"), trunk: new THREE.Color("#2a4058") },
+  tundra: { base: new THREE.Color("#5f8d73"), top: new THREE.Color("#9ec6ad"), trunk: new THREE.Color("#304936") }
+};
+
 /** Decorative tree clusters rendered on forest tiles with slight variation + biome palette. */
 export function Forests() {
   const snapshot = useGameStore();
   const worldVersion = snapshot.world.worldVersion;
+  const realmTier = Math.max(1, Math.floor(snapshot.world.realmTier ?? 1));
 
   const trees = useMemo(() => {
     const list: { x: number; y: number; scale: number; rot: number; tint: number; biome: BiomeKind }[] = [];
@@ -241,7 +251,7 @@ export function Forests() {
   return (
     <>
       {trees.map((t, i) => {
-        const palette = FOLIAGE_BY_BIOME[t.biome];
+        const palette = (realmTier >= 2 ? FOLIAGE_BY_BIOME_REALM2 : FOLIAGE_BY_BIOME)[t.biome];
         const foliageColor = palette.base.clone().multiplyScalar(0.9 + t.tint * 0.2);
         const foliageTop = palette.top.clone().multiplyScalar(0.92 + t.tint * 0.16);
         return (

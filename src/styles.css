@@ -1218,16 +1218,17 @@ button.danger:hover:not(:disabled) {
   }
 }
 
+/* Full-viewport play layout: the 3D world fills the window, and the logs,
+ * hotkeys, action overlays, etc. all float above it. */
 .app {
-  display: grid;
-  grid-template-columns: 1fr minmax(280px, 360px);
-  gap: var(--panel-gap);
-  padding: var(--app-pad);
-  align-items: start;
+  position: relative;
   width: 100%;
-  max-width: min(1800px, 100%);
-  margin: 0 auto;
+  height: var(--app-viewport-h);
+  max-width: none;
+  margin: 0;
+  padding: 0;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .panel {
@@ -1442,20 +1443,46 @@ button.danger:hover:not(:disabled) {
 }
 
 .main-column {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--panel-gap);
+  gap: 0;
   min-width: 0;
   min-height: 0;
 }
 
+/* Logs: floating glass panel anchored to the bottom-left, above the world
+ * but clear of the left rail buttons and the centered hotbar. */
 .right-column {
+  position: absolute;
+  left: calc(120px + env(safe-area-inset-left, 0px));
+  bottom: calc(88px + var(--safe-bottom));
+  width: min(300px, 34vw);
+  max-height: min(44vh, 360px);
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-height: calc(var(--app-viewport-h) - 2 * var(--app-pad));
-  min-width: 0;
+  gap: 8px;
+  overflow-y: auto;
+  z-index: 18;
+  pointer-events: auto;
+  background: rgba(18, 25, 38, 0.58);
+  border: 1px solid rgba(120, 160, 220, 0.22);
+  backdrop-filter: blur(10px) saturate(1.1);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+  border-radius: 10px;
+  padding: 8px;
+}
+
+@media (max-width: 600px) {
+  .right-column {
+    left: calc(10px + env(safe-area-inset-left, 0px));
+    right: calc(10px + env(safe-area-inset-right, 0px));
+    width: auto;
+    max-height: 32vh;
+  }
 }
 
 .action-dock {
@@ -2353,22 +2380,28 @@ button.reset-game-btn:not(:disabled):hover {
   display: block;
   position: relative;
   width: 100%;
-  max-width: var(--game-viewport-cap);
+  max-width: none;
   flex: 1 1 auto;
   min-height: 0;
+  height: 100%;
 }
 
-/* Hotbar sits in document flow under the playfield (not over the viewport bottom). */
+/* Hotbar floats above the world, horizontally centered at the bottom. */
 .inventory-bar-desktop,
 .inventory-bar-compact {
-  flex: 0 0 auto;
-  width: 100%;
-  max-width: var(--game-viewport-cap);
-  margin: 0 auto;
+  position: absolute;
+  left: 50%;
+  bottom: calc(10px + var(--safe-bottom));
+  transform: translateX(-50%);
+  width: auto;
+  max-width: min(92vw, 760px);
+  margin: 0;
+  padding: 0;
   display: flex;
   justify-content: center;
-  padding: 6px 0 calc(8px + var(--safe-bottom));
   box-sizing: border-box;
+  z-index: 25;
+  pointer-events: auto;
 }
 
 /* Compass, HUD, touch D-pad — top-to-bottom on the right, above the map. */
@@ -3065,7 +3098,9 @@ button.reset-game-btn:not(:disabled):hover {
 .game-viewport {
   position: relative;
   width: 100%;
-  max-width: var(--game-viewport-cap);
+  height: 100%;
+  max-width: none;
+  flex: 1 1 auto;
 }
 
 .world-status-overlay {
@@ -3136,6 +3171,40 @@ button.reset-game-btn:not(:disabled):hover {
   height: 7px;
 }
 
+/* Big character name + level banner at the top of the HUD. */
+.world-status-hero {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 4px;
+  padding: 2px 2px 4px;
+  border-bottom: 1px solid rgba(140, 180, 230, 0.2);
+}
+
+.world-status-hero-name {
+  font-size: clamp(1rem, 1.4vw + 0.5rem, 1.35rem);
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: #ffffff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(0, 0, 0, 0.45);
+  line-height: 1.05;
+  max-width: 65%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.world-status-hero-level {
+  font-size: clamp(0.85rem, 1.1vw + 0.4rem, 1.1rem);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #ffd878;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+  line-height: 1.05;
+  flex: 0 0 auto;
+}
+
 .world-status-title {
   margin: 0 0 3px;
   font-size: clamp(0.62rem, 0.9vw + 0.34rem, 0.77rem);
@@ -3143,6 +3212,24 @@ button.reset-game-btn:not(:disabled):hover {
   letter-spacing: 0.04em;
   color: #eef4ff;
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+}
+
+/* Equipment + Stats side-by-side within the HUD. */
+.world-hud-gear-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.world-hud-gear-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.world-hud-gear-col .world-hud-section-label {
+  margin-top: 0;
 }
 
 .world-status-version {
@@ -3163,6 +3250,20 @@ button.reset-game-btn:not(:disabled):hover {
 .world-time-label {
   font-weight: 700;
   color: #c8daf5;
+}
+
+.world-time-clock {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: #f2f7ff;
+  background: rgba(8, 14, 26, 0.55);
+  border: 1px solid rgba(120, 160, 220, 0.28);
+  font-variant-numeric: tabular-nums;
 }
 
 .world-time-night {
@@ -3482,15 +3583,16 @@ button.reset-game-btn:not(:disabled):hover {
   border: 1px solid #324b69;
 }
 
-/* Fluid 3D viewport — keeps 10:7 aspect ratio; width capped by --game-viewport-cap on ancestors. */
+/* Fullscreen 3D viewport — fills the browser/exe window. */
 .phaser-mount.overworld-3d {
-  aspect-ratio: 10 / 7;
-  height: auto;
-  max-height: 78vh;
-  max-height: min(78vh, 78dvh);
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  aspect-ratio: auto;
   background: radial-gradient(ellipse at 50% 40%, #3a4c66 0%, #1b2330 70%, #0e1420 100%);
   position: relative;
   box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.55);
+  border: none;
 }
 
 .building-label-3d {

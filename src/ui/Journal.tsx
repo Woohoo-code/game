@@ -3,6 +3,7 @@ import { gameStore } from "../game/state";
 import { CAMPAIGN_PREMISE, STORY_CHAPTERS, missingBiomes, progressLabelFor } from "../game/story";
 import type { StoryStage } from "../game/types";
 import { useGameStore } from "../game/useGameStore";
+import { biomeDisplayName } from "../game/worldMap";
 
 /**
  * Big, dramatic modal for the Prologue and Epilogue — each chapter's flavor
@@ -146,7 +147,9 @@ export function Journal({ onClose }: { onClose: () => void }) {
               <span className="journal-label">Unseen lands</span>
               <div className="journal-biomes">
                 {unseen.map((b) => (
-                  <span key={b} className={`biome-pill biome-${b}`}>{b}</span>
+                  <span key={b} className={`biome-pill biome-${b}`}>
+                    {biomeDisplayName(b, snapshot.world.realmTier ?? 1)}
+                  </span>
                 ))}
               </div>
             </div>

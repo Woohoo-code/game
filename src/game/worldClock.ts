@@ -47,6 +47,17 @@ export function nightEnemyStatMultiplier(worldTime: number): number {
   return 1 + 0.14 * depth;
 }
 
+/** In-game 24h clock string like "14:37" derived from `worldTime` (0 = midnight). */
+export function timeOfDayClock24(worldTime: number): string {
+  const u = fractDay(worldTime);
+  const totalMinutes = Math.floor(u * 24 * 60);
+  const hours = Math.floor(totalMinutes / 60) % 24;
+  const minutes = totalMinutes % 60;
+  const hh = hours < 10 ? `0${hours}` : `${hours}`;
+  const mm = minutes < 10 ? `0${minutes}` : `${minutes}`;
+  return `${hh}:${mm}`;
+}
+
 export function timeOfDayLabel(worldTime: number): string {
   const u = fractDay(worldTime);
   if (u < 0.07) return "Midnight";
