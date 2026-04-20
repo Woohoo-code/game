@@ -30,6 +30,8 @@ export type BuildingKind =
   | "train"
   | "guild"
   | "petShop"
+  /** Central landmark in the spawn castle compound. */
+  | "royalHall"
   | "boss"
   /** Replaces the boss arena tile after the Void Titan is defeated — not generated initially. */
   | "voidPortal"
@@ -82,6 +84,18 @@ export function randomSeed(): number {
  * Per-axis scale is `sqrt(WORLD_AREA_MULTIPLIER)`. Raise later if you add streaming / LOD.
  */
 export const WORLD_AREA_MULTIPLIER = 1;
+
+/** Spawn castle footprint (in tiles). */
+const CASTLE_WALL_SIZE = 12;
+/** Royal hall footprint (in tiles): 3x3 = 9 blocks. */
+const ROYAL_HALL_SIZE = 3;
+/** Keep castle compounds a couple tiles away from map edges. */
+const CASTLE_EDGE_BUFFER = 2;
+
+const CASTLE_LEFT_RADIUS = Math.floor((CASTLE_WALL_SIZE - 1) / 2);
+const CASTLE_RIGHT_RADIUS = CASTLE_WALL_SIZE - CASTLE_LEFT_RADIUS - 1;
+const CASTLE_TOP_RADIUS = CASTLE_LEFT_RADIUS;
+const CASTLE_BOTTOM_RADIUS = CASTLE_RIGHT_RADIUS;
 
 function worldAxisScale(): number {
   return Math.sqrt(WORLD_AREA_MULTIPLIER);
@@ -152,7 +166,37 @@ export function generateWorld(seed: number = randomSeed()): GeneratedWorld {
     }
   }
 
-  // ── 3. Towns ────────────────────────────────────────────────────────────
+  // ── 3. Towns + spawn castle ─────────────────────────────────────────────
+  const getCastleBounds = (center: { x: number; y: number }) => {
+    const minX = center.x - CASTLE_LEFT_RADIUS;
+    const maxX = center.x + CASTLE_RIGHT_RADIUS;
+    const minY = center.y - CASTLE_TOP_RADIUS;
+    const maxY = center.y + CASTLE_BOTTOM_RADIUS;
+    return { minX, maxX, minY, maxY };
+  };
+
+  const pickCastleCenter = (xMin: number, xMax: number, yMin: number, yMax: number) => {
+    const minCx = xMin + CASTLE_LEFT_RADIUS;
+    const maxCx = xMax - CASTLE_RIGHT_RADIUS;
+    const minCy = yMin + CASTLE_TOP_RADIUS;
+    const maxCy = yMax - CASTLE_BOTTOM_RADIUS;
+    for (let tries = 0; tries < 120; tries++) {
+      const x = ri(minCx, maxCx);
+      const y = ri(minCy, maxCy);
+      const b = getCastleBounds({ x, y });
+      let waterNearby = 0;
+      for (let yy = b.minY - 1; yy <= b.maxY + 1; yy++) {
+        for (let xx = b.minX - 1; xx <= b.maxX + 1; xx++) {
+          if (getT(xx, yy) === TERRAIN_WATER) waterNearby++;
+        }
+      }
+      if (waterNearby <= 12) return { x, y };
+    }
+    const fallbackX = Math.max(minCx, Math.min(maxCx, Math.floor((xMin + xMax) / 2)));
+    const fallbackY = Math.max(minCy, Math.min(maxCy, Math.floor((yMin + yMax) / 2)));
+    return { x: fallbackX, y: fallbackY };
+  };
+
   const pickTownCenter = (xMin: number, xMax: number, yMin: number, yMax: number) => {
     for (let tries = 0; tries < 80; tries++) {
       const x = ri(xMin + 3, xMax - 3);
@@ -171,7 +215,7 @@ export function generateWorld(seed: number = randomSeed()): GeneratedWorld {
 
   const midX = Math.floor(width / 2);
   const midY = Math.floor(height / 2);
-  const townA = pickTownCenter(2, midX - 5, 2, midY);
+  const townA = pickCastleCenter(CASTLE_EDGE_BUFFER, midX - CASTLE_EDGE_BUFFER - 1, CASTLE_EDGE_BUFFER, midY);
   const townB = pickTownCenter(midX + 5, width - 3, midY - 2, height - 3);
 
   const carveTown = (c: { x: number; y: number }) => {
@@ -181,12 +225,35 @@ export function generateWorld(seed: number = randomSeed()): GeneratedWorld {
       }
     }
   };
-  carveTown(townA);
+
+  const carveCastle = (c: { x: number; y: number }) => {
+    const b = getCastleBounds(c);
+    for (let y = b.minY; y <= b.maxY; y++) {
+      for (let x = b.minX; x <= b.maxX; x++) {
+        setT(x, y, TERRAIN_TOWN);
+      }
+    }
+    return b;
+  };
+
+  const townACastleBounds = carveCastle(townA);
   carveTown(townB);
+
+  // Royal hall: 3x3 landmark (9 blocks), centered and flush against the north/back wall.
+  const royalHall = {
+    x: townA.x,
+    y: townACastleBounds.minY + Math.floor(ROYAL_HALL_SIZE / 2)
+  };
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      setT(royalHall.x + dx, royalHall.y + dy, TERRAIN_TOWN);
+    }
+  }
 
   // ── 4. Buildings ────────────────────────────────────────────────────────
   // Guaranteed: core services (inn, shop, train, guild, pet) plus five extra town types.
   const buildings: GeneratedBuilding[] = [];
+  buildings.push({ kind: "royalHall", x: royalHall.x, y: royalHall.y });
   const townABuildingKinds: BuildingKind[] = ["inn", "shop", "library", "forge", "market"];
   const townBBuildingKinds: BuildingKind[] = ["train", "guild", "petShop", "chapel", "stables"];
   if (rng() < 0.5) {

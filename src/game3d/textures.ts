@@ -803,6 +803,7 @@ const WALL_TEXTURE_SEED: Record<
   | "train"
   | "guild"
   | "petShop"
+  | "royalHall"
   | "boss"
   | "voidPortal"
   | "library"
@@ -817,6 +818,7 @@ const WALL_TEXTURE_SEED: Record<
   train: 33,
   guild: 44,
   petShop: 66,
+  royalHall: 121,
   boss: 55,
   voidPortal: 56,
   library: 77,
@@ -840,6 +842,7 @@ export function getWallTexture(
     train: { base: "#a18cb5", accent: "#8e7aa0", trim: "#5a4a6d" },
     guild: { base: "#a2b08b", accent: "#869472", trim: "#4e5a3c" },
     petShop: { base: "#8fc4b4", accent: "#6aa898", trim: "#2a5c50" },
+    royalHall: { base: "#dfc69a", accent: "#c8ab74", trim: "#6a4a20" },
     boss: { base: "#3b1d4a", accent: "#612a78", trim: "#1a0a25" },
     voidPortal: { base: "#1a3a52", accent: "#3a7aa8", trim: "#0a2840" },
     library: { base: "#a8b4c8", accent: "#7a8aa8", trim: "#3a4a62" },

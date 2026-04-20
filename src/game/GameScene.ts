@@ -82,6 +82,7 @@ export class GameScene extends Phaser.Scene {
       train: { sprite: "shopSprite", tint: 0x8a6bbd },
       guild: { sprite: "innSprite", tint: 0x6b8861 },
       petShop: { sprite: "shopSprite", tint: 0x4a9e86 },
+      royalHall: { sprite: "royalHallSprite" },
       boss: { sprite: "bossArenaSprite" },
       voidPortal: { sprite: "bossArenaSprite", tint: 0x44ddff },
       library: { sprite: "shopSprite", tint: 0x5a7090 },
@@ -201,6 +202,7 @@ export class GameScene extends Phaser.Scene {
     this.makePlayerTexture();
     this.makeInnTexture();
     this.makeShopTexture();
+    this.makeRoyalHallTexture();
     this.makeTreeTexture();
     this.makeRockTexture();
     this.makeFlowerTexture();
@@ -222,6 +224,33 @@ export class GameScene extends Phaser.Scene {
     g.fillStyle(0x6f1515, 1);
     g.fillRect(6, 0, 4, 3);
     g.generateTexture("bossArenaSprite", 16, 16);
+    g.destroy();
+  }
+
+  private makeRoyalHallTexture(): void {
+    if (this.textures.exists("royalHallSprite")) return;
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    g.fillStyle(0x5b4420, 1);
+    g.fillRect(0, 0, 24, 5);
+    g.fillStyle(0xdcc08a, 1);
+    g.fillRect(1, 5, 22, 18);
+    g.fillStyle(0xb9975d, 1);
+    g.fillRect(3, 8, 18, 12);
+    g.fillStyle(0x5a3a1a, 1);
+    g.fillRect(10, 13, 4, 10);
+    g.fillStyle(0x9a1f1f, 1);
+    g.fillRect(4, 2, 2, 6);
+    g.fillRect(18, 2, 2, 6);
+    g.fillStyle(0xf1dc8f, 1);
+    g.fillRect(11, 3, 2, 2);
+    g.fillRect(6, 10, 3, 3);
+    g.fillRect(15, 10, 3, 3);
+    g.fillStyle(0x2d3d5d, 1);
+    g.fillRect(7, 11, 1, 1);
+    g.fillRect(16, 11, 1, 1);
+    g.fillStyle(0xead3a2, 1);
+    g.fillRect(10, 6, 4, 2);
+    g.generateTexture("royalHallSprite", 24, 24);
     g.destroy();
   }
 

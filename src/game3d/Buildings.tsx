@@ -22,6 +22,7 @@ const STYLE: Record<BuildingKind, KindStyle> = {
   train: { height: 1.65, wallColor: "#a18cb5", roof: "slate", accent: "#6b4f8f", bannerColor: "#8658be", labelColor: "#f0e2ff" },
   guild: { height: 1.5, wallColor: "#a2b08b", roof: "slate", accent: "#486d42", bannerColor: "#5c8a46", labelColor: "#e8f6db" },
   petShop: { height: 1.42, wallColor: "#8fc4b4", roof: "slate", accent: "#2a6b5c", bannerColor: "#3d9a82", labelColor: "#e6fff8" },
+  royalHall: { height: 2.7, wallColor: "#dfc69a", roof: "gold", accent: "#6a4a20", bannerColor: "#b18a3b", labelColor: "#fff1cf" },
   boss: { height: 2.1, wallColor: "#3b1d4a", roof: "gold", accent: "#3d1054", bannerColor: "#7b2bb0", labelColor: "#f1caff" },
   voidPortal: { height: 2.1, wallColor: "#1a3a52", roof: "slate", accent: "#44aaff", bannerColor: "#2a6aa8", labelColor: "#d8f4ff" },
   library: { height: 1.52, wallColor: "#9aa8c0", roof: "slate", accent: "#3a4a6a", bannerColor: "#5a7aa8", labelColor: "#e8f0ff" },
@@ -98,7 +99,10 @@ function VoidPortalBuilding({ x, y, label }: { x: number; y: number; label: stri
 
 function Building({ kind, x, y, label }: { kind: BuildingKind; x: number; y: number; label: string }) {
   const style = STYLE[kind];
+  const isRoyalHall = kind === "royalHall";
   const h = style.height;
+  const footprintW = isRoyalHall ? W * 2.7 : W;
+  const foundationW = footprintW + (isRoyalHall ? 0.22 : 0.06);
   const wallTex = getWallTexture(kind);
   const roofTex = getRoofTexture(style.roof);
 
@@ -106,75 +110,89 @@ function Building({ kind, x, y, label }: { kind: BuildingKind; x: number; y: num
     <group position={[x + 0.5, 0, y + 0.5]}>
       {/* Stone foundation skirt */}
       <mesh position={[0, 0.05, 0]} receiveShadow castShadow>
-        <boxGeometry args={[W + 0.06, 0.1, W + 0.06]} />
+        <boxGeometry args={[foundationW, 0.1, foundationW]} />
         <meshStandardMaterial color="#4a4a54" roughness={0.95} />
       </mesh>
 
       {/* Main body */}
       <mesh position={[0, h / 2 + 0.1, 0]} castShadow receiveShadow>
-        <boxGeometry args={[W, h, W]} />
+        <boxGeometry args={[footprintW, h, footprintW]} />
         <meshStandardMaterial map={wallTex} color={style.wallColor} roughness={0.85} />
       </mesh>
 
       {/* Sloped roof — pyramid */}
       <mesh position={[0, h + 0.3, 0]} castShadow>
-        <coneGeometry args={[W * 0.78, 0.55, 4]} />
+        <coneGeometry args={[footprintW * 0.78, isRoyalHall ? 0.85 : 0.55, 4]} />
         <meshStandardMaterial map={roofTex} roughness={0.8} />
       </mesh>
       {/* Ridge cap */}
       <mesh position={[0, h + 0.6, 0]} castShadow>
-        <sphereGeometry args={[0.08, 10, 10]} />
+        <sphereGeometry args={[isRoyalHall ? 0.13 : 0.08, 10, 10]} />
         <meshStandardMaterial color={style.accent} roughness={0.5} metalness={0.3} />
       </mesh>
 
       {/* Front door facing +Z */}
-      <mesh position={[0, 0.28, W / 2 + 0.001]} castShadow>
-        <boxGeometry args={[0.26, 0.45, 0.02]} />
+      <mesh position={[0, 0.28, footprintW / 2 + 0.001]} castShadow>
+        <boxGeometry args={[isRoyalHall ? 0.38 : 0.26, isRoyalHall ? 0.62 : 0.45, 0.02]} />
         <meshStandardMaterial color="#3b2515" roughness={0.9} />
       </mesh>
       {/* Door handle */}
-      <mesh position={[0.08, 0.28, W / 2 + 0.015]}>
-        <sphereGeometry args={[0.018, 8, 8]} />
+      <mesh position={[isRoyalHall ? 0.12 : 0.08, 0.28, footprintW / 2 + 0.015]}>
+        <sphereGeometry args={[isRoyalHall ? 0.024 : 0.018, 8, 8]} />
         <meshStandardMaterial color="#d4b250" metalness={0.9} roughness={0.3} />
       </mesh>
       {/* Door frame */}
-      <mesh position={[0, 0.28, W / 2 + 0.002]}>
-        <boxGeometry args={[0.32, 0.51, 0.005]} />
+      <mesh position={[0, 0.28, footprintW / 2 + 0.002]}>
+        <boxGeometry args={[isRoyalHall ? 0.46 : 0.32, isRoyalHall ? 0.7 : 0.51, 0.005]} />
         <meshStandardMaterial color={style.accent} roughness={0.8} />
       </mesh>
 
       {/* Side windows — left & right */}
-      <Window side="left" h={h} color={style.accent} />
-      <Window side="right" h={h} color={style.accent} />
-      <Window side="back" h={h} color={style.accent} />
+      <Window side="left" h={h} color={style.accent} width={footprintW} />
+      <Window side="right" h={h} color={style.accent} width={footprintW} />
+      <Window side="back" h={h} color={style.accent} width={footprintW} />
 
       {/* Banner hanging near the door */}
-      <group position={[0, h * 0.62, W / 2 + 0.008]}>
+      <group position={[0, h * 0.62, footprintW / 2 + 0.008]}>
         <mesh>
-          <boxGeometry args={[0.5, 0.22, 0.012]} />
+          <boxGeometry args={[isRoyalHall ? 0.72 : 0.5, isRoyalHall ? 0.28 : 0.22, 0.012]} />
           <meshStandardMaterial color={style.bannerColor} roughness={0.7} />
         </mesh>
-        <mesh position={[0, -0.14, 0]}>
-          <coneGeometry args={[0.08, 0.12, 3]} />
+        <mesh position={[0, isRoyalHall ? -0.17 : -0.14, 0]}>
+          <coneGeometry args={[isRoyalHall ? 0.1 : 0.08, isRoyalHall ? 0.16 : 0.12, 3]} />
           <meshStandardMaterial color={style.bannerColor} roughness={0.7} />
         </mesh>
       </group>
 
       {/* Kind-specific icon attached above the door */}
-      <group position={[0, h * 0.66, W / 2 + 0.025]}>
+      <group position={[0, h * 0.66, footprintW / 2 + 0.025]}>
         <KindIcon kind={kind} />
       </group>
 
       {/* Lanterns on either side of the door */}
-      <Lantern position={[-0.36, 0.55, W / 2 + 0.02]} />
-      <Lantern position={[0.36, 0.55, W / 2 + 0.02]} />
+      <Lantern position={[-(isRoyalHall ? 0.56 : 0.36), 0.55, footprintW / 2 + 0.02]} />
+      <Lantern position={[isRoyalHall ? 0.56 : 0.36, 0.55, footprintW / 2 + 0.02]} />
 
       {/* Chimney (skip boss / rift landmarks) */}
-      {kind !== "boss" && kind !== "voidPortal" && (
-        <mesh position={[W / 2 - 0.2, h + 0.25, -W / 2 + 0.2]} castShadow>
+      {kind !== "boss" && kind !== "voidPortal" && kind !== "royalHall" && (
+        <mesh position={[footprintW / 2 - 0.2, h + 0.25, -footprintW / 2 + 0.2]} castShadow>
           <boxGeometry args={[0.14, 0.3, 0.14]} />
           <meshStandardMaterial color="#454049" roughness={0.9} />
         </mesh>
+      )}
+
+      {isRoyalHall && (
+        <>
+          <mesh position={[0, h + 1.12, 0]} castShadow>
+            <cylinderGeometry args={[0.06, 0.08, 0.55, 10]} />
+            <meshStandardMaterial color="#7a6230" roughness={0.55} metalness={0.2} />
+          </mesh>
+          <mesh position={[0, h + 1.45, 0]} castShadow>
+            <coneGeometry args={[0.19, 0.32, 5]} />
+            <meshStandardMaterial color="#d6b86a" roughness={0.35} metalness={0.35} />
+          </mesh>
+          <pointLight position={[0, h + 1.2, 0]} intensity={0.55} distance={4.2} color="#ffd178" />
+        </>
       )}
 
       {/* Floating name label */}
@@ -193,16 +211,26 @@ function Building({ kind, x, y, label }: { kind: BuildingKind; x: number; y: num
   );
 }
 
-function Window({ side, h, color }: { side: "left" | "right" | "back"; h: number; color: string }): JSX.Element {
+function Window({
+  side,
+  h,
+  color,
+  width
+}: {
+  side: "left" | "right" | "back";
+  h: number;
+  color: string;
+  width: number;
+}): JSX.Element {
   const hy = h * 0.55;
   if (side === "left") {
     return (
       <>
-        <mesh position={[-(W / 2 + 0.001), hy, 0]} rotation={[0, -Math.PI / 2, 0]}>
+        <mesh position={[-(width / 2 + 0.001), hy, 0]} rotation={[0, -Math.PI / 2, 0]}>
           <boxGeometry args={[0.22, 0.22, 0.005]} />
           <meshStandardMaterial color={color} roughness={0.7} />
         </mesh>
-        <mesh position={[-(W / 2 + 0.004), hy, 0]} rotation={[0, -Math.PI / 2, 0]}>
+        <mesh position={[-(width / 2 + 0.004), hy, 0]} rotation={[0, -Math.PI / 2, 0]}>
           <boxGeometry args={[0.16, 0.16, 0.002]} />
           <meshStandardMaterial color="#b3d9f5" emissive="#6faad1" emissiveIntensity={0.35} />
         </mesh>
@@ -212,11 +240,11 @@ function Window({ side, h, color }: { side: "left" | "right" | "back"; h: number
   if (side === "right") {
     return (
       <>
-        <mesh position={[W / 2 + 0.001, hy, 0]} rotation={[0, Math.PI / 2, 0]}>
+        <mesh position={[width / 2 + 0.001, hy, 0]} rotation={[0, Math.PI / 2, 0]}>
           <boxGeometry args={[0.22, 0.22, 0.005]} />
           <meshStandardMaterial color={color} roughness={0.7} />
         </mesh>
-        <mesh position={[W / 2 + 0.004, hy, 0]} rotation={[0, Math.PI / 2, 0]}>
+        <mesh position={[width / 2 + 0.004, hy, 0]} rotation={[0, Math.PI / 2, 0]}>
           <boxGeometry args={[0.16, 0.16, 0.002]} />
           <meshStandardMaterial color="#b3d9f5" emissive="#6faad1" emissiveIntensity={0.35} />
         </mesh>
@@ -226,11 +254,11 @@ function Window({ side, h, color }: { side: "left" | "right" | "back"; h: number
   // back
   return (
     <>
-      <mesh position={[0, hy, -(W / 2 + 0.001)]}>
+      <mesh position={[0, hy, -(width / 2 + 0.001)]}>
         <boxGeometry args={[0.22, 0.22, 0.005]} />
         <meshStandardMaterial color={color} roughness={0.7} />
       </mesh>
-      <mesh position={[0, hy, -(W / 2 + 0.004)]}>
+      <mesh position={[0, hy, -(width / 2 + 0.004)]}>
         <boxGeometry args={[0.16, 0.16, 0.002]} />
         <meshStandardMaterial color="#b3d9f5" emissive="#6faad1" emissiveIntensity={0.35} />
       </mesh>
@@ -266,6 +294,8 @@ function KindIcon({ kind }: { kind: BuildingKind }): JSX.Element {
       return <ShieldIcon />;
     case "petShop":
       return <PawIcon />;
+    case "royalHall":
+      return <CrownIcon />;
     case "boss":
       return <SkullIcon />;
     case "voidPortal":
@@ -281,6 +311,29 @@ function KindIcon({ kind }: { kind: BuildingKind }): JSX.Element {
     case "market":
       return <StallIcon />;
   }
+}
+
+function CrownIcon(): JSX.Element {
+  return (
+    <group>
+      <mesh>
+        <boxGeometry args={[0.2, 0.045, 0.02]} />
+        <meshStandardMaterial color="#dcbf62" metalness={0.5} roughness={0.35} />
+      </mesh>
+      <mesh position={[-0.07, 0.05, 0]}>
+        <coneGeometry args={[0.03, 0.09, 3]} />
+        <meshStandardMaterial color="#dcbf62" metalness={0.5} roughness={0.35} />
+      </mesh>
+      <mesh position={[0, 0.07, 0]}>
+        <coneGeometry args={[0.035, 0.11, 3]} />
+        <meshStandardMaterial color="#e6cd78" metalness={0.55} roughness={0.3} />
+      </mesh>
+      <mesh position={[0.07, 0.05, 0]}>
+        <coneGeometry args={[0.03, 0.09, 3]} />
+        <meshStandardMaterial color="#dcbf62" metalness={0.5} roughness={0.35} />
+      </mesh>
+    </group>
+  );
 }
 
 function PortalGlyph(): JSX.Element {
