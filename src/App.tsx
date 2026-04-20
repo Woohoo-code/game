@@ -61,6 +61,7 @@ const USE_3D_OVERWORLD = true;
 /** Viewport wide enough for the larger hotbar layout (compact bar still shows below this). */
 const DESKTOP_INVENTORY_MQ = "(min-width: 1024px)";
 const UI_SCALE_STORAGE_KEY = "msty-ui-scale";
+const CAMERA_MOTION_STORAGE_KEY = "msty-camera-motion-enabled";
 const UI_SCALE_DESKTOP_MIN = 0.8;
 const UI_SCALE_MOBILE_MIN = 0.5;
 const UI_SCALE_DESKTOP_DEFAULT = 1;
@@ -104,6 +105,17 @@ function loadUiScalePreference(min: number, fallback: number): number {
     return clamp(Math.round(parsed * 10) / 10, min, UI_SCALE_MAX);
   } catch {
     return fallback;
+  }
+}
+
+function loadCameraMotionPreference(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = window.localStorage.getItem(CAMERA_MOTION_STORAGE_KEY);
+    if (raw == null) return false;
+    return raw === "1" || raw.toLowerCase() === "true";
+  } catch {
+    return false;
   }
 }
 
@@ -313,6 +325,7 @@ export default function App() {
   const [battleLogCollapsed, setBattleLogCollapsed] = useState(() => mobileBrowser);
   const [overlayBattleLogCollapsed, setOverlayBattleLogCollapsed] = useState(() => mobileBrowser);
   const [uiScale, setUiScale] = useState<number>(() => loadUiScalePreference(uiScaleMin, uiScaleDefault));
+  const [cameraMotionEnabled, setCameraMotionEnabled] = useState<boolean>(() => loadCameraMotionPreference());
   const [selectedShopItem, setSelectedShopItem] = useState<ItemKey | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
@@ -329,6 +342,14 @@ export default function App() {
       // Ignore storage failures (privacy mode / blocked storage).
     }
   }, [uiScale]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CAMERA_MOTION_STORAGE_KEY, cameraMotionEnabled ? "1" : "0");
+    } catch {
+      // Ignore storage failures (privacy mode / blocked storage).
+    }
+  }, [cameraMotionEnabled]);
 
   if (path === DOWNLOAD_ROUTE) {
     return (
@@ -755,6 +776,23 @@ export default function App() {
                   </button>
                 </div>
               </div>
+              <div className="settings-ui-scale-row">
+                <div>
+                  <strong>Camera motion effects</strong>
+                  <p className="settings-ui-scale-hint">Adds movement tilt/sway while walking in 3D mode.</p>
+                </div>
+                <div className="settings-ui-scale-controls">
+                  <button
+                    type="button"
+                    className={cameraMotionEnabled ? "secondary" : ""}
+                    onClick={() => setCameraMotionEnabled((v) => !v)}
+                    aria-pressed={cameraMotionEnabled}
+                    aria-label={cameraMotionEnabled ? "Disable camera motion effects" : "Enable camera motion effects"}
+                  >
+                    {cameraMotionEnabled ? "On" : "Off"}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -777,7 +815,7 @@ export default function App() {
         <div className="game-wrap">
           <div className="game-viewport">
             {USE_3D_OVERWORLD ? (
-              <Overworld3D />
+              <Overworld3D cameraMotionEnabled={cameraMotionEnabled} />
             ) : (
               <div ref={mountRef} className="phaser-mount" />
             )}

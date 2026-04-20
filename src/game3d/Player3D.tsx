@@ -29,7 +29,13 @@ const WALK_SPEED_TILES = 400 / TILE;
 const HALF_TILE = 0.5;
 const CAM_OFFSET = new THREE.Vector3(0, 9, 9);
 
-export function Player3D({ appearance }: { appearance: PlayerAppearance }) {
+export function Player3D({
+  appearance,
+  cameraMotionEnabled = false
+}: {
+  appearance: PlayerAppearance;
+  cameraMotionEnabled?: boolean;
+}) {
   const hud = useGameStore();
   const horsesOwned = hud.player.horsesOwned ?? [];
   const riding = stableHorseSpeedBonus(horsesOwned) > 0;
@@ -132,15 +138,18 @@ export function Player3D({ appearance }: { appearance: PlayerAppearance }) {
       movingRef.current = false;
     }
 
+    const movementLag = cameraMotionEnabled ? 0.12 : 1;
+    const lookLag = cameraMotionEnabled ? 0.14 : 1;
+    const tiltY = cameraMotionEnabled ? 0.3 : 0.15;
     desiredCam.current.set(
       group.position.x + CAM_OFFSET.x,
       CAM_OFFSET.y,
       group.position.z + CAM_OFFSET.z,
     );
-    camPosLerp.current.lerp(desiredCam.current, 0.12);
+    camPosLerp.current.lerp(desiredCam.current, movementLag);
     camTargetLerp.current.lerp(
-      lookTarget.current.set(group.position.x, 0.3, group.position.z),
-      0.14,
+      lookTarget.current.set(group.position.x, tiltY, group.position.z),
+      lookLag,
     );
     camera.position.copy(camPosLerp.current);
     camera.lookAt(camTargetLerp.current);
