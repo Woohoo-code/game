@@ -1,4 +1,15 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent, lazy, Suspense } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent,
+  type TouchEvent,
+  lazy,
+  Suspense
+} from "react";
 import Phaser from "phaser";
 import { GameScene } from "./game/GameScene";
 import { inputController, type MoveDirection } from "./game/inputController";
@@ -50,7 +61,10 @@ const USE_3D_OVERWORLD = true;
 /** Viewport wide enough for the larger hotbar layout (compact bar still shows below this). */
 const DESKTOP_INVENTORY_MQ = "(min-width: 1024px)";
 const UI_SCALE_STORAGE_KEY = "msty-ui-scale";
-const UI_SCALE_MIN = 0.8;
+const UI_SCALE_DESKTOP_MIN = 0.8;
+const UI_SCALE_MOBILE_MIN = 0.5;
+const UI_SCALE_DESKTOP_DEFAULT = 1;
+const UI_SCALE_MOBILE_DEFAULT = 0.5;
 const UI_SCALE_MAX = 1.4;
 const UI_SCALE_STEP = 0.1;
 
@@ -71,16 +85,25 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function loadUiScalePreference(): number {
-  if (typeof window === "undefined") return 1;
+function detectMobileBrowser(): boolean {
+  if (typeof window === "undefined") return false;
+  const ua = window.navigator.userAgent ?? "";
+  const byAgent = /Android|iPhone|iPad|iPod|Mobile|IEMobile|Opera Mini/i.test(ua);
+  const byPointer = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+  const byWidth = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 980px)").matches;
+  return byAgent || (byPointer && byWidth);
+}
+
+function loadUiScalePreference(min: number, fallback: number): number {
+  if (typeof window === "undefined") return fallback;
   try {
     const raw = window.localStorage.getItem(UI_SCALE_STORAGE_KEY);
-    if (raw == null) return 1;
+    if (raw == null) return fallback;
     const parsed = Number(raw);
-    if (!Number.isFinite(parsed)) return 1;
-    return clamp(Math.round(parsed * 10) / 10, UI_SCALE_MIN, UI_SCALE_MAX);
+    if (!Number.isFinite(parsed)) return fallback;
+    return clamp(Math.round(parsed * 10) / 10, min, UI_SCALE_MAX);
   } catch {
-    return 1;
+    return fallback;
   }
 }
 
@@ -121,6 +144,7 @@ function useRoute() {
 function TouchJoystick() {
   const baseRef = useRef<HTMLDivElement>(null);
   const pointerIdRef = useRef<number | null>(null);
+  const touchIdRef = useRef<number | null>(null);
   const [active, setActive] = useState(false);
   const [knob, setKnob] = useState({ x: 0, y: 0 });
 
@@ -156,6 +180,7 @@ function TouchJoystick() {
 
   const finishDrag = useCallback(() => {
     pointerIdRef.current = null;
+    touchIdRef.current = null;
     setActive(false);
     setKnob({ x: 0, y: 0 });
     resetDirections();
@@ -163,10 +188,11 @@ function TouchJoystick() {
 
   const onPointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === "touch") return;
       event.preventDefault();
       pointerIdRef.current = event.pointerId;
       setActive(true);
-      event.currentTarget.setPointerCapture(event.pointerId);
+      (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
       applyFromClientPoint(event.clientX, event.clientY);
     },
     [applyFromClientPoint]
@@ -174,6 +200,7 @@ function TouchJoystick() {
 
   const onPointerMove = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === "touch") return;
       if (pointerIdRef.current !== event.pointerId) return;
       event.preventDefault();
       applyFromClientPoint(event.clientX, event.clientY);
@@ -183,12 +210,55 @@ function TouchJoystick() {
 
   const onPointerUp = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === "touch") return;
       if (pointerIdRef.current !== event.pointerId) return;
       event.preventDefault();
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
+      if ((event.currentTarget as HTMLElement).hasPointerCapture?.(event.pointerId)) {
+        (event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId);
       }
       finishDrag();
+    },
+    [finishDrag]
+  );
+
+  const onTouchStart = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      const first = event.changedTouches[0];
+      if (!first) return;
+      event.preventDefault();
+      touchIdRef.current = first.identifier;
+      setActive(true);
+      applyFromClientPoint(first.clientX, first.clientY);
+    },
+    [applyFromClientPoint]
+  );
+
+  const onTouchMove = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      const id = touchIdRef.current;
+      if (id == null) return;
+      for (let i = 0; i < event.touches.length; i++) {
+        const t = event.touches.item(i);
+        if (!t || t.identifier !== id) continue;
+        event.preventDefault();
+        applyFromClientPoint(t.clientX, t.clientY);
+        return;
+      }
+    },
+    [applyFromClientPoint]
+  );
+
+  const onTouchEnd = useCallback(
+    (event: TouchEvent<HTMLDivElement>) => {
+      const id = touchIdRef.current;
+      if (id == null) return;
+      for (let i = 0; i < event.changedTouches.length; i++) {
+        const t = event.changedTouches.item(i);
+        if (!t || t.identifier !== id) continue;
+        event.preventDefault();
+        finishDrag();
+        return;
+      }
     },
     [finishDrag]
   );
@@ -212,6 +282,10 @@ function TouchJoystick() {
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onPointerLeave={onPointerUp}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchEnd}
       onContextMenu={(event) => event.preventDefault()}
       aria-label="Movement joystick"
       role="application"
@@ -223,6 +297,9 @@ function TouchJoystick() {
 }
 
 export default function App() {
+  const mobileBrowser = useMemo(() => detectMobileBrowser(), []);
+  const uiScaleMin = mobileBrowser ? UI_SCALE_MOBILE_MIN : UI_SCALE_DESKTOP_MIN;
+  const uiScaleDefault = mobileBrowser ? UI_SCALE_MOBILE_DEFAULT : UI_SCALE_DESKTOP_DEFAULT;
   const [screen, setScreen] = useState<Screen>("title");
   /** Shown on the title screen when Load Save fails (event log is not visible there). */
   const [titleNotice, setTitleNotice] = useState<{ text: string; error: boolean } | null>(null);
@@ -232,10 +309,10 @@ export default function App() {
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [petsOpen, setPetsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [eventLogCollapsed, setEventLogCollapsed] = useState(false);
-  const [battleLogCollapsed, setBattleLogCollapsed] = useState(false);
-  const [overlayBattleLogCollapsed, setOverlayBattleLogCollapsed] = useState(false);
-  const [uiScale, setUiScale] = useState<number>(() => loadUiScalePreference());
+  const [eventLogCollapsed, setEventLogCollapsed] = useState(() => mobileBrowser);
+  const [battleLogCollapsed, setBattleLogCollapsed] = useState(() => mobileBrowser);
+  const [overlayBattleLogCollapsed, setOverlayBattleLogCollapsed] = useState(() => mobileBrowser);
+  const [uiScale, setUiScale] = useState<number>(() => loadUiScalePreference(uiScaleMin, uiScaleDefault));
   const [selectedShopItem, setSelectedShopItem] = useState<ItemKey | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
@@ -652,10 +729,10 @@ export default function App() {
                     type="button"
                     onClick={() =>
                       setUiScale((prev) =>
-                        clamp(Math.round((prev - UI_SCALE_STEP) * 10) / 10, UI_SCALE_MIN, UI_SCALE_MAX)
+                        clamp(Math.round((prev - UI_SCALE_STEP) * 10) / 10, uiScaleMin, UI_SCALE_MAX)
                       )
                     }
-                    disabled={uiScale <= UI_SCALE_MIN}
+                    disabled={uiScale <= uiScaleMin}
                     aria-label="Decrease UI scale"
                   >
                     −
@@ -665,7 +742,7 @@ export default function App() {
                     type="button"
                     onClick={() =>
                       setUiScale((prev) =>
-                        clamp(Math.round((prev + UI_SCALE_STEP) * 10) / 10, UI_SCALE_MIN, UI_SCALE_MAX)
+                        clamp(Math.round((prev + UI_SCALE_STEP) * 10) / 10, uiScaleMin, UI_SCALE_MAX)
                       )
                     }
                     disabled={uiScale >= UI_SCALE_MAX}
@@ -673,7 +750,7 @@ export default function App() {
                   >
                     +
                   </button>
-                  <button type="button" className="secondary" onClick={() => setUiScale(1)}>
+                  <button type="button" className="secondary" onClick={() => setUiScale(uiScaleDefault)}>
                     Reset
                   </button>
                 </div>

@@ -4726,6 +4726,7 @@ button.reset-game-btn:not(:disabled):hover {
     radial-gradient(circle at 30% 28%, rgba(172, 212, 255, 0.3), rgba(22, 30, 44, 0.84) 72%),
     rgba(14, 20, 30, 0.86);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 8px 18px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
 }
 
 .touch-joystick-knob {
@@ -4743,6 +4744,7 @@ button.reset-game-btn:not(:disabled):hover {
   box-shadow: 0 5px 14px rgba(0, 0, 0, 0.45);
   transition: transform 60ms linear;
   will-change: transform;
+  pointer-events: none;
 }
 
 .touch-joystick--active .touch-joystick-base {
