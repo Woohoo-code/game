@@ -66,6 +66,10 @@ const UI_SCALE_DESKTOP_DEFAULT = 1;
 const UI_SCALE_MOBILE_DEFAULT = 0.5;
 const UI_SCALE_MAX = 1.4;
 const UI_SCALE_STEP = 0.1;
+const WORLD_ZOOM_STORAGE_KEY = "msty-world-zoom";
+const WORLD_ZOOM_MIN = 0.75;
+const WORLD_ZOOM_MAX = 1.25;
+const WORLD_ZOOM_STEP = 0.05;
 
 function useDesktopInventoryBar(): boolean {
   const [wide, setWide] = useState(() =>
@@ -114,6 +118,19 @@ function loadCameraMotionPreference(): boolean {
     return raw === "1" || raw.toLowerCase() === "true";
   } catch {
     return false;
+  }
+}
+
+function loadWorldZoomPreference(): number {
+  if (typeof window === "undefined") return 1;
+  try {
+    const raw = window.localStorage.getItem(WORLD_ZOOM_STORAGE_KEY);
+    if (raw == null) return 1;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return 1;
+    return clamp(Math.round(parsed * 100) / 100, WORLD_ZOOM_MIN, WORLD_ZOOM_MAX);
+  } catch {
+    return 1;
   }
 }
 
@@ -324,6 +341,7 @@ export default function App() {
   const [overlayBattleLogCollapsed, setOverlayBattleLogCollapsed] = useState(() => mobileBrowser);
   const [uiScale, setUiScale] = useState<number>(() => loadUiScalePreference(uiScaleMin, uiScaleDefault));
   const [cameraMotionEnabled, setCameraMotionEnabled] = useState<boolean>(() => loadCameraMotionPreference());
+  const [worldZoom, setWorldZoom] = useState<number>(() => loadWorldZoomPreference());
   const [selectedShopItem, setSelectedShopItem] = useState<ItemKey | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
@@ -348,6 +366,15 @@ export default function App() {
       // Ignore storage failures (privacy mode / blocked storage).
     }
   }, [cameraMotionEnabled]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty("--world-zoom", worldZoom.toFixed(2));
+    try {
+      window.localStorage.setItem(WORLD_ZOOM_STORAGE_KEY, String(worldZoom));
+    } catch {
+      // Ignore storage failures (privacy mode / blocked storage).
+    }
+  }, [worldZoom]);
 
   if (path === DOWNLOAD_ROUTE) {
     return (
@@ -767,10 +794,57 @@ export default function App() {
               </div>
               <div className="settings-ui-scale-row">
                 <div>
+                  <strong>World zoom</strong>
+                  <p className="settings-ui-scale-hint">Zooms the 3D world window from 75% to 125%.</p>
+                </div>
+                <div className="settings-ui-scale-controls">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setWorldZoom((prev) =>
+                        clamp(Math.round((prev - WORLD_ZOOM_STEP) * 100) / 100, WORLD_ZOOM_MIN, WORLD_ZOOM_MAX)
+                      )
+                    }
+                    disabled={worldZoom <= WORLD_ZOOM_MIN}
+                    aria-label="Decrease world zoom"
+                  >
+                    −
+                  </button>
+                  <span className="settings-ui-scale-value">{Math.round(worldZoom * 100)}%</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setWorldZoom((prev) =>
+                        clamp(Math.round((prev + WORLD_ZOOM_STEP) * 100) / 100, WORLD_ZOOM_MIN, WORLD_ZOOM_MAX)
+                      )
+                    }
+                    disabled={worldZoom >= WORLD_ZOOM_MAX}
+                    aria-label="Increase world zoom"
+                  >
+                    +
+                  </button>
+                  <button type="button" className="secondary" onClick={() => setWorldZoom(1)}>
+                    Reset
+                  </button>
+                </div>
+              </div>
+              <div className="settings-ui-scale-row">
+                <div>
                   <strong>Camera motion effects</strong>
                   <p className="settings-ui-scale-hint">Adds movement tilt/sway while walking in 3D mode.</p>
                 </div>
                 <div className="settings-ui-scale-controls">
+                  <button type="button" onClick={() => void handleLoad()} aria-label="Load save from browser storage">
+                    Load save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void gameStore.exportTransferCode()}
+                    disabled={!snapshot.player.hasCreatedCharacter}
+                    title="Copy one line to the clipboard for another device (includes a 10-digit key and your full save)."
+                  >
+                    Copy transfer line
+                  </button>
                   <button
                     type="button"
                     className={cameraMotionEnabled ? "secondary" : ""}

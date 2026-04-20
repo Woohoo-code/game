@@ -4136,6 +4136,7 @@ button.reset-game-btn:not(:disabled):hover {
   height: 100%;
   max-width: none;
   flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .world-status-overlay {
@@ -4910,13 +4911,22 @@ button.reset-game-btn:not(:disabled):hover {
   }
 
   .touch-joystick {
-    --touch-joystick-size: 92px;
-    --touch-joystick-knob-size: 40px;
+    --touch-joystick-size: 184px;
+    --touch-joystick-knob-size: 80px;
   }
 
   .touch-overlay {
     margin-right: 36px;
     margin-bottom: 44px;
+  }
+
+  .playfield-context-overlay--dock-bottom {
+    bottom: 72px;
+    max-height: min(44vh, 320px);
+  }
+
+  .playfield-context-overlay--dock-bottom .playfield-context-inner {
+    max-height: min(44vh, 320px);
   }
 
   /* Log + battle panel trim so the on-screen controls stay reachable */
