@@ -41,12 +41,12 @@ function keyboardTargetIsTyping(event: KeyboardEvent): boolean {
 }
 
 /** Remount when the realm/world mesh changes so GL readiness resets per overworld. */
-export function Overworld3D() {
+export function Overworld3D({ cameraMotionEnabled = false }: { cameraMotionEnabled?: boolean }) {
   const worldVersion = useGameStore().world.worldVersion;
-  return <Overworld3DScene key={worldVersion} />;
+  return <Overworld3DScene key={worldVersion} cameraMotionEnabled={cameraMotionEnabled} />;
 }
 
-function Overworld3DScene() {
+function Overworld3DScene({ cameraMotionEnabled }: { cameraMotionEnabled: boolean }) {
   const snapshot = useGameStore();
   const worldVersion = snapshot.world.worldVersion;
   const [glReady, setGlReady] = useState(false);
@@ -251,7 +251,7 @@ function Overworld3DScene() {
             <RoamingMonsters3D />
           </>
         )}
-        <Player3D appearance={snapshot.player.appearance} />
+        <Player3D appearance={snapshot.player.appearance} cameraMotionEnabled={cameraMotionEnabled} />
         {!snapshot.world.inDungeon && <Pet3D />}
       </Canvas>
     </div>
