@@ -128,6 +128,98 @@ function Bat({ primary = "#554a68", accent = "#3f3651" }: ShapeProps) {
   );
 }
 
+/**
+ * Mango Man — not a humanoid: one big mango fruit body, tripod root-legs, stem + leaf crown,
+ * simple face. Intentionally unlike goblin / slime / any other silhouette.
+ */
+function MangoMan({ primary = "#f4a020", accent = "#1e6b32" }: ShapeProps) {
+  const group = useIdleTurntable(0.28);
+  const fruit = useRef<THREE.Group>(null);
+  useFrame(({ clock }) => {
+    if (!fruit.current) return;
+    const t = clock.getElapsedTime();
+    fruit.current.position.y = 0.42 + Math.sin(t * 3.1) * 0.035;
+    fruit.current.rotation.z = Math.sin(t * 2.4) * 0.07;
+  });
+  const skin = new THREE.Color(primary);
+  const blush = skin.clone().lerp(new THREE.Color("#ff6b4a"), 0.35).getStyle();
+  return (
+    <group ref={group}>
+      <group ref={fruit} position={[0, 0.42, 0]}>
+        {/* Main mango flesh — oblate sphere, not a capsule humanoid */}
+        <mesh castShadow>
+          <sphereGeometry args={[0.52, 28, 22]} />
+          <meshStandardMaterial
+            color={primary}
+            roughness={0.62}
+            metalness={0.02}
+            emissive={blush}
+            emissiveIntensity={0.08}
+          />
+        </mesh>
+        {/* Cheek ridges (mango “shoulders”) */}
+        <mesh position={[-0.38, 0.06, 0.18]} rotation={[0, 0.5, 0.25]} castShadow>
+          <sphereGeometry args={[0.16, 14, 12]} />
+          <meshStandardMaterial color={primary} roughness={0.7} />
+        </mesh>
+        <mesh position={[0.38, 0.06, 0.18]} rotation={[0, -0.5, -0.25]} castShadow>
+          <sphereGeometry args={[0.16, 14, 12]} />
+          <meshStandardMaterial color={primary} roughness={0.7} />
+        </mesh>
+        {/* Stem */}
+        <mesh position={[0, 0.58, -0.06]} castShadow>
+          <cylinderGeometry args={[0.055, 0.07, 0.22, 10]} />
+          <meshStandardMaterial color="#4a3020" roughness={0.9} />
+        </mesh>
+        {/* Leaf crown — single curved blade */}
+        <mesh position={[0.12, 0.72, -0.02]} rotation={[0.35, 0.6, -0.2]} castShadow>
+          <boxGeometry args={[0.38, 0.06, 0.2]} />
+          <meshStandardMaterial color={accent} roughness={0.55} />
+        </mesh>
+        <mesh position={[-0.18, 0.68, 0.04]} rotation={[0.5, -0.4, 0.15]} castShadow>
+          <boxGeometry args={[0.28, 0.05, 0.14]} />
+          <meshStandardMaterial color={accent} roughness={0.55} />
+        </mesh>
+        {/* Face — front of fruit */}
+        <mesh position={[-0.14, 0.1, 0.46]}>
+          <sphereGeometry args={[0.055, 12, 10]} />
+          <meshStandardMaterial color="#1a1208" roughness={0.4} />
+        </mesh>
+        <mesh position={[0.14, 0.1, 0.46]}>
+          <sphereGeometry args={[0.055, 12, 10]} />
+          <meshStandardMaterial color="#1a1208" roughness={0.4} />
+        </mesh>
+        <mesh position={[0, -0.06, 0.5]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.1, 0.022, 8, 16, Math.PI * 1.1]} />
+          <meshStandardMaterial color="#3a1810" roughness={0.85} />
+        </mesh>
+        {/* Tiny seed arms — not goblin arms */}
+        <mesh position={[-0.52, 0.02, 0.1]} rotation={[0, 0, Math.PI / 2.5]} castShadow>
+          <capsuleGeometry args={[0.045, 0.14, 4, 8]} />
+          <meshStandardMaterial color="#c8a060" roughness={0.75} />
+        </mesh>
+        <mesh position={[0.52, 0.02, 0.1]} rotation={[0, 0, -Math.PI / 2.5]} castShadow>
+          <capsuleGeometry args={[0.045, 0.14, 4, 8]} />
+          <meshStandardMaterial color="#c8a060" roughness={0.75} />
+        </mesh>
+      </group>
+      {/* Tripod “roots” — three stumps, not two legs */}
+      <mesh position={[-0.22, 0.1, -0.08]} rotation={[0.2, 0, 0.35]} castShadow>
+        <cylinderGeometry args={[0.07, 0.09, 0.26, 8]} />
+        <meshStandardMaterial color="#5a3a22" roughness={0.92} />
+      </mesh>
+      <mesh position={[0.22, 0.1, -0.08]} rotation={[0.2, 0, -0.35]} castShadow>
+        <cylinderGeometry args={[0.07, 0.09, 0.26, 8]} />
+        <meshStandardMaterial color="#5a3a22" roughness={0.92} />
+      </mesh>
+      <mesh position={[0, 0.08, 0.22]} rotation={[-0.25, 0, 0]} castShadow>
+        <cylinderGeometry args={[0.08, 0.1, 0.28, 8]} />
+        <meshStandardMaterial color="#5a3a22" roughness={0.92} />
+      </mesh>
+    </group>
+  );
+}
+
 function Goblin({ primary = "#6eaa4f", accent = "#4f7a3a" }: ShapeProps) {
   const group = useIdleTurntable(0.35);
   const body = useRef<THREE.Group>(null);
@@ -609,6 +701,94 @@ function VoidTitan() {
   );
 }
 
+/**
+ * Realm 2+ arena guardian — ember furnace colossus with shard crown (not Void Titan geometry).
+ */
+function CinderRegent() {
+  const group = useIdleTurntable(0.16);
+  const core = useRef<THREE.Group>(null);
+  const embers = useRef<THREE.Group>(null);
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime();
+    if (core.current) core.current.rotation.y = t * 0.55;
+    if (embers.current) embers.current.rotation.y = t * 0.9;
+  });
+  const obs = "#1c1614";
+  const hot = "#ff5c18";
+  const glow = "#ffcc66";
+  return (
+    <group ref={group}>
+      <mesh position={[0, 0.05, 0]} receiveShadow>
+        <cylinderGeometry args={[0.75, 0.82, 0.1, 12]} />
+        <meshStandardMaterial color="#3a3228" roughness={0.92} />
+      </mesh>
+      {Array.from({ length: 6 }, (_, i) => {
+        const a = (i / 6) * Math.PI * 2;
+        return (
+          <mesh
+            key={`sk-${i}`}
+            position={[Math.sin(a) * 0.36, 0.28, Math.cos(a) * 0.36]}
+            rotation={[0.12 + Math.sin(a) * 0.2, a, 0.1]}
+            castShadow
+          >
+            <boxGeometry args={[0.26, 0.42, 0.1]} />
+            <meshStandardMaterial color={obs} roughness={0.9} metalness={0.12} />
+          </mesh>
+        );
+      })}
+      <mesh position={[0, 0.82, 0]} castShadow>
+        <cylinderGeometry args={[0.34, 0.4, 0.92, 14]} />
+        <meshStandardMaterial
+          color="#4a2218"
+          roughness={0.62}
+          metalness={0.22}
+          emissive={hot}
+          emissiveIntensity={0.45}
+        />
+      </mesh>
+      {[-0.12, 0, 0.12].map((x, i) => (
+        <mesh key={`vent-${i}`} position={[x, 0.86, 0.38]}>
+          <boxGeometry args={[0.04, 0.48, 0.035]} />
+          <meshStandardMaterial color={hot} emissive={hot} emissiveIntensity={1.6} toneMapped={false} />
+        </mesh>
+      ))}
+      <group ref={core} position={[0, 1.02, 0]}>
+        <mesh>
+          <octahedronGeometry args={[0.24, 0]} />
+          <meshStandardMaterial color="#ff8020" emissive={glow} emissiveIntensity={1} />
+        </mesh>
+      </group>
+      <group ref={embers} position={[0, 1.05, 0]}>
+        {[0, 1, 2, 3, 4, 5].map((i) => {
+          const a = (i / 6) * Math.PI * 2;
+          return (
+            <mesh key={`em-${i}`} position={[Math.sin(a) * 0.55, Math.sin(i * 1.7) * 0.08, Math.cos(a) * 0.55]}>
+              <sphereGeometry args={[0.045, 10, 8]} />
+              <meshStandardMaterial color={hot} emissive={glow} emissiveIntensity={1.8} />
+            </mesh>
+          );
+        })}
+      </group>
+      <group position={[0, 1.48, 0]}>
+        {[0, 1, 2, 3].map((i) => {
+          const a = (i / 4) * Math.PI * 2 + 0.4;
+          return (
+            <mesh key={`cr-${i}`} position={[Math.sin(a) * 0.28, 0, Math.cos(a) * 0.28]} rotation={[0.35, a, -0.2]}>
+              <tetrahedronGeometry args={[0.14, 0]} />
+              <meshStandardMaterial color="#5a5048" roughness={0.75} emissive="#2a1810" emissiveIntensity={0.15} />
+            </mesh>
+          );
+        })}
+      </group>
+      <mesh position={[0, 1.62, 0.12]}>
+        <sphereGeometry args={[0.05, 10, 8]} />
+        <meshBasicMaterial color="#fff5e0" />
+      </mesh>
+      <pointLight position={[0, 1.15, 0.35]} color={hot} intensity={1.5} distance={3.8} />
+    </group>
+  );
+}
+
 /** Render a body shape with optional color overrides; used for both built-in and UGC monsters. */
 export function MonsterByShape({ shape, primary, accent }: { shape: MonsterBodyShape; primary?: string; accent?: string }) {
   switch (shape) {
@@ -628,6 +808,8 @@ export function MonsterByShape({ shape, primary, accent }: { shape: MonsterBodyS
       return <Spider primary={primary} accent={accent} />;
     case "scorpion":
       return <Scorpion primary={primary} accent={accent} />;
+    case "mangoMan":
+      return <MangoMan primary={primary} accent={accent} />;
     default:
       return <Goblin primary={primary} accent={accent} />;
   }
@@ -644,6 +826,10 @@ const BUILTIN_SHAPE_BY_ID: Record<string, MonsterBodyShape> = {
 
 export function MonsterModel({ enemy }: { enemy: EnemyState }) {
   if (enemy.id === "voidTitan") return <VoidTitan />;
+  if (enemy.id === "cinderRegent") return <CinderRegent />;
+  if (enemy.id === "mangoMan") {
+    return <MangoMan primary={enemy.customColors?.primary} accent={enemy.customColors?.accent} />;
+  }
   const shape: MonsterBodyShape =
     enemy.bodyShape ?? BUILTIN_SHAPE_BY_ID[enemy.id] ?? "goblin";
   return (

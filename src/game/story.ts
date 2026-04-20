@@ -27,6 +27,18 @@ export interface ChapterReward {
   message: string;
 }
 
+/**
+ * Chapter completion thresholds — kept as named constants so UI labels,
+ * migration code, and `isStageComplete` can never drift apart. Tuned for a
+ * ~30-60 min playthrough to the first boss: early chapters feel like a brisk
+ * tutorial, mid chapters force real exploration and combat variety, and the
+ * level gate ensures you're not paper-thin when the Titan's voice arrives.
+ */
+export const STORY_CH1_MONSTERS_TO_SLAY = 10;
+export const STORY_CH3_BIOMES_TO_VISIT = 4;
+export const STORY_CH4_LEVEL_REQUIRED = 8;
+export const STORY_CH5_SPECIES_TO_DEFEAT = 10;
+
 export interface ChapterDefinition {
   /** Short, displayable title — "Chapter 1: First Blood". */
   title: string;
@@ -51,13 +63,13 @@ export const STORY_CHAPTERS: Record<StoryStage, ChapterDefinition> = {
 
   ch1_firstHunts: {
     title: "Chapter 1 — First Blood",
-    objective: "Defeat 5 monsters anywhere in the wilds.",
+    objective: `Defeat ${STORY_CH1_MONSTERS_TO_SLAY} monsters anywhere in the wilds.`,
     flavor:
-      "The Guild Master wants proof you can hold a blade. Beyond the town gates the wilds are restless — slimes in the meadow, bats darting overhead, goblins crouched in the brush. Hunt them down. Five kills will do. Bring back the stories.",
+      "The Guild Master wants proof you can hold a blade. Beyond the town gates the wilds are restless — slimes in the meadow, bats darting overhead, goblins crouched in the brush. Hunt them down. Ten kills is the old Guild tradition. Bring back the stories.",
     next: "ch2_gearUp",
     reward: {
-      gold: 25,
-      message: "The Guild pays 25 gold for your first kills."
+      gold: 40,
+      message: "The Guild pays 40 gold for your first kills."
     }
   },
 
@@ -75,37 +87,37 @@ export const STORY_CHAPTERS: Record<StoryStage, ChapterDefinition> = {
 
   ch3_wanderer: {
     title: "Chapter 3 — Lands Unknown",
-    objective: "Set foot in 3 different biomes.",
+    objective: `Set foot in ${STORY_CH3_BIOMES_TO_VISIT} different biomes.`,
     flavor:
-      "The veil did not crack only above the meadows. It tore open every land — desert dunes, swamp hollows, forested valleys, frozen wastes. See them for yourself. Walk their soil. Carry the truth home.",
+      "The veil did not crack only above the meadows. It tore open every land — desert dunes, swamp hollows, forested valleys, frozen wastes. See them for yourself. Walk their soil. Carry the truth home. The chronicler wants four lands on your boots before she'll write your name.",
     next: "ch4_whispers",
     reward: {
-      gold: 60,
-      message: "A wandering chronicler pays 60 gold for your first-hand report of distant lands."
+      gold: 80,
+      message: "A wandering chronicler pays 80 gold for your first-hand report of distant lands."
     }
   },
 
   ch4_whispers: {
     title: "Chapter 4 — Whispers of the Titan",
-    objective: "Reach Level 5.",
+    objective: `Reach Level ${STORY_CH4_LEVEL_REQUIRED}.`,
     flavor:
-      "You hear it in your dreams now — a voice rolling like thunder through ribs of stone. The Titan knows your name. Temper yourself. Grow stronger. The Guild Master will not send a child to face the end of the world.",
+      "You hear it in your dreams now — a voice rolling like thunder through ribs of stone. The Titan knows your name. Temper yourself. Grow stronger. The Guild Master will not send a child to face the end of the world, and the Titan's servants grow fiercer with every moon.",
     next: "ch5_trials",
     reward: {
-      xp: 80,
-      message: "Surviving the Titan's gaze leaves you changed (+80 XP)."
+      xp: 140,
+      message: "Surviving the Titan's gaze leaves you changed (+140 XP)."
     }
   },
 
   ch5_trials: {
     title: "Chapter 5 — Trial of Many",
-    objective: "Defeat 6 different species of monster.",
+    objective: `Defeat ${STORY_CH5_SPECIES_TO_DEFEAT} different species of monster.`,
     flavor:
-      "Every beast of the void fights differently. A scorpion waits; a wraith vanishes; a drake burns. You must learn the shape of each of them before the Titan tests you. Seek the edges of every biome. Find what lives there. End it.",
+      "Every beast of the void fights differently. A scorpion waits; a wraith vanishes; a drake burns. You must learn the shape of each of them before the Titan tests you. Seek the edges of every biome. Find what lives there. End it — ten distinct kinds, or the Guild will not send you through.",
     next: "ch6_titanAwaits",
     reward: {
-      gold: 120,
-      message: "The Guild Master presses a purse of 120 gold into your hand. 'You are ready.'"
+      gold: 180,
+      message: "The Guild Master presses a purse of 180 gold into your hand. 'You are ready.'"
     }
   },
 
@@ -145,21 +157,26 @@ export function initialStory(): StoryState {
  * Returns true if the given stage's objective is met by the current state.
  * Prologue/epilogue are handled by their own UI (`prologueSeen`/`epilogueSeen`)
  * and always return false here.
+ *
+ * `playerLevel` is used by Chapter 4 (the only stage gated on an external
+ * value rather than `StoryState` itself). Callers that can't supply it — e.g.
+ * cold reads that don't have the full game state — may omit it; the chapter
+ * will then remain "incomplete" until a caller with the level re-evaluates.
  */
-export function isStageComplete(stage: StoryStage, s: StoryState): boolean {
+export function isStageComplete(stage: StoryStage, s: StoryState, playerLevel = 0): boolean {
   switch (stage) {
     case "prologue":
       return s.prologueSeen;
     case "ch1_firstHunts":
-      return s.monstersSlain >= 5;
+      return s.monstersSlain >= STORY_CH1_MONSTERS_TO_SLAY;
     case "ch2_gearUp":
       return s.boughtBetterGear;
     case "ch3_wanderer":
-      return s.biomesVisited.length >= 3;
+      return s.biomesVisited.length >= STORY_CH3_BIOMES_TO_VISIT;
     case "ch4_whispers":
-      return false; // Advanced externally via storyNoteLevel(level)
+      return playerLevel >= STORY_CH4_LEVEL_REQUIRED;
     case "ch5_trials":
-      return s.uniqueSpeciesDefeated.length >= 6;
+      return s.uniqueSpeciesDefeated.length >= STORY_CH5_SPECIES_TO_DEFEAT;
     case "ch6_titanAwaits":
       return s.reachedBossArena; // Advanced when the player steps on the boss arena or defeats it
     case "epilogue":
@@ -180,15 +197,15 @@ export function progressLabelFor(
     case "prologue":
       return s.prologueSeen ? null : "Journal — dismiss the briefing, then hunt";
     case "ch1_firstHunts":
-      return `${Math.min(s.monstersSlain, 5)} / 5 monsters slain`;
+      return `${Math.min(s.monstersSlain, STORY_CH1_MONSTERS_TO_SLAY)} / ${STORY_CH1_MONSTERS_TO_SLAY} monsters slain`;
     case "ch2_gearUp":
       return s.boughtBetterGear ? "complete" : "awaiting purchase";
     case "ch3_wanderer":
-      return `${Math.min(s.biomesVisited.length, 3)} / 3 biomes explored`;
+      return `${Math.min(s.biomesVisited.length, STORY_CH3_BIOMES_TO_VISIT)} / ${STORY_CH3_BIOMES_TO_VISIT} biomes explored`;
     case "ch4_whispers":
-      return `Level ${playerLevel} / 5`;
+      return `Level ${playerLevel} / ${STORY_CH4_LEVEL_REQUIRED}`;
     case "ch5_trials":
-      return `${Math.min(s.uniqueSpeciesDefeated.length, 6)} / 6 species defeated`;
+      return `${Math.min(s.uniqueSpeciesDefeated.length, STORY_CH5_SPECIES_TO_DEFEAT)} / ${STORY_CH5_SPECIES_TO_DEFEAT} species defeated`;
     case "ch6_titanAwaits":
       if (extras?.bossDefeated) return "Void Titan defeated";
       return s.reachedBossArena ? "At the arena — confront the Titan" : "Seek the Boss Arena in the wilds";

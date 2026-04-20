@@ -1,9 +1,20 @@
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 
+function visualViewportSize(): { vw: number; vh: number } {
+  const vv = window.visualViewport;
+  if (vv) {
+    return { vw: vv.width, vh: vv.height };
+  }
+  return { vw: window.innerWidth, vh: window.innerHeight };
+}
+
 /**
  * Uniformly scales the app tree so it fits within the visible viewport (width and
  * height), using the Fullscreen / visual viewport when available. Scale is
  * capped at 1 so large screens are unchanged.
+ *
+ * On narrow phones, a **minimum scale** keeps text and controls readable when
+ * the layout is taller than the dynamic viewport (iOS Safari / Android Chrome).
  */
 export function ViewportScaler({ children }: { children: ReactNode }) {
   const outerRef = useRef<HTMLDivElement>(null);
@@ -18,11 +29,12 @@ export function ViewportScaler({ children }: { children: ReactNode }) {
       inner.style.transform = "scale(1)";
       inner.style.width = "";
       const rect = inner.getBoundingClientRect();
-      const vv = window.visualViewport;
-      const vw = vv?.width ?? window.innerWidth;
-      const vh = vv?.height ?? window.innerHeight;
+      const { vw, vh } = visualViewportSize();
       const pad = 2;
-      const scale = Math.min(1, (vw - pad) / rect.width, (vh - pad) / rect.height);
+      const raw = Math.min(1, (vw - pad) / rect.width, (vh - pad) / rect.height);
+      const narrow = vw <= 520;
+      const minScale = narrow ? 0.54 : 0.38;
+      const scale = Math.max(minScale, raw);
       inner.style.transformOrigin = "top center";
       inner.style.transform = `scale(${scale})`;
       outer.style.minHeight = `${rect.height * scale}px`;

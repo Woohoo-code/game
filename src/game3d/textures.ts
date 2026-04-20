@@ -402,12 +402,46 @@ function drawForest(ctx: CanvasRenderingContext2D, s: number): void {
   addFilmGrain(ctx, s, 9505);
 }
 
+function drawHill(ctx: CanvasRenderingContext2D, s: number): void {
+  const grad = ctx.createRadialGradient(s * 0.5, s * 0.5, s * 0.05, s * 0.5, s * 0.5, s * 0.65);
+  grad.addColorStop(0, "#9f8a5c");
+  grad.addColorStop(0.55, "#7a6a42");
+  grad.addColorStop(1, "#4e4024");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, s, s);
+  const r = seededRng(3771);
+  for (let i = 0; i < density(s, 70); i++) {
+    const x = r() * s;
+    const y = r() * s;
+    ctx.strokeStyle = `rgba(${80 + r() * 30 | 0}, ${64 + r() * 24 | 0}, ${36 + r() * 18 | 0}, ${0.35 + r() * 0.35})`;
+    ctx.lineWidth = 0.8 + r() * 1.1;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + (r() - 0.5) * 8, y + (r() - 0.5) * 6);
+    ctx.stroke();
+  }
+  for (let i = 0; i < density(s, 24); i++) {
+    ctx.fillStyle = `rgba(${60 + r() * 40 | 0}, ${85 + r() * 40 | 0}, ${42 + r() * 24 | 0}, ${0.4 + r() * 0.3})`;
+    ctx.beginPath();
+    ctx.ellipse(r() * s, r() * s, 2 + r() * 3.4, 1.2 + r() * 2.1, r() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (let i = 0; i < density(s, 8); i++) {
+    ctx.fillStyle = `rgba(${120 + r() * 40 | 0}, ${114 + r() * 32 | 0}, ${96 + r() * 28 | 0}, 0.7)`;
+    ctx.beginPath();
+    ctx.ellipse(r() * s, r() * s, 3 + r() * 4, 2 + r() * 2.8, r() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  addFilmGrain(ctx, s, 7711);
+}
+
 const DRAWERS: Record<TerrainKind, (ctx: CanvasRenderingContext2D, size: number) => void> = {
   grass: drawGrass,
   road: drawRoad,
   water: drawWater,
   town: drawTown,
-  forest: drawForest
+  forest: drawForest,
+  hill: drawHill
 };
 
 export function getTerrainTexture(kind: TerrainKind): THREE.CanvasTexture {
@@ -673,18 +707,28 @@ const BIOME_FLOOR_DRAWERS: Record<BiomeFloorKind, (ctx: CanvasRenderingContext2D
   tundra: drawSnow
 };
 
+const REALM2_FLOOR_DRAWERS: Record<BiomeFloorKind, (ctx: CanvasRenderingContext2D, size: number) => void> = {
+  meadow: drawMud,
+  forest: drawSnow,
+  desert: drawRoad,
+  swamp: drawWater,
+  tundra: drawForestFloor
+};
+
 /**
  * Returns the ground/grass texture that best represents a biome. For "grass"-kind
  * tiles, this completely replaces the default grass texture. Road/town kinds stay
  * the same everywhere; water and forest can be tinted via {@link BIOME_TINT}.
  */
-export function getBiomeGroundTexture(biome: BiomeKind): THREE.CanvasTexture {
-  const key = `biome-${biome}`;
+export function getBiomeGroundTexture(biome: BiomeKind, realmTier: number = 1): THREE.CanvasTexture {
+  const tier = Math.max(1, Math.floor(realmTier));
+  const key = `biome-${tier}-${biome}`;
   const cached = cache.get(key);
   if (cached) return cached;
   const size = PROCEDURAL_TEX_SIZE;
   const { canvas, ctx } = makeCanvas(size);
-  BIOME_FLOOR_DRAWERS[biome](ctx, size);
+  const drawers = tier >= 2 ? REALM2_FLOOR_DRAWERS : BIOME_FLOOR_DRAWERS;
+  drawers[biome](ctx, size);
   const tex = new THREE.CanvasTexture(canvas);
   applyTextureQuality(tex);
   cache.set(key, tex);
@@ -702,37 +746,57 @@ export const BIOME_TINT: Record<BiomeKind, Record<TerrainKind, string>> = {
     road: "#ffffff",
     water: "#ffffff",
     town: "#ffffff",
-    forest: "#ffffff"
+    forest: "#ffffff",
+    hill: "#ffffff"
   },
   forest: {
     grass: "#ffffff",
     road: "#f3ecd8",
     water: "#e5f1f7",
     town: "#f3ecd6",
-    forest: "#ffffff"
+    forest: "#ffffff",
+    hill: "#e6d6b0"
   },
   desert: {
     grass: "#ffffff",
     road: "#f4dca0",
     water: "#c0dce6",
     town: "#f5e3bc",
-    forest: "#d4c690"
+    forest: "#d4c690",
+    hill: "#ffd996"
   },
   swamp: {
     grass: "#ffffff",
     road: "#c9bd9e",
     water: "#a8c485",
     town: "#bcb094",
-    forest: "#a0b07c"
+    forest: "#a0b07c",
+    hill: "#a8a078"
   },
   tundra: {
     grass: "#ffffff",
     road: "#dce0e4",
     water: "#d6e8ee",
     town: "#e3e7ec",
-    forest: "#cdd8dc"
+    forest: "#cdd8dc",
+    hill: "#d4d8de"
   }
 };
+
+const BIOME_TINT_REALM2: Record<BiomeKind, Record<TerrainKind, string>> = {
+  meadow: { grass: "#ffffff", road: "#d7cab0", water: "#6ea2ba", town: "#e7d9c2", forest: "#c4b79a", hill: "#c8b088" },
+  forest: { grass: "#ffffff", road: "#c9d3e2", water: "#d9e8ff", town: "#dfe7f6", forest: "#dde8f4", hill: "#b6b3c4" },
+  desert: { grass: "#ffffff", road: "#ffcf8c", water: "#f0b97e", town: "#ffdcb2", forest: "#e8bb77", hill: "#f0a86a" },
+  swamp: { grass: "#ffffff", road: "#9ba8b8", water: "#6a86a4", town: "#b1becf", forest: "#8897ab", hill: "#8d8a78" },
+  tundra: { grass: "#ffffff", road: "#b9d5c1", water: "#8eb8a3", town: "#c6decf", forest: "#9ebba9", hill: "#b8c2cc" }
+};
+
+/** Realm-aware biome tint for non-grass terrain kinds. */
+export function biomeTerrainTint(biome: BiomeKind, kind: TerrainKind, realmTier: number = 1): string {
+  const tier = Math.max(1, Math.floor(realmTier));
+  const map = tier >= 2 ? BIOME_TINT_REALM2 : BIOME_TINT;
+  return map[biome][kind];
+}
 
 /** Procedural roof tile texture (red clay / gray slate variants). */
 export function getRoofTexture(variant: "red" | "slate" | "thatch" | "gold"): THREE.CanvasTexture {
@@ -803,14 +867,16 @@ const WALL_TEXTURE_SEED: Record<
   | "train"
   | "guild"
   | "petShop"
-  | "royalHall"
   | "boss"
   | "voidPortal"
+  | "returnPortal"
+  | "dungeon"
   | "library"
   | "forge"
   | "chapel"
   | "stables"
-  | "market",
+  | "market"
+  | "throne",
   number
 > = {
   inn: 11,
@@ -818,14 +884,16 @@ const WALL_TEXTURE_SEED: Record<
   train: 33,
   guild: 44,
   petShop: 66,
-  royalHall: 121,
   boss: 55,
   voidPortal: 56,
+  returnPortal: 57,
+  dungeon: 58,
   library: 77,
   forge: 88,
   chapel: 99,
   stables: 101,
-  market: 112
+  market: 112,
+  throne: 121
 };
 
 export function getWallTexture(
@@ -842,14 +910,16 @@ export function getWallTexture(
     train: { base: "#a18cb5", accent: "#8e7aa0", trim: "#5a4a6d" },
     guild: { base: "#a2b08b", accent: "#869472", trim: "#4e5a3c" },
     petShop: { base: "#8fc4b4", accent: "#6aa898", trim: "#2a5c50" },
-    royalHall: { base: "#dfc69a", accent: "#c8ab74", trim: "#6a4a20" },
     boss: { base: "#3b1d4a", accent: "#612a78", trim: "#1a0a25" },
     voidPortal: { base: "#1a3a52", accent: "#3a7aa8", trim: "#0a2840" },
+    returnPortal: { base: "#1f3a2a", accent: "#4a8a6a", trim: "#0a2418" },
+    dungeon: { base: "#3b3238", accent: "#2a2128", trim: "#14100e" },
     library: { base: "#a8b4c8", accent: "#7a8aa8", trim: "#3a4a62" },
     forge: { base: "#5a5654", accent: "#3a3634", trim: "#2a1810" },
     chapel: { base: "#e4e0d8", accent: "#c8c4b8", trim: "#7a6848" },
     stables: { base: "#9a7048", accent: "#6a4830", trim: "#4a3018" },
-    market: { base: "#d4b078", accent: "#a88850", trim: "#6a4828" }
+    market: { base: "#d4b078", accent: "#a88850", trim: "#6a4828" },
+    throne: { base: "#dfc69a", accent: "#c8ab74", trim: "#6a4a20" }
   }[variant];
   const grad = ctx.createLinearGradient(0, 0, size, size * 0.6);
   grad.addColorStop(0, palette.base);

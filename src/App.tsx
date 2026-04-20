@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent, lazy, Suspense } from "react";
 import Phaser from "phaser";
 import { GameScene } from "./game/GameScene";
-import { isLanGuest, sendGuestMove } from "./coop/lanCoop";
-import { useLanCoopRole } from "./coop/useLanCoopRole";
 import { inputController, type MoveDirection } from "./game/inputController";
+import { UGC_STUDIO_VOID_TITANS_REQUIRED } from "./game/data";
 import { gameStore } from "./game/state";
 import { CAMPAIGN_TAGLINE } from "./game/story";
 import { GAME_VERSION_LABEL } from "./version";
@@ -24,7 +23,21 @@ import {
   useStoryOverlays
 } from "./ui/Journal";
 import { MobileFullscreenButton } from "./ui/MobileFullscreenButton";
+import { AudioMuteButton } from "./ui/AudioMuteButton";
+import { FullInventoryScreen } from "./ui/FullInventoryScreen";
 import { InventoryBar } from "./ui/InventoryBar";
+import { LevelUpCelebration } from "./ui/LevelUpCelebration";
+import { SleepSplash } from "./ui/SleepSplash";
+import { DOWNLOAD_ROUTE } from "./routes";
+import { ShopItemDetailPanel } from "./ui/ShopItemDetailPanel";
+import { DevCheatConsole } from "./ui/DevCheatConsole";
+import { SkillTreeModal } from "./ui/SkillTreeModal";
+import type { ItemKey } from "./game/types";
+
+// Lazy-load the download page so it gets its own small JS chunk (~15 KB instead of
+// being bundled with the 2.8 MB main game). This makes the title screen and
+// main game load much faster; the download page only loads when visited.
+const LazyDownloadPage = lazy(() => import("./ui/DownloadPage"));
 
 /**
  * Feature flag for the 3D prototype overworld.
@@ -85,18 +98,10 @@ function useRoute() {
 function DirButton({ dir, label, className }: { dir: MoveDirection; label: string; className?: string }) {
   const press = (event: PointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
-    if (isLanGuest()) {
-      sendGuestMove(dir, true);
-      return;
-    }
     inputController.setPressed(dir, true);
   };
   const release = (event: PointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
-    if (isLanGuest()) {
-      sendGuestMove(dir, false);
-      return;
-    }
     inputController.setPressed(dir, false);
   };
 
@@ -120,22 +125,47 @@ export default function App() {
   const [titleNotice, setTitleNotice] = useState<{ text: string; error: boolean } | null>(null);
   const [transferPaste, setTransferPaste] = useState("");
   const [journalOpen, setJournalOpen] = useState(false);
+  const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [skillsOpen, setSkillsOpen] = useState(false);
   const [petsOpen, setPetsOpen] = useState(false);
+  const [selectedShopItem, setSelectedShopItem] = useState<ItemKey | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const snapshot = useGameStore();
-  const lanRole = useLanCoopRole();
   const desktopInventory = useDesktopInventoryBar();
   const overlays = useStoryOverlays();
   const { path, navigate } = useRoute();
 
+  if (path === DOWNLOAD_ROUTE) {
+    return (
+      <Suspense
+        fallback={
+          <div className="download-page" style={{ background: "#0c1018", color: "#e4eaf4", display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh" }}>
+            <div style={{ textAlign: "center" }}>
+              <div className="download-spinner" />
+              <div style={{ fontSize: "1.2rem", marginBottom: "16px", fontWeight: 600 }}>LOADING...</div>
+              <div style={{ fontSize: "0.9rem", opacity: 0.7, maxWidth: "260px" }}>
+                The download page is being fetched the first time you visit it.
+                <br />
+                This should be very fast.
+              </div>
+            </div>
+          </div>
+        }
+      >
+        <LazyDownloadPage onBack={() => navigate("/", true)} />
+      </Suspense>
+    );
+  }
+
   // The UGC Studio is rendered when the URL is `/ugc`.
-  // Gating: the player must have created a character *and* defeated the boss.
+  // Gating: character created *and* two Void Titan wins (second realm's boss).
   // If either condition fails, silently redirect back to `/` so a direct visit
   // to /ugc never shows a half-state view.
   const ugcRequested = path === "/ugc";
   const ugcAllowed =
-    snapshot.player.hasCreatedCharacter && snapshot.player.bossDefeated;
+    snapshot.player.hasCreatedCharacter &&
+    snapshot.player.voidTitansDefeated >= UGC_STUDIO_VOID_TITANS_REQUIRED;
   const ugcOpen = ugcRequested && ugcAllowed;
 
   useEffect(() => {
@@ -143,6 +173,12 @@ export default function App() {
       navigate("/", true);
     }
   }, [ugcRequested, ugcAllowed, navigate]);
+
+  useEffect(() => {
+    if (snapshot.battle.inBattle || !snapshot.world.canShop) {
+      setSelectedShopItem(null);
+    }
+  }, [snapshot.battle.inBattle, snapshot.world.canShop]);
 
   // Open the UGC URL directly should bypass the title screen — if the player
   // already has a character, render the play backdrop beneath the studio
@@ -154,6 +190,103 @@ export default function App() {
     document.documentElement.setAttribute("data-app-screen", effectiveScreen);
     return () => document.documentElement.removeAttribute("data-app-screen");
   }, [effectiveScreen]);
+
+  useEffect(() => {
+    if (snapshot.battle.inBattle && inventoryOpen) {
+      setInventoryOpen(false);
+    }
+  }, [snapshot.battle.inBattle, inventoryOpen]);
+
+  useEffect(() => {
+    if (snapshot.battle.inBattle && skillsOpen) {
+      setSkillsOpen(false);
+    }
+  }, [snapshot.battle.inBattle, skillsOpen]);
+
+  // Ctrl/⌘+S → save game. Overrides the browser's "Save Page As…" and the WASD
+  // "S" movement binding. Active on the play screen only.
+  useEffect(() => {
+    if (effectiveScreen !== "play") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.altKey || e.shiftKey) return;
+      if (e.code !== "KeyS" && e.key !== "s" && e.key !== "S") return;
+      const t = e.target;
+      if (t instanceof HTMLElement) {
+        if (t.isContentEditable || t.closest("input, textarea, select")) return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      void gameStore.save().catch(() => {
+        /* save errors are already logged inside gameStore */
+      });
+    };
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () => window.removeEventListener("keydown", onKey, { capture: true } as AddEventListenerOptions);
+  }, [effectiveScreen]);
+
+  useEffect(() => {
+    if (effectiveScreen !== "play" || inventoryOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat || e.altKey || e.ctrlKey || e.metaKey) return;
+      const t = e.target;
+      if (t instanceof HTMLElement) {
+        if (t.isContentEditable || t.closest("input, textarea, select")) return;
+      }
+      if (e.key !== "i" && e.key !== "I") return;
+      const s = gameStore.getSnapshot();
+      if (s.battle.inBattle) return;
+      if (journalOpen || petsOpen || ugcOpen || skillsOpen) return;
+      if (overlays.showPrologue || overlays.showEpilogue || overlays.toastStage) return;
+      e.preventDefault();
+      setInventoryOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    effectiveScreen,
+    inventoryOpen,
+    journalOpen,
+    petsOpen,
+    ugcOpen,
+    overlays.showPrologue,
+    overlays.showEpilogue,
+    overlays.toastStage,
+    skillsOpen
+  ]);
+
+  useEffect(() => {
+    if (effectiveScreen !== "play" || skillsOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat || e.altKey || e.ctrlKey || e.metaKey) return;
+      const t = e.target;
+      if (t instanceof HTMLElement) {
+        if (t.isContentEditable || t.closest("input, textarea, select")) return;
+      }
+      if (e.key !== "t" && e.key !== "T") return;
+      const s = gameStore.getSnapshot();
+      if (s.battle.inBattle) return;
+      if (journalOpen || petsOpen || ugcOpen || inventoryOpen) return;
+      if (overlays.showPrologue || overlays.showEpilogue || overlays.toastStage) return;
+      if (s.pendingLevelUpCelebration) return;
+      e.preventDefault();
+      setSkillsOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    effectiveScreen,
+    skillsOpen,
+    inventoryOpen,
+    journalOpen,
+    petsOpen,
+    ugcOpen,
+    overlays.showPrologue,
+    overlays.showEpilogue,
+    overlays.toastStage,
+    snapshot.pendingLevelUpCelebration
+  ]);
 
   const openUgc = useCallback(() => navigate("/ugc"), [navigate]);
   const closeUgc = useCallback(() => navigate("/"), [navigate]);
@@ -243,6 +376,16 @@ export default function App() {
           <p className="title-screen-tagline">Roam the wilds, brave towns, and cut down what lurks beyond the road.</p>
           <p className="title-screen-campaign-goal" title={CAMPAIGN_TAGLINE}>
             {CAMPAIGN_TAGLINE}
+          </p>
+
+          <p className="title-screen-download-line">
+            <button
+              type="button"
+              className="title-screen-download-link"
+              onClick={() => navigate(DOWNLOAD_ROUTE)}
+            >
+              Windows portable app (.exe)
+            </button>
           </p>
 
           <div className="title-screen-gate" role="group" aria-label="Start or restore a game">
@@ -345,7 +488,18 @@ export default function App() {
     <div className="app">
       {ugcOpen && <UgcStudio onClose={closeUgc} />}
       {journalOpen && <Journal onClose={() => setJournalOpen(false)} />}
+      <FullInventoryScreen
+        open={inventoryOpen}
+        onClose={() => setInventoryOpen(false)}
+        coopGuestLocked={false}
+      />
       {petsOpen && <PetsPanel onClose={() => setPetsOpen(false)} />}
+      {skillsOpen && <SkillTreeModal onClose={() => setSkillsOpen(false)} />}
+      <DevCheatConsole />
+      {effectiveScreen === "play" && snapshot.pendingLevelUpCelebration && (
+        <LevelUpCelebration payload={snapshot.pendingLevelUpCelebration} />
+      )}
+      {effectiveScreen === "play" && snapshot.sleeping && <SleepSplash />}
       {showStoryOverlays && overlays.showPrologue && (
         <StoryIntroModal onDismiss={() => gameStore.dismissPrologue()} />
       )}
@@ -357,9 +511,6 @@ export default function App() {
       )}
       <div className="main-column">
         <div className="game-wrap">
-          <div className="app-mobile-fs-bar">
-            <MobileFullscreenButton />
-          </div>
           <div className="game-viewport">
             {USE_3D_OVERWORLD ? (
               <Overworld3D />
@@ -381,24 +532,35 @@ export default function App() {
           </div>
           <PlayfieldActionOverlays
             onOpenJournal={() => setJournalOpen(true)}
+            onOpenInventory={() => setInventoryOpen(true)}
+            onOpenSkills={() => setSkillsOpen(true)}
             onOpenUgc={openUgc}
             onOpenPets={() => setPetsOpen(true)}
+            selectedShopItem={selectedShopItem}
+            onSelectShopItem={setSelectedShopItem}
           />
           {snapshot.battle.inBattle && <BattleOverlay />}
+          {effectiveScreen === "play" && (
+            <div className="playfield-fullscreen-corner" aria-label="Display options">
+              <AudioMuteButton />
+              <MobileFullscreenButton />
+            </div>
+          )}
         </div>
         {effectiveScreen === "play" && (
           <div className={desktopInventory ? "inventory-bar-desktop" : "inventory-bar-compact"}>
             <InventoryBar
               hotkeysBlocked={
-                lanRole === "guest" ||
                 journalOpen ||
+                inventoryOpen ||
+                skillsOpen ||
                 petsOpen ||
                 ugcOpen ||
                 overlays.showPrologue ||
                 overlays.showEpilogue ||
-                Boolean(overlays.toastStage)
+                Boolean(overlays.toastStage) ||
+                Boolean(snapshot.pendingLevelUpCelebration)
               }
-              coopGuestLocked={lanRole === "guest"}
             />
           </div>
         )}
@@ -419,6 +581,15 @@ export default function App() {
             ))}
           </div>
         )}
+        {!snapshot.battle.inBattle &&
+          snapshot.world.canShop &&
+          selectedShopItem != null && (
+            <ShopItemDetailPanel
+              itemKey={selectedShopItem}
+              gold={snapshot.player.gold}
+              revivalDebtLock={(snapshot.player.revivalDebtMonstersRemaining ?? 0) > 0}
+            />
+          )}
       </div>
     </div>
   );

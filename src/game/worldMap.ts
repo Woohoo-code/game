@@ -1,19 +1,29 @@
+import {
+  ENEMIES,
+  enemyAppearsInRealm,
+  RESOURCES,
+  resourcesForRealm,
+  type ResourceDefinition
+} from "./data";
+import { isDungeonTileBlocked } from "./dungeon";
 import { gameStore } from "./state";
-import type { BiomeKind } from "./types";
+import type { BiomeKind, ResourceNode, RoamingMonster } from "./types";
 import { nightEncounterRateMultiplier } from "./worldClock";
 import {
   BIOME_BY_CODE,
   TERRAIN_FOREST,
   TERRAIN_GRASS,
+  TERRAIN_HILL,
   TERRAIN_ROAD,
   TERRAIN_TOWN,
   TERRAIN_WATER,
   type BuildingKind,
+  type GeneratedTown,
   type GeneratedWorld,
   generateWorld
 } from "./worldGen";
 
-export { type BuildingKind };
+export { type BuildingKind, type GeneratedTown };
 
 /** World tile size in pixels (shared by Phaser 2D + 3D unit scale). */
 export const TILE = 32;
@@ -76,17 +86,20 @@ export interface BuildingPlacement {
 const BUILDING_LABELS: Record<BuildingKind, string> = {
   inn: "INN",
   shop: "SHOP",
-  train: "TRAIN",
+  train: "TRAINING CENTER",
   guild: "GUILD",
   petShop: "PET SHOP",
-  royalHall: "ROYAL HALL",
   boss: "BOSS",
   voidPortal: "RIFT",
+  returnPortal: "RETURN RIFT",
+  dungeon: "DUNGEON",
   library: "LIBRARY",
   forge: "FORGE",
   chapel: "CHAPEL",
   stables: "STABLES",
-  market: "MARKET"
+  market: "MARKET",
+  throne: "ROYAL HALL",
+  restoreSpring: "RESTORE SPRING"
 };
 
 const BUILDING_COLORS: Record<BuildingKind, number> = {
@@ -95,14 +108,17 @@ const BUILDING_COLORS: Record<BuildingKind, number> = {
   train: 0x6b4f8f,
   guild: 0x486d42,
   petShop: 0x2a6b5c,
-  royalHall: 0x8a6c2c,
   boss: 0x3d1054,
   voidPortal: 0x2a6aa8,
+  returnPortal: 0x48a878,
+  dungeon: 0x1c1418,
   library: 0x4a6088,
   forge: 0x6a3830,
   chapel: 0x9a8848,
   stables: 0x7a5020,
-  market: 0xa87830
+  market: 0xa87830,
+  throne: 0xc9a020,
+  restoreSpring: 0x2a8a9e
 };
 
 // ── Mutable live bindings exposed as ES module exports ─────────────────────
@@ -113,6 +129,8 @@ export let MAP_W: number = 60;
 export let MAP_H: number = 40;
 export let BUILDINGS: BuildingPlacement[] = [];
 export let worldSeed: number = 0;
+/** Active realm index (1 = original world, 2+ = portal worlds). */
+export let worldRealmTier: number = 1;
 /** Bumped every time the active world changes — use as a React dep / key. */
 export let worldVersion: number = 0;
 
@@ -121,12 +139,16 @@ let activeWorld: GeneratedWorld | null = null;
 function rebuildBuildingsFromActiveWorld(): void {
   const world = activeWorld;
   if (!world) return;
-  BUILDINGS = world.buildings.map((b) => ({
-    kind: b.kind,
-    label: BUILDING_LABELS[b.kind],
-    color: BUILDING_COLORS[b.kind],
-    pos: { x: b.x, y: b.y }
-  }));
+  BUILDINGS = world.buildings.map((b) => {
+    const townPrefix =
+      b.townId !== undefined && world.towns[b.townId] ? `${world.towns[b.townId]!.name} · ` : "";
+    return {
+      kind: b.kind,
+      label: `${townPrefix}${BUILDING_LABELS[b.kind]}`,
+      color: BUILDING_COLORS[b.kind],
+      pos: { x: b.x, y: b.y }
+    };
+  });
 }
 
 /**
@@ -144,12 +166,13 @@ export function swapBossTileForVoidPortal(): void {
 }
 
 /** Initialise / replace the active world and update all live bindings. */
-export function regenerateWorld(seed?: number): GeneratedWorld {
-  const world = generateWorld(seed);
+export function regenerateWorld(seed?: number, realmTier?: number): GeneratedWorld {
+  const world = generateWorld(seed, { realmTier });
   activeWorld = world;
   MAP_W = world.width;
   MAP_H = world.height;
   worldSeed = world.seed;
+  worldRealmTier = Math.max(1, Math.floor(world.realmTier ?? 1));
   worldVersion += 1;
   rebuildBuildingsFromActiveWorld();
   return world;
@@ -195,7 +218,11 @@ export function isForestTile(x: number, y: number): boolean {
   return terrainCodeAt(x, y) === TERRAIN_FOREST;
 }
 
-export type TerrainKind = "town" | "road" | "water" | "grass" | "forest";
+export function isHillTile(x: number, y: number): boolean {
+  return terrainCodeAt(x, y) === TERRAIN_HILL;
+}
+
+export type TerrainKind = "town" | "road" | "water" | "grass" | "forest" | "hill";
 
 export function terrainAt(x: number, y: number): TerrainKind {
   const t = terrainCodeAt(x, y);
@@ -208,6 +235,8 @@ export function terrainAt(x: number, y: number): TerrainKind {
       return "water";
     case TERRAIN_FOREST:
       return "forest";
+    case TERRAIN_HILL:
+      return "hill";
     case TERRAIN_GRASS:
     default:
       return "grass";
@@ -215,24 +244,74 @@ export function terrainAt(x: number, y: number): TerrainKind {
 }
 
 /**
+ * Movement speed multiplier by terrain. Hills slow you ~45%, forest (when
+ * traversable elsewhere) is 80%, roads/towns give a small paved bonus.
+ */
+export const TERRAIN_SPEED_MULT: Record<TerrainKind, number> = {
+  grass: 1,
+  road: 1.15,
+  town: 1.1,
+  forest: 0.8,
+  hill: 0.55,
+  water: 0
+};
+
+export function terrainSpeedAt(worldX: number, worldY: number): number {
+  const tx = Math.floor(worldX / TILE);
+  const ty = Math.floor(worldY / TILE);
+  return TERRAIN_SPEED_MULT[terrainAt(tx, ty)] ?? 1;
+}
+
+/** Named settlements on the active map (two per world). */
+export function getTowns(): ReadonlyArray<GeneratedTown> {
+  const world = activeWorld;
+  if (!world) return [];
+  return world.towns;
+}
+
+/**
+ * If the tile is town ground, returns the settlement whose center is closest
+ * (used for HUD and banners).
+ */
+export function townAtTile(tx: number, ty: number): GeneratedTown | null {
+  if (terrainAt(tx, ty) !== "town") return null;
+  const world = activeWorld;
+  if (!world || world.towns.length === 0) return null;
+  let best: GeneratedTown = world.towns[0]!;
+  let bestD = (tx - best.x) ** 2 + (ty - best.y) ** 2;
+  for (let i = 1; i < world.towns.length; i++) {
+    const t = world.towns[i]!;
+    const d = (tx - t.x) ** 2 + (ty - t.y) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      best = t;
+    }
+  }
+  return best;
+}
+
+/**
  * Find the nearest town's center tile to the given tile coordinates.
  * Used by the in-game Town Map compass to point the player home.
  * Returns null only if the active world has no towns (shouldn't happen).
  */
-export function nearestTown(tx: number, ty: number): { x: number; y: number; distance: number } | null {
+export function nearestTown(
+  tx: number,
+  ty: number
+): { x: number; y: number; distance: number; name: string; epithet: string } | null {
   const world = activeWorld;
   if (!world || world.towns.length === 0) return null;
-  let best = world.towns[0];
+  let best = world.towns[0]!;
   let bestDist = Math.hypot(best.x - tx, best.y - ty);
   for (let i = 1; i < world.towns.length; i++) {
-    const t = world.towns[i];
+    const t = world.towns[i]!;
     const d = Math.hypot(t.x - tx, t.y - ty);
     if (d < bestDist) {
       best = t;
       bestDist = d;
     }
   }
-  return { x: best.x, y: best.y, distance: bestDist };
+  return { x: best.x, y: best.y, distance: bestDist, name: best.name, epithet: best.epithet };
 }
 
 /** Biome at the given tile (returns "meadow" for out-of-bounds). */
@@ -244,10 +323,63 @@ export function biomeAt(x: number, y: number): BiomeKind {
   return BIOME_BY_CODE[code] ?? "meadow";
 }
 
-/** World-pixel blocking test used by both renderers. Water and forest block movement. */
+const REALM_BIOME_LABELS: Record<number, Partial<Record<BiomeKind, string>>> = {
+  2: {
+    meadow: "Ashfields",
+    forest: "Crystal Groves",
+    desert: "Ember Dunes",
+    swamp: "Void Marsh",
+    tundra: "Storm Peaks"
+  }
+};
+
+/** Display label for a biome, themed by realm tier. */
+export function biomeDisplayName(biome: BiomeKind, realmTier: number = worldRealmTier): string {
+  return REALM_BIOME_LABELS[realmTier]?.[biome] ?? biome;
+}
+
+/**
+ * Cached `tx,ty` lookup for Crownkeep curtain-wall perimeter segments — built
+ * lazily the first time {@link isCastleWallTile} is asked and invalidated on
+ * every {@link regenerateWorld}. Keeps per-frame blocking cheap even though
+ * the wall has ~60+ segments.
+ */
+let castleWallTileSet: Set<string> | null = null;
+let castleWallTileSetVersion = -1;
+
+function castleWallLookup(): Set<string> {
+  if (castleWallTileSet && castleWallTileSetVersion === worldVersion) {
+    return castleWallTileSet;
+  }
+  const set = new Set<string>();
+  const segs = activeWorld?.crownkeepCastleWalls;
+  if (segs) {
+    for (const s of segs) set.add(`${s.tx},${s.ty}`);
+  }
+  castleWallTileSet = set;
+  castleWallTileSetVersion = worldVersion;
+  return set;
+}
+
+/**
+ * True when (tx, ty) sits on a Crownkeep curtain-wall perimeter segment.
+ * The three south gate-gap tiles are intentionally absent from the segment
+ * list (see {@link generateWorld}), so they return false and remain walkable.
+ */
+export function isCastleWallTile(tx: number, ty: number): boolean {
+  return castleWallLookup().has(`${tx},${ty}`);
+}
+
+/** World-pixel blocking test used by both renderers. Water, forest, and
+ * the Crownkeep curtain wall block movement; the south gate gap does not. */
 export function isBlocked(worldX: number, worldY: number): boolean {
   const tx = Math.floor(worldX / TILE);
   const ty = Math.floor(worldY / TILE);
+  const snap = gameStore.getSnapshot();
+  if (snap.world.inDungeon && snap.world.dungeon) {
+    return isDungeonTileBlocked(snap.world.dungeon, tx, ty);
+  }
+  if (isCastleWallTile(tx, ty)) return true;
   const t = terrainCodeAt(tx, ty);
   return t === TERRAIN_WATER || t === TERRAIN_FOREST;
 }
@@ -255,8 +387,15 @@ export function isBlocked(worldX: number, worldY: number): boolean {
 /**
  * Updates town / building zone flags, story biome hooks, and encounter HUD rate
  * for a tile — without rolling a battle. Used after teleport (e.g. knockout revival).
+ *
+ * No-op while the player is inside a dungeon: dungeon coordinates share the
+ * same (tx, ty) namespace as the overworld, so running this would incorrectly
+ * match overworld BUILDINGS at those tiles and flip on `canShop` / `canHeal`
+ * / etc. from inside a crypt. The dungeon action flags (`canDescendStairs`,
+ * etc.) are managed separately by {@link GameStore.dispatchDungeonTile}.
  */
 export function syncZonesAtTile(tx: number, ty: number): void {
+  if (gameStore.getSnapshot().world.inDungeon) return;
   const kind = terrainAt(tx, ty);
   const inTown = kind === "town";
   const biome = biomeAt(tx, ty);
@@ -273,9 +412,30 @@ export function syncZonesAtTile(tx: number, ty: number): void {
   let canStables = false;
   let canMarket = false;
   let canVoidPortal = false;
+  let canRestoreSpring = false;
+  let canReturnPortal = false;
+  let canDungeon = false;
+  let canEnterThroneHall = false;
+  let canThrone = false;
   for (const b of BUILDINGS) {
-    if (b.pos.x === tx && b.pos.y === ty) {
+    const onTile = b.pos.x === tx && b.pos.y === ty;
+    // The Royal Hall is a 1-tile building on an unblocked town tile, so the
+    // player would otherwise walk straight through it and see the "Enter the
+    // Royal Hall" prompt for a single frame. Detect adjacency (Chebyshev ≤ 1)
+    // so the button stays visible for the whole approach. Other shops still
+    // require standing on the tile — they're placed with a ≥2-tile gap around
+    // town so adjacency wouldn't collide, but the narrow fix here targets the
+    // actual reported issue without changing everyone else's button timing.
+    const adjacent = Math.abs(b.pos.x - tx) <= 1 && Math.abs(b.pos.y - ty) <= 1;
+    if (b.kind === "throne" && adjacent) {
+      canEnterThroneHall = true;
+      continue;
+    }
+    if (onTile) {
       switch (b.kind) {
+        case "throne":
+          canEnterThroneHall = true;
+          break;
         case "inn":
           canHeal = true;
           break;
@@ -312,6 +472,15 @@ export function syncZonesAtTile(tx: number, ty: number): void {
         case "voidPortal":
           canVoidPortal = true;
           break;
+        case "restoreSpring":
+          canRestoreSpring = true;
+          break;
+        case "returnPortal":
+          canReturnPortal = true;
+          break;
+        case "dungeon":
+          canDungeon = true;
+          break;
       }
     }
   }
@@ -329,7 +498,12 @@ export function syncZonesAtTile(tx: number, ty: number): void {
     canChapel,
     canStables,
     canMarket,
-    canVoidPortal
+    canVoidPortal,
+    canRestoreSpring,
+    canReturnPortal,
+    canDungeon,
+    canEnterThroneHall,
+    canThrone
   );
 
   gameStore.storyNoteBiomeVisited(biome);
@@ -346,16 +520,192 @@ export function syncZonesAtTile(tx: number, ty: number): void {
   }
 }
 
+function mulberry32(seed: number): () => number {
+  let t = seed >>> 0;
+  return () => {
+    t = (t + 0x6d2b79f5) >>> 0;
+    let r = t;
+    r = Math.imul(r ^ (r >>> 15), r | 1);
+    r ^= r + Math.imul(r ^ (r >>> 7), r | 61);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function buildingOccupiesTile(tx: number, ty: number): boolean {
+  return BUILDINGS.some((b) => b.pos.x === tx && b.pos.y === ty);
+}
+
+/** Crownkeep courtyard + south gate approach — no visible roamers. */
+export function tileInCrownkeepSafeZone(tx: number, ty: number): boolean {
+  const ck = activeWorld?.crownkeep;
+  if (!ck) return false;
+  if (tx >= ck.minX && tx <= ck.maxX && ty >= ck.minY && ty <= ck.maxY) return true;
+  return ck.gateTiles.some((g) => g.tx === tx && g.ty === ty);
+}
+
+function isRoamerSpawnTile(tx: number, ty: number, spawnTx: number, spawnTy: number): boolean {
+  if (tileInCrownkeepSafeZone(tx, ty)) return false;
+  const kind = terrainAt(tx, ty);
+  if (kind === "town" || kind === "water" || kind === "forest") return false;
+  if (buildingOccupiesTile(tx, ty)) return false;
+  if (Math.hypot(tx - spawnTx, ty - spawnTy) < 5) return false;
+  return true;
+}
+
+/**
+ * Place visible overworld monsters (deterministic from world seed + realm tier).
+ * Call after {@link regenerateWorld}; does not touch game state.
+ */
+export function buildRoamingMonsters(): RoamingMonster[] {
+  const world = activeWorld;
+  if (!world) return [];
+  const rng = mulberry32((world.seed ^ 0xc13fad2b) >>> 0);
+  const rt = worldRealmTier;
+  const roamPool = ENEMIES.filter((e) => e.visibleRoamer && enemyAppearsInRealm(e, rt));
+  if (roamPool.length === 0) return [];
+
+  const count = Math.min(48, 9 + Math.floor(rng() * 10));
+  const placed: RoamingMonster[] = [];
+  const occupied = new Set<string>();
+  const minDistSq = 16;
+  const spawnTx = world.spawnX;
+  const spawnTy = world.spawnY;
+
+  let attempts = 0;
+  while (placed.length < count && attempts < 6000) {
+    attempts++;
+    const tx = Math.floor(rng() * world.width);
+    const ty = Math.floor(rng() * world.height);
+    if (!isRoamerSpawnTile(tx, ty, spawnTx, spawnTy)) continue;
+    const key = `${tx},${ty}`;
+    if (occupied.has(key)) continue;
+    let farEnough = true;
+    for (const p of placed) {
+      if ((p.tx - tx) ** 2 + (p.ty - ty) ** 2 < minDistSq) {
+        farEnough = false;
+        break;
+      }
+    }
+    if (!farEnough) continue;
+
+    const biome = biomeAt(tx, ty);
+    const local = roamPool.filter((e) => !e.biomes?.length || e.biomes.includes(biome));
+    const pickFrom = local.length > 0 ? local : roamPool;
+    const def = pickFrom[Math.floor(rng() * pickFrom.length)]!;
+    occupied.add(key);
+    placed.push({ id: `rm-${world.seed}-${placed.length}-${tx}-${ty}`, enemyId: def.id, tx, ty });
+  }
+  return placed;
+}
+
+function isResourceSpawnTile(
+  tx: number,
+  ty: number,
+  spawnTx: number,
+  spawnTy: number,
+  def: ResourceDefinition
+): boolean {
+  if (tileInCrownkeepSafeZone(tx, ty)) return false;
+  const kind = terrainAt(tx, ty);
+  // Flora can live on grass AND in forest clearings (player can't walk in forest, so those
+  // stay purely decorative). Roads / towns / water never spawn pickups.
+  if (kind === "town" || kind === "water" || kind === "road") return false;
+  if (buildingOccupiesTile(tx, ty)) return false;
+  if (Math.hypot(tx - spawnTx, ty - spawnTy) < 3) return false;
+  if (kind === "forest") return false;
+  const biome = biomeAt(tx, ty);
+  if (def.biomes.length > 0 && !def.biomes.includes(biome)) return false;
+  return true;
+}
+
+/**
+ * Place visible gatherable resources (flowers / mushrooms / herbs) across the overworld.
+ * Deterministic from world seed + realm tier. Does not touch game state.
+ * Skips tiles in `occupied` so picks never overlap a visible roamer.
+ */
+export function buildResourceNodes(occupied: Set<string> = new Set()): ResourceNode[] {
+  const world = activeWorld;
+  if (!world) return [];
+  const rt = worldRealmTier;
+  const pool = resourcesForRealm(rt);
+  if (pool.length === 0) return [];
+  const rng = mulberry32((world.seed ^ 0x71a8f13d) >>> 0);
+
+  const count = Math.min(80, 28 + Math.floor(rng() * 24));
+  const placed: ResourceNode[] = [];
+  const used = new Set<string>(occupied);
+  const minDistSq = 4;
+  const spawnTx = world.spawnX;
+  const spawnTy = world.spawnY;
+
+  let attempts = 0;
+  while (placed.length < count && attempts < 9000) {
+    attempts++;
+    const tx = Math.floor(rng() * world.width);
+    const ty = Math.floor(rng() * world.height);
+    const key = `${tx},${ty}`;
+    if (used.has(key)) continue;
+
+    const biome = biomeAt(tx, ty);
+    const local = pool.filter((r) => r.biomes.length === 0 || r.biomes.includes(biome));
+    const pickFrom = local.length > 0 ? local : pool;
+    // Weighted pick.
+    let totalW = 0;
+    for (const r of pickFrom) totalW += r.spawnWeight ?? 1;
+    let roll = rng() * totalW;
+    let def: ResourceDefinition = pickFrom[0]!;
+    for (const r of pickFrom) {
+      roll -= r.spawnWeight ?? 1;
+      if (roll <= 0) {
+        def = r;
+        break;
+      }
+    }
+
+    if (!isResourceSpawnTile(tx, ty, spawnTx, spawnTy, def)) continue;
+
+    let farEnough = true;
+    for (const p of placed) {
+      if ((p.tx - tx) ** 2 + (p.ty - ty) ** 2 < minDistSq) {
+        farEnough = false;
+        break;
+      }
+    }
+    if (!farEnough) continue;
+
+    used.add(key);
+    placed.push({
+      id: `res-${world.seed}-${placed.length}-${tx}-${ty}`,
+      resourceKey: def.key,
+      tx,
+      ty
+    });
+  }
+  // Guard against stale RESOURCES entries removed between saves.
+  return placed.filter((n) => RESOURCES[n.resourceKey] !== undefined);
+}
+
 /**
  * Dispatch zone / encounter logic for the tile the player just moved onto.
  * Returns true if a random encounter was triggered so the caller can skip further movement.
  */
 export function dispatchZonesAndEncounter(tx: number, ty: number): boolean {
+  // Inside a dungeon, fully short-circuit the overworld pipeline and run the
+  // dungeon-specific event dispatcher.
+  const snap = gameStore.getSnapshot();
+  if (snap.world.inDungeon) {
+    return gameStore.dispatchDungeonTile(tx, ty);
+  }
   syncZonesAtTile(tx, ty);
+  // Gather pickups first — harmless, doesn't block an encounter roll after.
+  gameStore.tryGatherResourceAtTile(tx, ty);
   const kind = terrainAt(tx, ty);
   const inTown = kind === "town";
   if (inTown || kind === "water" || kind === "forest") {
     return false;
+  }
+  if (gameStore.tryRoamerEncounterAtTile(tx, ty)) {
+    return true;
   }
   const biome = biomeAt(tx, ty);
   const rates = BIOME_ENCOUNTER_RATES[biome] ?? BIOME_ENCOUNTER_RATES.meadow;

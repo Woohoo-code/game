@@ -1,4 +1,14 @@
 import Phaser from "phaser";
+import { overworldHorseWalkSpeedMultiplier, RESOURCES } from "./data";
+import { currentDungeonFloor } from "./dungeon";
+import {
+  DUNGEON_TILE_EXIT,
+  DUNGEON_TILE_FLOOR,
+  DUNGEON_TILE_PILLAR,
+  DUNGEON_TILE_STAIRS_DOWN,
+  DUNGEON_TILE_STAIRS_UP,
+  DUNGEON_TILE_WALL
+} from "./types";
 import { inputController } from "./inputController";
 import { gameStore } from "./state";
 import {
@@ -22,6 +32,13 @@ export class GameScene extends Phaser.Scene {
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys!: { [key: string]: Phaser.Input.Keyboard.Key };
   private lastTile = { x: -1, y: -1 };
+  private roamerGfx: Phaser.GameObjects.Graphics | null = null;
+  private resourceGfx: Phaser.GameObjects.Graphics | null = null;
+  private dungeonGfx: Phaser.GameObjects.Graphics | null = null;
+  private dungeonChestGfx: Phaser.GameObjects.Graphics | null = null;
+  private dungeonRoamerGfx: Phaser.GameObjects.Graphics | null = null;
+  private lastInDungeon = false;
+  private unsubscribeStore: (() => void) | null = null;
 
   constructor() {
     super("GameScene");
@@ -31,24 +48,62 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor("#22303a");
     this.createSpriteTextures();
     this.makeBossArenaTexture();
-    this.drawMap();
-    const { x, y } = gameStore.getSnapshot().player;
+    const snap = gameStore.getSnapshot();
+    this.lastInDungeon = snap.world.inDungeon;
+    if (snap.world.inDungeon && snap.world.dungeon) {
+      this.cameras.main.setBackgroundColor("#06040a");
+      this.drawDungeonMap();
+    } else {
+      this.drawMap();
+    }
+    const { x, y } = snap.player;
     this.player = this.add.sprite(x, y, "playerSprite");
     this.player.setScale(2);
+    this.player.setDepth(25);
     this.cameras.main.setBounds(0, 0, MAP_W * TILE, MAP_H * TILE);
     this.cameras.main.setZoom(CAMERA_ZOOM);
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
     this.cameras.main.roundPixels = true;
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.keys = this.input.keyboard!.addKeys("W,A,S,D") as Record<string, Phaser.Input.Keyboard.Key>;
+    this.resourceGfx = this.add.graphics();
+    this.resourceGfx.setDepth(17);
+    this.roamerGfx = this.add.graphics();
+    this.roamerGfx.setDepth(18);
+    this.dungeonChestGfx = this.add.graphics();
+    this.dungeonChestGfx.setDepth(19);
+    this.dungeonRoamerGfx = this.add.graphics();
+    this.dungeonRoamerGfx.setDepth(20);
+
+    // Restart the scene whenever we enter/leave the dungeon so the static
+    // map + sprites are rebuilt. Cheap since the scene is small.
+    this.unsubscribeStore = gameStore.subscribe(() => {
+      const inDungeon = gameStore.getSnapshot().world.inDungeon;
+      if (inDungeon !== this.lastInDungeon) {
+        this.lastInDungeon = inDungeon;
+        this.scene.restart();
+      }
+    });
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.unsubscribeStore?.();
+      this.unsubscribeStore = null;
+    });
   }
 
   update(_: number, delta: number): void {
     this.syncFromStore();
+    if (this.lastInDungeon) {
+      this.drawDungeonChests();
+      this.drawDungeonRoamers();
+    } else {
+      this.drawResourceNodes();
+      this.drawRoamers();
+    }
     if (gameStore.getSnapshot().battle.inBattle) {
       return;
     }
-    const speed = 140 * (delta / 1000);
+    const walkMult = overworldHorseWalkSpeedMultiplier(gameStore.getSnapshot().player.horsesOwned);
+    const speed = 140 * walkMult * (delta / 1000);
     let vx = 0;
     let vy = 0;
     if (this.isLeft()) vx -= speed;
@@ -82,21 +137,25 @@ export class GameScene extends Phaser.Scene {
       train: { sprite: "shopSprite", tint: 0x8a6bbd },
       guild: { sprite: "innSprite", tint: 0x6b8861 },
       petShop: { sprite: "shopSprite", tint: 0x4a9e86 },
-      royalHall: { sprite: "royalHallSprite" },
       boss: { sprite: "bossArenaSprite" },
       voidPortal: { sprite: "bossArenaSprite", tint: 0x44ddff },
+      returnPortal: { sprite: "bossArenaSprite", tint: 0x6ed8a0 },
+      dungeon: { sprite: "bossArenaSprite", tint: 0x6a1c1c },
       library: { sprite: "shopSprite", tint: 0x5a7090 },
       forge: { sprite: "shopSprite", tint: 0x704040 },
       chapel: { sprite: "innSprite", tint: 0xc8c0b0 },
       stables: { sprite: "innSprite", tint: 0x8b5a32 },
-      market: { sprite: "shopSprite", tint: 0xc49a48 }
+      market: { sprite: "shopSprite", tint: 0xc49a48 },
+      throne: { sprite: "royalHallSprite" },
+      restoreSpring: { sprite: "springSprite" }
     };
 
     for (const b of BUILDINGS) {
       const info = SPRITE_BY_KIND[b.kind];
+      const scale = b.kind === "restoreSpring" ? 2.4 : 2;
       const s = this.add
         .sprite(b.pos.x * TILE + TILE / 2, b.pos.y * TILE + TILE / 2, info.sprite)
-        .setScale(2);
+        .setScale(scale);
       if (info.tint !== undefined) s.setTint(info.tint);
       this.addBuildingMarquee(b.pos.x, b.pos.y, b.label, b.color);
     }
@@ -203,9 +262,126 @@ export class GameScene extends Phaser.Scene {
     this.makeInnTexture();
     this.makeShopTexture();
     this.makeRoyalHallTexture();
+    this.makeSpringTexture();
     this.makeTreeTexture();
     this.makeRockTexture();
     this.makeFlowerTexture();
+  }
+
+  /** Draw the static dungeon map (walls, floor, pillars, exit, sign). */
+  private drawDungeonMap(): void {
+    const dungeon = gameStore.getSnapshot().world.dungeon;
+    if (!dungeon) return;
+    const floor = currentDungeonFloor(dungeon);
+    if (!floor) return;
+    const g = this.add.graphics();
+    for (let y = 0; y < floor.height; y++) {
+      for (let x = 0; x < floor.width; x++) {
+        const px = x * TILE;
+        const py = y * TILE;
+        const code = floor.tiles[y * floor.width + x] ?? DUNGEON_TILE_WALL;
+        if (code === DUNGEON_TILE_WALL) {
+          g.fillStyle(0x120d12, 1);
+          g.fillRect(px, py, TILE, TILE);
+          g.fillStyle(0x1f181d, 1);
+          g.fillRect(px + 2, py + 2, TILE - 4, TILE - 4);
+          g.lineStyle(1, 0x2a1f24, 1);
+          g.strokeRect(px + 4, py + 4, TILE - 8, TILE - 8);
+        } else if (code === DUNGEON_TILE_FLOOR) {
+          g.fillStyle(0x2a2228, 1);
+          g.fillRect(px, py, TILE - 1, TILE - 1);
+          g.fillStyle(0x362a31, 1);
+          g.fillRect(px + 4, py + 4, 6, 6);
+          g.fillRect(px + 18, py + 18, 6, 6);
+        } else if (code === DUNGEON_TILE_PILLAR) {
+          g.fillStyle(0x2a2228, 1);
+          g.fillRect(px, py, TILE - 1, TILE - 1);
+          g.fillStyle(0x1a1418, 1);
+          g.fillCircle(px + TILE / 2, py + TILE / 2, 10);
+          g.fillStyle(0x2a1f24, 1);
+          g.fillCircle(px + TILE / 2, py + TILE / 2, 7);
+        } else if (code === DUNGEON_TILE_STAIRS_DOWN) {
+          g.fillStyle(0x2a2838, 1);
+          g.fillRect(px + 2, py + 2, TILE - 4, TILE - 4);
+          g.fillStyle(0x6a5090, 1);
+          g.fillTriangle(px + 6, py + TILE - 8, px + TILE / 2, py + 8, px + TILE - 6, py + TILE - 8);
+        } else if (code === DUNGEON_TILE_STAIRS_UP) {
+          g.fillStyle(0x283828, 1);
+          g.fillRect(px + 2, py + 2, TILE - 4, TILE - 4);
+          g.fillStyle(0x508868, 1);
+          g.fillTriangle(px + 6, py + 8, px + TILE / 2, py + TILE - 8, px + TILE - 6, py + 8);
+        } else if (code === DUNGEON_TILE_EXIT) {
+          g.fillStyle(0x5a4028, 1);
+          g.fillRect(px + 2, py + 2, TILE - 4, TILE - 4);
+          g.fillStyle(0xb08850, 1);
+          g.fillRect(px + 8, py + 8, TILE - 16, TILE - 16);
+          g.fillStyle(0xffb266, 1);
+          g.fillCircle(px + TILE / 2, py + TILE / 2, 3);
+          const label = this.add.text(px + TILE / 2, py - 6, "EXIT", {
+            fontFamily: "Arial",
+            fontSize: "8px",
+            color: "#ffe8c8",
+            fontStyle: "bold"
+          });
+          label.setOrigin(0.5, 0.5);
+          label.setBackgroundColor("#5a2a1a");
+          label.setPadding(3, 1, 3, 1);
+          label.setStroke("#120808", 2);
+          label.setDepth(22);
+        }
+      }
+    }
+    this.dungeonGfx = g;
+  }
+
+  /** Every frame: redraw treasure chests (closed = bright; opened = faded). */
+  private drawDungeonChests(): void {
+    const g = this.dungeonChestGfx;
+    if (!g) return;
+    g.clear();
+    const dungeon = gameStore.getSnapshot().world.dungeon;
+    if (!dungeon) return;
+    const floor = currentDungeonFloor(dungeon);
+    if (!floor) return;
+    for (const c of floor.chests) {
+      const cx = c.tx * TILE + TILE / 2;
+      const cy = c.ty * TILE + TILE / 2;
+      if (c.opened) {
+        g.fillStyle(0x3a2618, 1);
+        g.fillRect(cx - 10, cy - 6, 20, 12);
+        g.fillStyle(0x1e1410, 1);
+        g.fillRect(cx - 10, cy - 10, 20, 4);
+      } else {
+        g.fillStyle(0x6a4028, 1);
+        g.fillRect(cx - 10, cy - 6, 20, 12);
+        g.fillStyle(0x8a5838, 1);
+        g.fillRect(cx - 10, cy - 10, 20, 4);
+        g.fillStyle(0xd8b048, 1);
+        g.fillRect(cx - 2, cy - 3, 4, 6);
+      }
+    }
+  }
+
+  /** Every frame: redraw visible dungeon monsters so kills disappear instantly. */
+  private drawDungeonRoamers(): void {
+    const g = this.dungeonRoamerGfx;
+    if (!g) return;
+    g.clear();
+    const dungeon = gameStore.getSnapshot().world.dungeon;
+    if (!dungeon) return;
+    const floor = currentDungeonFloor(dungeon);
+    if (!floor) return;
+    for (const r of floor.roamers) {
+      const cx = r.tx * TILE + TILE / 2;
+      const cy = r.ty * TILE + TILE / 2;
+      g.fillStyle(0xbfc0a0, 1);
+      g.fillCircle(cx, cy, 7);
+      g.fillStyle(0x1a1a1a, 1);
+      g.fillCircle(cx - 2, cy - 1, 1);
+      g.fillCircle(cx + 2, cy - 1, 1);
+      g.fillStyle(0x6a0c0c, 1);
+      g.fillRect(cx - 3, cy + 2, 6, 1);
+    }
   }
 
   private makeBossArenaTexture(): void {
@@ -224,33 +400,6 @@ export class GameScene extends Phaser.Scene {
     g.fillStyle(0x6f1515, 1);
     g.fillRect(6, 0, 4, 3);
     g.generateTexture("bossArenaSprite", 16, 16);
-    g.destroy();
-  }
-
-  private makeRoyalHallTexture(): void {
-    if (this.textures.exists("royalHallSprite")) return;
-    const g = this.make.graphics({ x: 0, y: 0 }, false);
-    g.fillStyle(0x5b4420, 1);
-    g.fillRect(0, 0, 24, 5);
-    g.fillStyle(0xdcc08a, 1);
-    g.fillRect(1, 5, 22, 18);
-    g.fillStyle(0xb9975d, 1);
-    g.fillRect(3, 8, 18, 12);
-    g.fillStyle(0x5a3a1a, 1);
-    g.fillRect(10, 13, 4, 10);
-    g.fillStyle(0x9a1f1f, 1);
-    g.fillRect(4, 2, 2, 6);
-    g.fillRect(18, 2, 2, 6);
-    g.fillStyle(0xf1dc8f, 1);
-    g.fillRect(11, 3, 2, 2);
-    g.fillRect(6, 10, 3, 3);
-    g.fillRect(15, 10, 3, 3);
-    g.fillStyle(0x2d3d5d, 1);
-    g.fillRect(7, 11, 1, 1);
-    g.fillRect(16, 11, 1, 1);
-    g.fillStyle(0xead3a2, 1);
-    g.fillRect(10, 6, 4, 2);
-    g.generateTexture("royalHallSprite", 24, 24);
     g.destroy();
   }
 
@@ -324,6 +473,52 @@ export class GameScene extends Phaser.Scene {
     g.destroy();
   }
 
+  private makeRoyalHallTexture(): void {
+    if (this.textures.exists("royalHallSprite")) return;
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    g.fillStyle(0x5b4420, 1);
+    g.fillRect(0, 0, 24, 5);
+    g.fillStyle(0xdcc08a, 1);
+    g.fillRect(1, 5, 22, 18);
+    g.fillStyle(0xb9975d, 1);
+    g.fillRect(3, 8, 18, 12);
+    g.fillStyle(0x5a3a1a, 1);
+    g.fillRect(10, 13, 4, 10);
+    g.fillStyle(0x9a1f1f, 1);
+    g.fillRect(4, 2, 2, 6);
+    g.fillRect(18, 2, 2, 6);
+    g.fillStyle(0xf1dc8f, 1);
+    g.fillRect(11, 3, 2, 2);
+    g.fillRect(6, 10, 3, 3);
+    g.fillRect(15, 10, 3, 3);
+    g.fillStyle(0x2d3d5d, 1);
+    g.fillRect(7, 11, 1, 1);
+    g.fillRect(16, 11, 1, 1);
+    g.fillStyle(0xead3a2, 1);
+    g.fillRect(10, 6, 4, 2);
+    g.generateTexture("royalHallSprite", 24, 24);
+    g.destroy();
+  }
+
+  private makeSpringTexture(): void {
+    if (this.textures.exists("springSprite")) return;
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    g.fillStyle(0x4a7068, 1);
+    g.fillEllipse(8, 10, 12, 5);
+    g.fillStyle(0x3a9ea8, 1);
+    g.fillEllipse(8, 9, 9, 4);
+    g.fillStyle(0x7af0e8, 0.85);
+    g.fillEllipse(8, 8, 6, 3);
+    g.fillStyle(0xc8ffff, 1);
+    g.fillCircle(6, 7, 1);
+    g.fillCircle(10, 8, 1);
+    g.fillStyle(0x5a5850, 1);
+    g.fillRect(2, 6, 2, 2);
+    g.fillRect(12, 7, 2, 2);
+    g.generateTexture("springSprite", 16, 16);
+    g.destroy();
+  }
+
   private makeTreeTexture(): void {
     if (this.textures.exists("treeSprite")) return;
     const g = this.make.graphics({ x: 0, y: 0 }, false);
@@ -365,6 +560,72 @@ export class GameScene extends Phaser.Scene {
     g.fillRect(7, 4, 2, 2);
     g.generateTexture("flowerSprite", 16, 16);
     g.destroy();
+  }
+
+  private drawResourceNodes(): void {
+    const g = this.resourceGfx;
+    if (!g) return;
+    g.clear();
+    if (gameStore.getSnapshot().battle.inBattle) return;
+    for (const n of gameStore.getSnapshot().world.resourceNodes ?? []) {
+      const def = RESOURCES[n.resourceKey];
+      if (!def) continue;
+      const cx = n.tx * TILE + TILE / 2;
+      const cy = n.ty * TILE + TILE / 2;
+      const primary = Phaser.Display.Color.HexStringToColor(def.colorPrimary).color;
+      const accent = Phaser.Display.Color.HexStringToColor(def.colorAccent).color;
+      if (def.shape === "mushroom") {
+        g.fillStyle(0xf4ead5);
+        g.fillRect(cx - 2, cy - 1, 4, 5);
+        g.fillStyle(primary, 1);
+        g.fillCircle(cx, cy - 2, 5);
+        g.fillStyle(accent, 0.85);
+        g.fillCircle(cx - 2, cy - 3, 1);
+        g.fillCircle(cx + 2, cy - 2, 1);
+      } else if (def.shape === "herb") {
+        g.fillStyle(accent, 1);
+        g.fillRect(cx - 3, cy + 2, 6, 2);
+        g.fillStyle(primary, 1);
+        for (let i = 0; i < 4; i++) {
+          const ang = (i / 4) * Math.PI - Math.PI / 2;
+          g.fillTriangle(
+            cx + Math.cos(ang) * 4,
+            cy - 4 + Math.sin(ang) * 2,
+            cx + Math.cos(ang) * 2 - 1,
+            cy + 1,
+            cx + Math.cos(ang) * 2 + 1,
+            cy + 1
+          );
+        }
+      } else {
+        // flower / crystalBloom — small blossom glyph
+        g.fillStyle(0x3b8a44, 1);
+        g.fillRect(cx - 1, cy - 1, 2, 5);
+        g.fillStyle(primary, 1);
+        const petals = 5;
+        for (let i = 0; i < petals; i++) {
+          const ang = (i / petals) * Math.PI * 2;
+          g.fillCircle(cx + Math.cos(ang) * 3.2, cy - 2 + Math.sin(ang) * 3.2, 2);
+        }
+        g.fillStyle(accent, 1);
+        g.fillCircle(cx, cy - 2, 1.6);
+      }
+    }
+  }
+
+  private drawRoamers(): void {
+    const g = this.roamerGfx;
+    if (!g) return;
+    g.clear();
+    if (gameStore.getSnapshot().battle.inBattle) return;
+    for (const r of gameStore.getSnapshot().world.roamingMonsters ?? []) {
+      const cx = r.tx * TILE + TILE / 2;
+      const cy = r.ty * TILE + TILE / 2;
+      g.fillStyle(0xd94a3d, 0.92);
+      g.fillCircle(cx, cy, 12);
+      g.lineStyle(2, 0x1a0a0a, 0.88);
+      g.strokeCircle(cx, cy, 12);
+    }
   }
 
   private checkZonesAndEncounter(): void {

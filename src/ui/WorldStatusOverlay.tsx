@@ -1,11 +1,17 @@
 import type { ReactNode } from "react";
-import { ARMOR_STATS, WEAPON_STATS, petAttackBuffForParty } from "../game/data";
+import {
+  ARMOR_STATS,
+  WEAPON_STATS,
+  overworldHorseWalkSpeedMultiplier,
+  petAttackBuffForParty,
+  stableHorseSpeedBonus
+} from "../game/data";
 import { useGameStore } from "../game/useGameStore";
-import type { WeaponKey } from "../game/types";
+import { FIGHTING_CLASS_LABELS, normalizeFightingClass, type WeaponKey } from "../game/types";
 import { CAMPAIGN_PREMISE, hudCampaignGoal } from "../game/story";
-import { encounterDangerDisplayPercent } from "../game/worldMap";
+import { TILE, encounterDangerDisplayPercent, townAtTile } from "../game/worldMap";
 import { GAME_VERSION_LABEL } from "../version";
-import { isNightWilds, timeOfDayLabel } from "../game/worldClock";
+import { isNightWilds, nightEncounterRateMultiplier, timeOfDayClock24, timeOfDayLabel } from "../game/worldClock";
 import { IconGold } from "./IconGold";
 
 /** HUD sword icon tints — wood earth tones, iron silver, steel blue-steel, mythril arcane teal. */
@@ -130,6 +136,9 @@ export function WorldStatusOverlay() {
   const weaponBonus = WEAPON_STATS[snapshot.player.weapon].attackBonus;
   const armorBonus = ARMOR_STATS[snapshot.player.armor].defenseBonus;
   const petAtk = petAttackBuffForParty(snapshot.player.activePetId, snapshot.player.pets);
+  const horseCount = stableHorseSpeedBonus(snapshot.player.horsesOwned ?? []);
+  const walkMult = overworldHorseWalkSpeedMultiplier(snapshot.player.horsesOwned ?? []);
+  const battleSpeed = snapshot.player.speed;
   const attackPower = snapshot.player.attack + weaponBonus + petAtk;
   const defensePower = snapshot.player.defense + armorBonus;
   const xpPercent = Math.max(0, Math.min(100, Math.round((snapshot.player.xp / snapshot.player.xpToNext) * 100)));
@@ -137,7 +146,9 @@ export function WorldStatusOverlay() {
   const dangerPercent = encounterDangerDisplayPercent(snapshot.world.encounterRate);
   const wt = snapshot.world.worldTime ?? 0;
   const tod = timeOfDayLabel(wt);
+  const clock24 = timeOfDayClock24(wt);
   const nightWilds = isNightWilds(wt);
+  const nightEncounterMult = nightEncounterRateMultiplier(wt);
   const dangerLabel =
     dangerPercent === 0
       ? "Safe"
@@ -179,14 +190,20 @@ export function WorldStatusOverlay() {
     `Equipped: ${a.name}`
   ].join("\n");
 
-  const spdTitle = [`Speed: ${snapshot.player.speed}`, "Determines turn order in battle."].join("\n");
+  const spdTitle = [
+    `Battle speed: ${battleSpeed} (turn order)`,
+    horseCount > 0
+      ? `Mounts: +${Math.round((walkMult - 1) * 100)}% overworld walk speed (${horseCount} stabled, max five)`
+      : `Buy mounts at stables for faster overworld walking — battle speed stays on your base stat.`,
+    "Battle speed does not include mounts."
+  ].join("\n");
 
   const cdTitle = [
     "Skill cooldown (in battle)",
     "After you cast any skill, every skill shares the same lockout. It ticks down by one after each enemy turn; stronger skills apply a longer lockout when cast."
   ].join("\n");
 
-  const goldTitle = [`Gold: ${snapshot.player.gold}`, "Earned from battles and quests. Spend in shops."].join("\n");
+  const goldTitle = [`Gold: ${snapshot.player.gold}`, "Earned from battles and quests. Spend at the general merchant, forge, and other town services."].join("\n");
 
   const goal = hudCampaignGoal(
     snapshot.story.stage,
@@ -195,6 +212,10 @@ export function WorldStatusOverlay() {
     snapshot.player.bossDefeated
   );
   const goalTooltip = [goal.tagline, goal.chapterTitle, goal.objective, goal.progress].filter(Boolean).join("\n");
+
+  const tileX = Math.floor(snapshot.player.x / TILE);
+  const tileY = Math.floor(snapshot.player.y / TILE);
+  const visitingTown = snapshot.world.inTown ? townAtTile(tileX, tileY) : null;
 
   return (
     <div className="world-status-overlay" aria-label="Status">
@@ -211,13 +232,48 @@ export function WorldStatusOverlay() {
           }
         >
           <span className="world-time-label">{tod}</span>
-          {nightWilds ? <span className="world-time-night"> · Wilds surge</span> : null}
+          <span className="world-time-clock" aria-label={`In-game time ${clock24}`}>
+            {clock24}
+          </span>
+          {nightWilds ? <span className="world-time-night"> · Night danger</span> : null}
         </p>
-        <div className="danger-meter">
+        <div className="world-status-hero">
+          <div className="world-status-hero-name" title={snapshot.player.name}>
+            {snapshot.player.name}
+          </div>
+          <div className="world-status-hero-meta">
+            <span className="world-status-hero-level">Lv {snapshot.player.level}</span>
+            <span className="world-status-hero-class" title="Fighting class and unspent skill points">
+              {FIGHTING_CLASS_LABELS[normalizeFightingClass(snapshot.player.fightingClass)]} ·{" "}
+              {snapshot.player.skillPoints ?? 0} skill pt
+            </span>
+          </div>
+        </div>
+        {visitingTown ? (
+          <div className="world-town-visit" role="status">
+            <div className="world-town-visit-name">{visitingTown.name}</div>
+            <div className="world-town-visit-epithet">{visitingTown.epithet}</div>
+          </div>
+        ) : null}
+        <div
+          className={`danger-meter${nightWilds && dangerPercent > 0 ? " danger-meter--night" : ""}`}
+          title={
+            dangerPercent === 0
+              ? "No random encounters on this terrain."
+              : nightWilds && dangerPercent > 0
+                ? `Wild encounter chance ×${nightEncounterMult.toFixed(2)} at night (vs day on the same terrain).`
+                : "Per-step chance of a wild battle while moving on open terrain."
+          }
+        >
           <div className="danger-meter-head">
             <strong>Danger: {dangerLabel}</strong>
             <span>{dangerPercent}%</span>
           </div>
+          {nightWilds && dangerPercent > 0 ? (
+            <p className="danger-meter-night-hint" role="status">
+              Night — encounters ×{nightEncounterMult.toFixed(1)}
+            </p>
+          ) : null}
           <div className="danger-meter-track">
             <div className="danger-meter-fill" style={{ width: `${dangerPercent}%` }} />
           </div>
@@ -244,10 +300,6 @@ export function WorldStatusOverlay() {
           ) : null}
         </div>
 
-        <p className="world-status-summary">
-          <strong>{snapshot.player.name}</strong> — Lv {snapshot.player.level} · {snapshot.player.hp}/
-          {snapshot.player.maxHp} HP
-        </p>
         <div className="world-gold-row" role="status" title={goldTitle}>
           <IconGold size={24} className="world-gold-icon" />
           <span className="world-gold-value">{snapshot.player.gold}</span>
@@ -275,41 +327,45 @@ export function WorldStatusOverlay() {
           </div>
         </div>
 
-        <div className="world-hud-section-label">Equipment</div>
-        <div className="world-hud-icon-row" role="group" aria-label="Equipment">
-          <HudIconButton
-            className="hud-equip-weapon"
-            ariaLabel={`Equipped weapon: ${w.name}`}
-            title={weaponTitle}
-          >
-            <IconSword weapon={snapshot.player.weapon} />
-          </HudIconButton>
-          <HudIconButton className="hud-equip-armor" ariaLabel={`Equipped armor: ${a.name}`} title={armorTitle}>
-            <IconShield />
-          </HudIconButton>
-        </div>
-        <p className="world-hud-consumable-hint">
-          Consumables: use the hotbar (keys 1–9, 0) and the backpack button below the playfield.
-        </p>
+        <div className="world-hud-gear-stats">
+          <div className="world-hud-gear-col">
+            <div className="world-hud-section-label">Equipment</div>
+            <div className="world-hud-icon-row" role="group" aria-label="Equipment">
+              <HudIconButton
+                className="hud-equip-weapon"
+                ariaLabel={`Equipped weapon: ${w.name}`}
+                title={weaponTitle}
+              >
+                <IconSword weapon={snapshot.player.weapon} />
+              </HudIconButton>
+              <HudIconButton className="hud-equip-armor" ariaLabel={`Equipped armor: ${a.name}`} title={armorTitle}>
+                <IconShield />
+              </HudIconButton>
+            </div>
+            
+          </div>
 
-        <div className="world-hud-section-label">Stats</div>
-        <div className="world-hud-icon-row" role="group" aria-label="Combat stats">
-          <HudIconButton className="hud-stat-atk" ariaLabel={`Attack power ${attackPower}`} title={atkTitle}>
-            <IconPower />
-          </HudIconButton>
-          <HudIconButton className="hud-stat-def" ariaLabel={`Defense ${defensePower}`} title={defTitle}>
-            <IconShield />
-          </HudIconButton>
-          <HudIconButton className="hud-stat-spd" ariaLabel={`Speed ${snapshot.player.speed}`} title={spdTitle}>
-            <IconBolt />
-          </HudIconButton>
-          <HudIconButton
-            className="hud-stat-cd"
-            ariaLabel="Skill cooldown (shared across all skills, in battle)"
-            title={cdTitle}
-          >
-            <IconTimer />
-          </HudIconButton>
+          <div className="world-hud-gear-col">
+            <div className="world-hud-section-label">Stats</div>
+            <div className="world-hud-icon-row" role="group" aria-label="Combat stats">
+              <HudIconButton className="hud-stat-atk" ariaLabel={`Attack power ${attackPower}`} title={atkTitle}>
+                <IconPower />
+              </HudIconButton>
+              <HudIconButton className="hud-stat-def" ariaLabel={`Defense ${defensePower}`} title={defTitle}>
+                <IconShield />
+              </HudIconButton>
+              <HudIconButton className="hud-stat-spd" ariaLabel={`Battle speed ${battleSpeed}`} title={spdTitle}>
+                <IconBolt />
+              </HudIconButton>
+              <HudIconButton
+                className="hud-stat-cd"
+                ariaLabel="Skill cooldown (shared across all skills, in battle)"
+                title={cdTitle}
+              >
+                <IconTimer />
+              </HudIconButton>
+            </div>
+          </div>
         </div>
       </div>
     </div>
