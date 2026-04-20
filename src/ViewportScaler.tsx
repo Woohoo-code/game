@@ -34,7 +34,8 @@ export function ViewportScaler({ children }: { children: ReactNode }) {
       const raw = Math.min(1, (vw - pad) / rect.width, (vh - pad) / rect.height);
       const narrow = vw <= 520;
       const minScale = narrow ? 0.54 : 0.38;
-      const scale = Math.max(minScale, raw);
+      const fitScale = Math.max(minScale, raw);
+      const scale = fitScale;
       inner.style.transformOrigin = "top center";
       inner.style.transform = `scale(${scale})`;
       outer.style.minHeight = `${rect.height * scale}px`;

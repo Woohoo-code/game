@@ -62,6 +62,7 @@ type Props = {
   onOpenSkills: () => void;
   onOpenUgc: () => void;
   onOpenPets: () => void;
+  onOpenSettings: () => void;
   /** Shop consumable grid: selected item for the detail panel (not an immediate purchase). */
   selectedShopItem: ItemKey | null;
   onSelectShopItem: Dispatch<SetStateAction<ItemKey | null>>;
@@ -73,6 +74,7 @@ export function PlayfieldActionOverlays({
   onOpenSkills,
   onOpenUgc,
   onOpenPets,
+  onOpenSettings,
   selectedShopItem,
   onSelectShopItem
 }: Props) {
@@ -175,6 +177,9 @@ export function PlayfieldActionOverlays({
               </button>
               <button type="button" onClick={() => gameStore.load()}>
                 Load
+              </button>
+              <button type="button" onClick={onOpenSettings}>
+                Settings
               </button>
               <button type="button" onClick={() => gameStore.usePotionInField()}>
                 Use Potion
