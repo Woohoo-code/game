@@ -4105,6 +4105,16 @@ button.reset-game-btn:not(:disabled):hover {
     --battle-btn-min-h: 28px;
     --battle-btn-fs: 11px;
     --battle-btn-pad-x: 6px;
+    padding: 1px;
+    align-items: stretch;
+  }
+
+  .battle-overlay-panel {
+    max-width: min(100vw, calc(100% - 2px));
+    height: min(98dvh, calc(var(--app-viewport-h) - 4px));
+    max-height: min(98dvh, calc(var(--app-viewport-h) - 4px));
+    border-radius: 8px;
+    padding: 5px 6px 6px;
   }
 
   .battle-overlay-grid {
@@ -4117,6 +4127,12 @@ button.reset-game-btn:not(:disabled):hover {
 
   .battle-overlay .monster-3d {
     max-width: min(120px, 42vw);
+  }
+
+  /* Mobile: keep action labels concise, hide keyboard shortcut badges in buttons. */
+  .battle-overlay button kbd,
+  .battle-overlay .battle-attack-kbd-alt {
+    display: none;
   }
 }
 
@@ -6087,8 +6103,8 @@ button.reset-game-btn:not(:disabled):hover {
   }
 
   .battle-overlay-panel {
-    height: min(92dvh, calc(var(--app-viewport-h) - 12px));
-    max-height: min(92dvh, calc(var(--app-viewport-h) - 12px));
+    height: min(96dvh, calc(var(--app-viewport-h) - 4px));
+    max-height: min(96dvh, calc(var(--app-viewport-h) - 4px));
   }
 }
 
