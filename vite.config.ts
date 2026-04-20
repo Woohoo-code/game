@@ -1,27 +1,33 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-export default defineConfig(({ mode }) => ({
-  plugins: [react()],
-  // GitHub Pages: `/game/`. Desktop EXE (Electron file://): relative `./`.
-  base: mode === "electron" ? "./" : "/game/",
-  build: {
-    // Avoid electron build wiping the GitHub Pages `dist/` output.
-    outDir: mode === "electron" ? "dist-electron" : "dist",
-    emptyOutDir: true,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          three: ["three"],
-          "three-stdlib": ["three-stdlib"],
-          r3f: ["@react-three/fiber"],
-          drei: ["@react-three/drei"],
-          phaser: ["phaser"],
+export default defineConfig(({ mode }) => {
+  const buildVersion = process.env.VITE_BUILD_VERSION ?? String(Date.now());
+  return {
+    plugins: [react()],
+    define: {
+      "import.meta.env.VITE_BUILD_VERSION": JSON.stringify(buildVersion)
+    },
+    // GitHub Pages: `/game/`. Desktop EXE (Electron file://): relative `./`.
+    base: mode === "electron" ? "./" : "/game/",
+    build: {
+      // Avoid electron build wiping the GitHub Pages `dist/` output.
+      outDir: mode === "electron" ? "dist-electron" : "dist",
+      emptyOutDir: true,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            three: ["three"],
+            "three-stdlib": ["three-stdlib"],
+            r3f: ["@react-three/fiber"],
+            drei: ["@react-three/drei"],
+            phaser: ["phaser"],
+          },
         },
       },
     },
-  },
-  esbuild: {
-    drop: mode === "production" ? ["console"] : [],
-  },
-}));
+    esbuild: {
+      drop: mode === "production" ? ["console"] : [],
+    },
+  };
+});
