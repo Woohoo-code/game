@@ -71,6 +71,19 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function loadUiScalePreference(): number {
+  if (typeof window === "undefined") return 1;
+  try {
+    const raw = window.localStorage.getItem(UI_SCALE_STORAGE_KEY);
+    if (raw == null) return 1;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return 1;
+    return clamp(Math.round(parsed * 10) / 10, UI_SCALE_MIN, UI_SCALE_MAX);
+  } catch {
+    return 1;
+  }
+}
+
 type Screen = "title" | "create" | "play";
 
 /**
@@ -222,13 +235,7 @@ export default function App() {
   const [eventLogCollapsed, setEventLogCollapsed] = useState(false);
   const [battleLogCollapsed, setBattleLogCollapsed] = useState(false);
   const [overlayBattleLogCollapsed, setOverlayBattleLogCollapsed] = useState(false);
-  const [uiScale, setUiScale] = useState<number>(() => {
-    if (typeof window === "undefined") return 1;
-    const raw = window.localStorage.getItem(UI_SCALE_STORAGE_KEY);
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed)) return 1;
-    return clamp(Math.round(parsed * 10) / 10, UI_SCALE_MIN, UI_SCALE_MAX);
-  });
+  const [uiScale, setUiScale] = useState<number>(() => loadUiScalePreference());
   const [selectedShopItem, setSelectedShopItem] = useState<ItemKey | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
