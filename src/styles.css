@@ -4833,8 +4833,8 @@ button.reset-game-btn:not(:disabled):hover {
     bottom: auto;
     z-index: auto;
     pointer-events: none;
-    margin-right: 30px;
-    margin-bottom: 24px;
+    margin-right: 42px;
+    margin-bottom: 56px;
   }
 
   .touch-overlay .touch-pad {
@@ -4910,13 +4910,13 @@ button.reset-game-btn:not(:disabled):hover {
   }
 
   .touch-joystick {
-    --touch-joystick-size: 76px;
-    --touch-joystick-knob-size: 34px;
+    --touch-joystick-size: 92px;
+    --touch-joystick-knob-size: 40px;
   }
 
   .touch-overlay {
-    margin-right: 28px;
-    margin-bottom: 14px;
+    margin-right: 36px;
+    margin-bottom: 44px;
   }
 
   /* Log + battle panel trim so the on-screen controls stay reachable */
