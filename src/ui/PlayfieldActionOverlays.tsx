@@ -175,22 +175,8 @@ export function PlayfieldActionOverlays({
                   Ctrl+S
                 </span>
               </button>
-              <button type="button" onClick={() => gameStore.load()}>
-                Load
-              </button>
               <button type="button" onClick={onOpenSettings}>
                 Settings
-              </button>
-              <button type="button" onClick={() => gameStore.usePotionInField()}>
-                Use Potion
-              </button>
-              <button
-                type="button"
-                onClick={() => void gameStore.exportTransferCode()}
-                disabled={!snapshot.player.hasCreatedCharacter}
-                title="Copy one line to the clipboard for another device (includes a 10-digit key and your full save)."
-              >
-                Copy transfer line
               </button>
             </div>
             <div className="row reset-game-row">
