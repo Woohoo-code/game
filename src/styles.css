@@ -735,7 +735,7 @@ html[data-app-screen="create"] .viewport-scaler-inner > .character-create {
 }
 
 .character-create-inner {
-  max-width: 980px;
+  max-width: 1120px;
   margin: 0 auto;
 }
 
@@ -747,7 +747,7 @@ html[data-app-screen="create"] .viewport-scaler-inner > .character-create {
 
 .character-create-header {
   text-align: center;
-  margin-bottom: 20px;
+  margin-bottom: 14px;
 }
 
 .character-create-eyebrow {
@@ -761,23 +761,23 @@ html[data-app-screen="create"] .viewport-scaler-inner > .character-create {
 
 .character-create-header h1 {
   margin: 0 0 8px;
-  font-size: clamp(1.6rem, 4vw, 2.1rem);
+  font-size: clamp(1.45rem, 3.6vw, 1.95rem);
   color: #f0f4fc;
   letter-spacing: 0.04em;
 }
 
 .character-create-header p {
   margin: 0 auto;
-  max-width: 36rem;
+  max-width: 40rem;
   color: #9cb0d0;
-  line-height: 1.55;
-  font-size: 0.95rem;
+  line-height: 1.45;
+  font-size: 0.9rem;
 }
 
 .character-create-body {
   display: grid;
-  grid-template-columns: minmax(260px, 360px) 1fr;
-  gap: 24px;
+  grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
+  gap: 20px;
   align-items: stretch;
 }
 
@@ -790,8 +790,8 @@ html[data-app-screen="create"] .viewport-scaler-inner > .character-create {
 
 .character-preview {
   width: 100%;
-  aspect-ratio: 4 / 5;
-  min-height: 320px;
+  aspect-ratio: 5 / 4;
+  min-height: 260px;
   background: radial-gradient(circle at 50% 25%, #25395a 0%, #162236 70%, #0c1220 100%);
   border: 1px solid #3a5378;
   border-radius: 12px;
@@ -818,10 +818,10 @@ html[data-app-screen="create"] .viewport-scaler-inner > .character-create {
   background: #151d2b;
   border: 1px solid #2a3a54;
   border-radius: 12px;
-  padding: 18px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   width: 100%;
   min-width: 0;
 }
@@ -833,7 +833,7 @@ html[data-app-screen="create"] .viewport-scaler-inner > .character-create {
 }
 
 .form-row > span {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -845,9 +845,9 @@ html[data-app-screen="create"] .viewport-scaler-inner > .character-create {
   background: #0f1724;
   border: 1px solid #2b3d5c;
   border-radius: 6px;
-  padding: 8px 10px;
+  padding: 7px 9px;
   color: #eef2f8;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .form-row.two {
@@ -927,7 +927,7 @@ html[data-app-screen="create"] .viewport-scaler-inner > .character-create {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
-  margin-top: 4px;
+  margin-top: 2px;
   flex-wrap: wrap;
 }
 
@@ -4791,6 +4791,9 @@ button.reset-game-btn:not(:disabled):hover {
   display: none;
   flex: 0 0 auto;
   align-self: flex-end;
+  margin-right: 14px;
+  margin-top: auto;
+  margin-bottom: 16px;
 }
 
 /* ─── Tablet / narrow desktop (≤ 980px): stack the two main columns ─── */
@@ -4814,6 +4817,8 @@ button.reset-game-btn:not(:disabled):hover {
     bottom: auto;
     z-index: auto;
     pointer-events: none;
+    margin-right: 18px;
+    margin-bottom: 24px;
   }
 
   .touch-overlay .touch-pad {
@@ -4891,6 +4896,11 @@ button.reset-game-btn:not(:disabled):hover {
   .touch-joystick {
     --touch-joystick-size: 76px;
     --touch-joystick-knob-size: 34px;
+  }
+
+  .touch-overlay {
+    margin-right: 14px;
+    margin-bottom: 14px;
   }
 
   /* Log + battle panel trim so the on-screen controls stay reachable */

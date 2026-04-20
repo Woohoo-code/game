@@ -132,7 +132,6 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
                 autoComplete="username"
                 autoCapitalize="words"
                 enterKeyHint="done"
-                autoFocus
                 onChange={(e) => setName(e.target.value)}
               />
             </label>
