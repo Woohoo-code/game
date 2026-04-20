@@ -149,7 +149,12 @@ function VictorySummaryLines({ summary }: { summary: BattleVictorySummary }) {
   );
 }
 
-export function BattleOverlay() {
+type Props = {
+  battleLogCollapsed?: boolean;
+  onToggleBattleLogCollapse?: () => void;
+};
+
+export function BattleOverlay({ battleLogCollapsed = false, onToggleBattleLogCollapse }: Props) {
   const snapshot = useGameStore();
   const [actionPending, setActionPending] = useState(false);
   const actionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -613,12 +618,34 @@ export function BattleOverlay() {
                 </div>
               </div>
             </div>
-            <div className="box log battle-overlay-battle-log">
-              <strong>Battle Log</strong>
-              {snapshot.battle.log.map((line, idx) => (
-                <p key={idx}>{line}</p>
-              ))}
-            </div>
+            {battleLogCollapsed ? (
+              <button
+                type="button"
+                className="log-collapsed-chip battle-log-collapsed-chip"
+                onClick={() => onToggleBattleLogCollapse?.()}
+                aria-label="Expand battle log"
+              >
+                Battle Log
+              </button>
+            ) : (
+              <div className="box log battle-overlay-battle-log">
+                <div className="log-collapsible-head">
+                  <strong>Battle Log</strong>
+                  <button
+                    type="button"
+                    className="log-collapse-btn"
+                    onClick={() => onToggleBattleLogCollapse?.()}
+                    aria-label="Collapse battle log"
+                    title="Collapse"
+                  >
+                    —
+                  </button>
+                </div>
+                {snapshot.battle.log.map((line, idx) => (
+                  <p key={idx}>{line}</p>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

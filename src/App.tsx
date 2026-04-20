@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent, lazy, Suspense } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent, lazy, Suspense } from "react";
 import Phaser from "phaser";
 import { GameScene } from "./game/GameScene";
 import { inputController, type MoveDirection } from "./game/inputController";
@@ -47,6 +47,10 @@ const USE_3D_OVERWORLD = true;
 
 /** Viewport wide enough for the larger hotbar layout (compact bar still shows below this). */
 const DESKTOP_INVENTORY_MQ = "(min-width: 1024px)";
+const UI_SCALE_STORAGE_KEY = "msty-ui-scale";
+const UI_SCALE_MIN = 0.8;
+const UI_SCALE_MAX = 1.4;
+const UI_SCALE_STEP = 0.1;
 
 function useDesktopInventoryBar(): boolean {
   const [wide, setWide] = useState(() =>
@@ -59,6 +63,10 @@ function useDesktopInventoryBar(): boolean {
     return () => mq.removeEventListener("change", fn);
   }, []);
   return wide;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 type Screen = "title" | "create" | "play";
@@ -95,27 +103,107 @@ function useRoute() {
   return { path, navigate };
 }
 
-function DirButton({ dir, label, className }: { dir: MoveDirection; label: string; className?: string }) {
-  const press = (event: PointerEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    inputController.setPressed(dir, true);
-  };
-  const release = (event: PointerEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    inputController.setPressed(dir, false);
+function TouchJoystick() {
+  const baseRef = useRef<HTMLDivElement>(null);
+  const pointerIdRef = useRef<number | null>(null);
+  const [active, setActive] = useState(false);
+  const [knob, setKnob] = useState({ x: 0, y: 0 });
+
+  const resetDirections = useCallback(() => {
+    for (const d of ["up", "down", "left", "right"] as MoveDirection[]) {
+      inputController.setPressed(d, false);
+    }
+  }, []);
+
+  const applyFromClientPoint = useCallback((clientX: number, clientY: number) => {
+    const el = baseRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    let dx = clientX - cx;
+    let dy = clientY - cy;
+    const maxR = 32;
+    const mag = Math.hypot(dx, dy);
+    if (mag > maxR && mag > 0.001) {
+      const s = maxR / mag;
+      dx *= s;
+      dy *= s;
+    }
+    setKnob({ x: dx, y: dy });
+
+    const dead = 10;
+    inputController.setPressed("left", dx < -dead);
+    inputController.setPressed("right", dx > dead);
+    inputController.setPressed("up", dy < -dead);
+    inputController.setPressed("down", dy > dead);
+  }, []);
+
+  const finishDrag = useCallback(() => {
+    pointerIdRef.current = null;
+    setActive(false);
+    setKnob({ x: 0, y: 0 });
+    resetDirections();
+  }, [resetDirections]);
+
+  const onPointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      pointerIdRef.current = event.pointerId;
+      setActive(true);
+      event.currentTarget.setPointerCapture(event.pointerId);
+      applyFromClientPoint(event.clientX, event.clientY);
+    },
+    [applyFromClientPoint]
+  );
+
+  const onPointerMove = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (pointerIdRef.current !== event.pointerId) return;
+      event.preventDefault();
+      applyFromClientPoint(event.clientX, event.clientY);
+    },
+    [applyFromClientPoint]
+  );
+
+  const onPointerUp = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (pointerIdRef.current !== event.pointerId) return;
+      event.preventDefault();
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      finishDrag();
+    },
+    [finishDrag]
+  );
+
+  useEffect(() => {
+    return () => {
+      resetDirections();
+    };
+  }, [resetDirections]);
+
+  const knobStyle: CSSProperties = {
+    transform: `translate(${knob.x}px, ${knob.y}px)`
   };
 
   return (
-    <button
-      className={["dir-btn", className].filter(Boolean).join(" ")}
-      onPointerDown={press}
-      onPointerUp={release}
-      onPointerCancel={release}
-      onPointerLeave={release}
+    <div
+      className={`touch-joystick${active ? " touch-joystick--active" : ""}`}
+      ref={baseRef}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onPointerLeave={onPointerUp}
       onContextMenu={(event) => event.preventDefault()}
+      aria-label="Movement joystick"
+      role="application"
     >
-      {label}
-    </button>
+      <div className="touch-joystick-base" />
+      <div className="touch-joystick-knob" style={knobStyle} />
+    </div>
   );
 }
 
@@ -128,6 +216,17 @@ export default function App() {
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [petsOpen, setPetsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [eventLogCollapsed, setEventLogCollapsed] = useState(false);
+  const [battleLogCollapsed, setBattleLogCollapsed] = useState(false);
+  const [overlayBattleLogCollapsed, setOverlayBattleLogCollapsed] = useState(false);
+  const [uiScale, setUiScale] = useState<number>(() => {
+    if (typeof window === "undefined") return 1;
+    const raw = window.localStorage.getItem(UI_SCALE_STORAGE_KEY);
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return 1;
+    return clamp(Math.round(parsed * 10) / 10, UI_SCALE_MIN, UI_SCALE_MAX);
+  });
   const [selectedShopItem, setSelectedShopItem] = useState<ItemKey | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
@@ -135,6 +234,15 @@ export default function App() {
   const desktopInventory = useDesktopInventoryBar();
   const overlays = useStoryOverlays();
   const { path, navigate } = useRoute();
+
+  useEffect(() => {
+    document.documentElement.style.setProperty("--ui-scale", uiScale.toFixed(2));
+    try {
+      window.localStorage.setItem(UI_SCALE_STORAGE_KEY, String(uiScale));
+    } catch {
+      // Ignore storage failures (privacy mode / blocked storage).
+    }
+  }, [uiScale]);
 
   if (path === DOWNLOAD_ROUTE) {
     return (
@@ -495,6 +603,67 @@ export default function App() {
       />
       {petsOpen && <PetsPanel onClose={() => setPetsOpen(false)} />}
       {skillsOpen && <SkillTreeModal onClose={() => setSkillsOpen(false)} />}
+      {settingsOpen && (
+        <div className="story-modal-backdrop" role="presentation" onClick={() => setSettingsOpen(false)}>
+          <div
+            className="playfield-help-modal settings-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-modal-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="playfield-help-modal-head">
+              <h2 id="settings-modal-title">Settings</h2>
+              <button
+                type="button"
+                className="playfield-help-modal-close"
+                onClick={() => setSettingsOpen(false)}
+                aria-label="Close settings"
+              >
+                ×
+              </button>
+            </div>
+            <div className="playfield-help-modal-body settings-modal-body">
+              <div className="settings-ui-scale-row">
+                <div>
+                  <strong>UI scale</strong>
+                  <p className="settings-ui-scale-hint">Scales HUD, logs, and toolbars.</p>
+                </div>
+                <div className="settings-ui-scale-controls">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setUiScale((prev) =>
+                        clamp(Math.round((prev - UI_SCALE_STEP) * 10) / 10, UI_SCALE_MIN, UI_SCALE_MAX)
+                      )
+                    }
+                    disabled={uiScale <= UI_SCALE_MIN}
+                    aria-label="Decrease UI scale"
+                  >
+                    −
+                  </button>
+                  <span className="settings-ui-scale-value">{Math.round(uiScale * 100)}%</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setUiScale((prev) =>
+                        clamp(Math.round((prev + UI_SCALE_STEP) * 10) / 10, UI_SCALE_MIN, UI_SCALE_MAX)
+                      )
+                    }
+                    disabled={uiScale >= UI_SCALE_MAX}
+                    aria-label="Increase UI scale"
+                  >
+                    +
+                  </button>
+                  <button type="button" className="secondary" onClick={() => setUiScale(1)}>
+                    Reset
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <DevCheatConsole />
       {effectiveScreen === "play" && snapshot.pendingLevelUpCelebration && (
         <LevelUpCelebration payload={snapshot.pendingLevelUpCelebration} />
@@ -522,12 +691,7 @@ export default function App() {
             <TownCompass />
             {!snapshot.battle.inBattle && <WorldStatusOverlay />}
             <div className="touch-overlay">
-              <div className="touch-pad touch-pad-arrow" aria-label="Movement">
-                <DirButton dir="up" label="↑" className="dir-btn-up" />
-                <DirButton dir="left" label="←" className="dir-btn-left" />
-                <DirButton dir="down" label="↓" className="dir-btn-down" />
-                <DirButton dir="right" label="→" className="dir-btn-right" />
-              </div>
+              <TouchJoystick />
             </div>
           </div>
           <PlayfieldActionOverlays
@@ -536,10 +700,16 @@ export default function App() {
             onOpenSkills={() => setSkillsOpen(true)}
             onOpenUgc={openUgc}
             onOpenPets={() => setPetsOpen(true)}
+            onOpenSettings={() => setSettingsOpen(true)}
             selectedShopItem={selectedShopItem}
             onSelectShopItem={setSelectedShopItem}
           />
-          {snapshot.battle.inBattle && <BattleOverlay />}
+          {snapshot.battle.inBattle && (
+            <BattleOverlay
+              battleLogCollapsed={overlayBattleLogCollapsed}
+              onToggleBattleLogCollapse={() => setOverlayBattleLogCollapsed((v) => !v)}
+            />
+          )}
           {effectiveScreen === "play" && (
             <div className="playfield-fullscreen-corner" aria-label="Display options">
               <AudioMuteButton />
@@ -566,21 +736,72 @@ export default function App() {
         )}
       </div>
 
-      <div className="right-column panel">
-        <div className="box log">
-          <strong>Event Log</strong>
-          {snapshot.eventLog.map((line, idx) => (
-            <p key={`event-${idx}`}>{line}</p>
-          ))}
-        </div>
-        {!snapshot.battle.inBattle && (
+      <div
+        className={`right-column panel${
+          eventLogCollapsed &&
+          battleLogCollapsed &&
+          (!snapshot.world.canShop || selectedShopItem == null || snapshot.battle.inBattle)
+            ? " right-column--compact"
+            : ""
+        }`}
+      >
+        {eventLogCollapsed ? (
+          <button
+            type="button"
+            className="log-collapsed-chip"
+            onClick={() => setEventLogCollapsed(false)}
+            aria-label="Expand event log"
+          >
+            Event Log
+          </button>
+        ) : (
           <div className="box log">
-            <strong>Battle Log</strong>
-            {snapshot.battle.log.map((line, idx) => (
-              <p key={idx}>{line}</p>
+            <div className="log-collapsible-head">
+              <strong>Event Log</strong>
+              <button
+                type="button"
+                className="log-collapse-btn"
+                onClick={() => setEventLogCollapsed(true)}
+                aria-label="Collapse event log"
+                title="Collapse"
+              >
+                —
+              </button>
+            </div>
+            {snapshot.eventLog.map((line, idx) => (
+              <p key={`event-${idx}`}>{line}</p>
             ))}
           </div>
         )}
+        {!snapshot.battle.inBattle &&
+          (battleLogCollapsed ? (
+            <button
+              type="button"
+              className="log-collapsed-chip"
+              onClick={() => setBattleLogCollapsed(false)}
+              aria-label="Expand battle log"
+            >
+              Battle Log
+            </button>
+          ) : (
+            <div className="box log">
+              <div className="log-collapsible-head">
+                <strong>Battle Log</strong>
+                <button
+                  type="button"
+                  className="log-collapse-btn"
+                  onClick={() => setBattleLogCollapsed(true)}
+                  aria-label="Collapse battle log"
+                  title="Collapse"
+                >
+                  —
+                </button>
+              </div>
+              {snapshot.battle.log.map((line, idx) => (
+                <p key={idx}>{line}</p>
+              ))}
+            </div>
+          ))}
         {!snapshot.battle.inBattle &&
           snapshot.world.canShop &&
           selectedShopItem != null && (
