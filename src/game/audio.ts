@@ -1,12 +1,10 @@
 /**
- * Procedural game audio — WebAudio only, zero assets shipped.
- *
- * Design notes:
- * - AudioContext is created lazily on the first user gesture (autoplay policy).
- * - Every SFX is synthesized from oscillators + noise with a short envelope, so
- *   muting / unloading is instant and the bundle stays asset-free.
- * - Mute + master volume persist in localStorage under "msty-audio".
+ * Procedural game audio — WebAudio SFX, plus optional scene-based BGM. When
+ * the user enables the file-based theme in `music.tsx`, that loop replaces
+ * procedural `playMusic` so only one background layer runs.
  */
+
+import { isThemeStreamPreferred, syncThemeWithGameAudioMasterMuted } from "./music";
 
 export type SfxKind =
   | "attack" // plain weapon swing
@@ -110,6 +108,7 @@ export function setAudioMuted(muted: boolean): void {
   } else if (currentMusicKind) {
     playMusic(currentMusicKind);
   }
+  syncThemeWithGameAudioMasterMuted(muted);
   listeners.forEach((fn) => fn());
 }
 
@@ -134,6 +133,11 @@ export function stopMusic() {
 }
 
 export function playMusic(kind: MusicKind) {
+  if (isThemeStreamPreferred()) {
+    stopMusic();
+    currentMusicKind = kind; // so procedural can resume the right scene if the user turns the theme off
+    return;
+  }
   if (prefs.muted) {
     currentMusicKind = kind; // Save so it resumes on unmute
     return;

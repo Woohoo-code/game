@@ -24,6 +24,8 @@ import {
 } from "./ui/Journal";
 import { MobileFullscreenButton } from "./ui/MobileFullscreenButton";
 import { AudioMuteButton } from "./ui/AudioMuteButton";
+import { MusicToggleButton } from "./ui/MusicToggleButton";
+import { BackgroundMusicMount } from "./game/music";
 import { FullInventoryScreen } from "./ui/FullInventoryScreen";
 import { InventoryBar } from "./ui/InventoryBar";
 import { LevelUpCelebration } from "./ui/LevelUpCelebration";
@@ -368,8 +370,10 @@ export default function App() {
     const hasChar = snapshot.player.hasCreatedCharacter;
     return (
       <div className="title-screen" role="document" aria-label="Monster Slayer — sign in or start">
+        <BackgroundMusicMount />
         <div className="title-screen-inner">
           <div className="title-screen-top-actions">
+            <MusicToggleButton />
             <MobileFullscreenButton />
           </div>
           <h1 className="title-screen-logo">Monster Slayer</h1>
@@ -472,7 +476,9 @@ export default function App() {
 
   if (effectiveScreen === "create") {
     return (
-      <CharacterCreation
+      <>
+        <BackgroundMusicMount />
+        <CharacterCreation
         onDone={() => {
           setTitleNotice(null);
           setScreen("play");
@@ -482,6 +488,7 @@ export default function App() {
           setScreen("title");
         }}
       />
+      </>
     );
   }
 
@@ -489,6 +496,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <BackgroundMusicMount />
       {ugcOpen && <UgcStudio onClose={closeUgc} />}
       {journalOpen && <Journal onClose={() => setJournalOpen(false)} />}
       <FullInventoryScreen
@@ -545,6 +553,7 @@ export default function App() {
           {snapshot.battle.inBattle && <BattleOverlay />}
           {effectiveScreen === "play" && (
             <div className="playfield-fullscreen-corner" aria-label="Display options">
+              <MusicToggleButton />
               <AudioMuteButton />
               <MobileFullscreenButton />
             </div>
