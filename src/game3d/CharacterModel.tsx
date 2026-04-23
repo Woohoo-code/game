@@ -903,6 +903,9 @@ export function CharacterModel({
   // Load the Knight FBX (base model + maybe some animations)
   const fbx = useFBX("/Knight D Pelegrini.fbx");
 
+  // Load the idle animation GLB
+  const { animations: idleAnims } = useGLTF("/idle.glb");
+
   // Load the walk animation GLB
   const { animations: walkAnims } = useGLTF("/walk.glb");
 
@@ -912,6 +915,7 @@ export function CharacterModel({
   // Combine the animations into a single array for useAnimations
   const allAnimations = [
     ...fbx.animations,
+    ...idleAnims,
     ...walkAnims,
     ...deathFbx.animations,
   ];
@@ -935,8 +939,8 @@ export function CharacterModel({
         ? walkAnims[0].name
         : names.find((n) => n.toLowerCase().includes("walk")) || names[0];
     const idleAnimName =
-      fbx.animations.length > 0
-        ? fbx.animations[0].name
+      idleAnims.length > 0
+        ? idleAnims[0].name
         : names.find((n) => n.toLowerCase().includes("idle")) || names[0];
     const deathAnimName =
       deathFbx.animations.length > 0
