@@ -23,6 +23,10 @@ interface CharacterModelProps {
    */
   movingRef?: MutableRefObject<boolean>;
   /**
+   * Optional per-frame flag for "the character is dead".
+   */
+  deadRef?: MutableRefObject<boolean>;
+  /**
    * When true the character adopts a seated riding pose: legs splay outward
    * at the hips to straddle the mount, arms tilt forward as if holding reins,
    * and the walking swing cycle is suppressed. Player3D toggles this based
@@ -891,6 +895,7 @@ export function CharacterModel({
   turntable = false,
   showFaceMarker = false,
   movingRef,
+  deadRef,
   riding = false,
 }: CharacterModelProps) {
   const rootRef = useRef<THREE.Group>(null);
@@ -901,8 +906,15 @@ export function CharacterModel({
   // Load the walk animation GLB
   const { animations: walkAnims } = useGLTF("/walk.glb");
 
+  // Load the death animation FBX
+  const deathFbx = useFBX("/death.fbx");
+
   // Combine the animations into a single array for useAnimations
-  const allAnimations = [...fbx.animations, ...walkAnims];
+  const allAnimations = [
+    ...fbx.animations,
+    ...walkAnims,
+    ...deathFbx.animations,
+  ];
   const { actions, names } = useAnimations(allAnimations, rootRef);
 
   useEffect(() => {
@@ -912,7 +924,7 @@ export function CharacterModel({
     }
   }, [actions, names]);
 
-  // Handle animation state based on movingRef
+  // Handle animation state based on movingRef and deadRef
   useFrame(() => {
     if (!actions) return;
 
@@ -926,11 +938,31 @@ export function CharacterModel({
       fbx.animations.length > 0
         ? fbx.animations[0].name
         : names.find((n) => n.toLowerCase().includes("idle")) || names[0];
+    const deathAnimName =
+      deathFbx.animations.length > 0
+        ? deathFbx.animations[0].name
+        : names.find((n) => n.toLowerCase().includes("death")) || names[0];
 
     const walkAction = actions[walkAnimName];
     const idleAction = actions[idleAnimName];
+    const deathAction = actions[deathAnimName];
 
-    if (movingRef?.current) {
+    if (deadRef?.current) {
+      if (idleAction && idleAction.isRunning()) {
+        idleAction.fadeOut(0.2);
+      }
+      if (walkAction && walkAction.isRunning()) {
+        walkAction.fadeOut(0.2);
+      }
+      if (deathAction && !deathAction.isRunning()) {
+        deathAction.reset().fadeIn(0.2).play();
+        deathAction.clampWhenFinished = true;
+        deathAction.loop = THREE.LoopOnce;
+      }
+    } else if (movingRef?.current) {
+      if (deathAction && deathAction.isRunning()) {
+        deathAction.fadeOut(0.2);
+      }
       if (idleAction && idleAction.isRunning()) {
         idleAction.fadeOut(0.2);
       }
@@ -938,6 +970,9 @@ export function CharacterModel({
         walkAction.reset().fadeIn(0.2).play();
       }
     } else {
+      if (deathAction && deathAction.isRunning()) {
+        deathAction.fadeOut(0.2);
+      }
       if (walkAction && walkAction.isRunning()) {
         walkAction.fadeOut(0.2);
       }

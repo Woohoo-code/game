@@ -2,7 +2,11 @@ import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { playStepThrottled, unlockAudio } from "../game/audio";
-import { highestOwnedHorseKey, overworldHorseWalkSpeedMultiplier, stableHorseSpeedBonus } from "../game/data";
+import {
+  highestOwnedHorseKey,
+  overworldHorseWalkSpeedMultiplier,
+  stableHorseSpeedBonus,
+} from "../game/data";
 import { currentDungeonFloor } from "../game/dungeon";
 import { inputController } from "../game/inputController";
 import { gameStore } from "../game/state";
@@ -15,7 +19,7 @@ import {
   TERRAIN_SPEED_MULT,
   dispatchZonesAndEncounter,
   isBlocked,
-  terrainAt
+  terrainAt,
 } from "../game/worldMap";
 import { CharacterModel } from "./CharacterModel";
 import { MountHorse3D } from "./MountHorse3D";
@@ -37,6 +41,7 @@ export function Player3D({ appearance }: { appearance: PlayerAppearance }) {
   const desiredCam = useRef(new THREE.Vector3());
   const lookTarget = useRef(new THREE.Vector3());
   const movingRef = useRef(false);
+  const deadRef = useRef(false);
   const { camera } = useThree();
 
   useEffect(() => {
@@ -44,7 +49,11 @@ export function Player3D({ appearance }: { appearance: PlayerAppearance }) {
     const p = gameStore.getSnapshot().player;
     groupRef.current.position.set(p.x / TILE, 0, p.y / TILE);
     camTargetLerp.current.set(p.x / TILE, 0, p.y / TILE);
-    camPosLerp.current.set(p.x / TILE + CAM_OFFSET.x, CAM_OFFSET.y, p.y / TILE + CAM_OFFSET.z);
+    camPosLerp.current.set(
+      p.x / TILE + CAM_OFFSET.x,
+      CAM_OFFSET.y,
+      p.y / TILE + CAM_OFFSET.z,
+    );
     camera.position.copy(camPosLerp.current);
     camera.lookAt(camTargetLerp.current);
   }, [camera]);
@@ -55,14 +64,20 @@ export function Player3D({ appearance }: { appearance: PlayerAppearance }) {
 
     const snapshot = gameStore.getSnapshot();
 
+    // Update dead state based on player health
+    deadRef.current = snapshot.player.hp <= 0;
+
     // Snap in sync with external store changes (save/load).
     const storeTileX = snapshot.player.x / TILE;
     const storeTileZ = snapshot.player.y / TILE;
-    if (Math.abs(group.position.x - storeTileX) > 1 || Math.abs(group.position.z - storeTileZ) > 1) {
+    if (
+      Math.abs(group.position.x - storeTileX) > 1 ||
+      Math.abs(group.position.z - storeTileZ) > 1
+    ) {
       group.position.set(storeTileX, 0, storeTileZ);
     }
 
-    if (!snapshot.battle.inBattle) {
+    if (!snapshot.battle.inBattle && !deadRef.current) {
       let vx = 0;
       let vz = 0;
       if (inputController.isPressed("left")) vx -= 1;
@@ -83,10 +98,18 @@ export function Player3D({ appearance }: { appearance: PlayerAppearance }) {
         // In dungeons everything is flat floor; skip terrain multiplier there.
         const terrainMult = dFloor
           ? 1
-          : TERRAIN_SPEED_MULT[terrainAt(curTx, curTy)] ?? 1;
+          : (TERRAIN_SPEED_MULT[terrainAt(curTx, curTy)] ?? 1);
         const step = WALK_SPEED_TILES * walkMult * terrainMult * delta;
-        const nextX = THREE.MathUtils.clamp(group.position.x + vx * step, HALF_TILE, boundW - HALF_TILE);
-        const nextZ = THREE.MathUtils.clamp(group.position.z + vz * step, HALF_TILE, boundH - HALF_TILE);
+        const nextX = THREE.MathUtils.clamp(
+          group.position.x + vx * step,
+          HALF_TILE,
+          boundW - HALF_TILE,
+        );
+        const nextZ = THREE.MathUtils.clamp(
+          group.position.z + vz * step,
+          HALF_TILE,
+          boundH - HALF_TILE,
+        );
         const nextPxX = nextX * TILE;
         const nextPxY = nextZ * TILE;
         if (!isBlocked(nextPxX, nextPxY)) {
@@ -112,27 +135,33 @@ export function Player3D({ appearance }: { appearance: PlayerAppearance }) {
     desiredCam.current.set(
       group.position.x + CAM_OFFSET.x,
       CAM_OFFSET.y,
-      group.position.z + CAM_OFFSET.z
+      group.position.z + CAM_OFFSET.z,
     );
     camPosLerp.current.lerp(desiredCam.current, 0.12);
-    camTargetLerp.current.lerp(lookTarget.current.set(group.position.x, 0.3, group.position.z), 0.14);
+    camTargetLerp.current.lerp(
+      lookTarget.current.set(group.position.x, 0.3, group.position.z),
+      0.14,
+    );
     camera.position.copy(camPosLerp.current);
     camera.lookAt(camTargetLerp.current);
   });
 
   return (
     <group ref={groupRef}>
-      {riding && bestMount ? <MountHorse3D mountKey={bestMount} movingRef={movingRef} /> : null}
+      {riding && bestMount && !deadRef.current ? (
+        <MountHorse3D mountKey={bestMount} movingRef={movingRef} />
+      ) : null}
       {/* When riding, drop the pelvis onto the horse's back (saddle top sits
           at ~y=0.44; the character's local HIP_Y is 0.40, so 0.06 plants the
           pelvis on the saddle with a small seat bump). On foot, feet stay on
           the ground at y=0. */}
-      <group position={[0, riding ? 0.06 : 0, 0]}>
+      <group position={[0, riding && !deadRef.current ? 0.06 : 0, 0]}>
         <CharacterModel
           appearance={appearance}
           showFaceMarker
           movingRef={movingRef}
-          riding={riding}
+          deadRef={deadRef}
+          riding={riding && !deadRef.current}
         />
       </group>
     </group>
