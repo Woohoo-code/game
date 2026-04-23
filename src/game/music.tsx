@@ -52,10 +52,20 @@ const listeners = new Set<() => void>();
 function ensureAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
   if (audioEl) return audioEl;
-  const el = new Audio(MUSIC_URL);
+  const el = document.createElement("audio");
+  el.src = MUSIC_URL;
   el.loop = true;
   el.preload = "auto";
   el.volume = prefs.volume;
+  el.setAttribute("data-role", "bg-music");
+  // Attach to DOM so browsers reliably honor playback and so the element is
+  // inspectable via devtools. Keeping it hidden avoids any visual impact.
+  el.style.display = "none";
+  if (document.body) {
+    document.body.appendChild(el);
+  } else {
+    document.addEventListener("DOMContentLoaded", () => document.body?.appendChild(el), { once: true });
+  }
   audioEl = el;
   return el;
 }
