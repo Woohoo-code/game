@@ -58,6 +58,8 @@ function ensureAudio(): HTMLAudioElement | null {
   el.preload = "auto";
   el.volume = prefs.volume;
   el.setAttribute("data-role", "bg-music");
+  // Attach to DOM so browsers reliably honor playback and so the element is
+  // inspectable via devtools. Keeping it hidden avoids any visual impact.
   el.style.display = "none";
   if (document.body) {
     document.body.appendChild(el);
