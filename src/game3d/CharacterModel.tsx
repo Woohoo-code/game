@@ -1,7 +1,12 @@
-import { useRef, type MutableRefObject } from "react";
+import { useRef, type MutableRefObject, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import type { FacialHairStyle, HairStyle, PlayerAppearance } from "../game/types";
+import { useFBX, useGLTF, useAnimations } from "@react-three/drei";
+import type {
+  FacialHairStyle,
+  HairStyle,
+  PlayerAppearance,
+} from "../game/types";
 
 interface CharacterModelProps {
   appearance: PlayerAppearance;
@@ -48,7 +53,7 @@ const SHOULDER_Y = 0.68;
 /** Waist / belt line Y — chest tapers down to this. */
 const WAIST_Y = 0.42;
 /** Pelvis top — thighs start here. */
-const HIP_Y = 0.40;
+const HIP_Y = 0.4;
 
 /* ── Materials ──────────────────────────────────────────────────────────── */
 
@@ -66,7 +71,13 @@ const SkinMat = ({ color }: { color: string }) => (
 );
 
 /** Cloth tunic / coat — matte with a faint sheen so folds don't read plastic. */
-const ClothMat = ({ color, roughness = 0.78 }: { color: string; roughness?: number }) => (
+const ClothMat = ({
+  color,
+  roughness = 0.78,
+}: {
+  color: string;
+  roughness?: number;
+}) => (
   <meshPhysicalMaterial
     color={color}
     roughness={roughness}
@@ -120,7 +131,7 @@ function Beard({ style, color }: { style: FacialHairStyle; color: string }) {
       [0.07, chinY - 0.02, jawZ + 0.003],
       [0, chinY - 0.03, jawZ - 0.008],
       [-0.035, chinY, jawZ - 0.005],
-      [0.035, chinY, jawZ - 0.005]
+      [0.035, chinY, jawZ - 0.005],
     ];
     return (
       <group>
@@ -137,7 +148,11 @@ function Beard({ style, color }: { style: FacialHairStyle; color: string }) {
   if (style === "goatee") {
     return (
       <group>
-        <mesh position={[0, chinY - 0.01, jawZ - 0.014]} rotation={[0.25, 0, 0]} castShadow>
+        <mesh
+          position={[0, chinY - 0.01, jawZ - 0.014]}
+          rotation={[0.25, 0, 0]}
+          castShadow
+        >
           <capsuleGeometry args={[0.032, 0.09, 5, 8]} />
           {beardMat(color)}
         </mesh>
@@ -152,15 +167,27 @@ function Beard({ style, color }: { style: FacialHairStyle; color: string }) {
   if (style === "shortBeard") {
     return (
       <group>
-        <mesh position={[0, chinY + 0.005, jawZ + 0.002]} rotation={[0.12, 0, 0]} castShadow>
+        <mesh
+          position={[0, chinY + 0.005, jawZ + 0.002]}
+          rotation={[0.12, 0, 0]}
+          castShadow
+        >
           <boxGeometry args={[0.2, 0.09, 0.09]} />
           {beardMat(color)}
         </mesh>
-        <mesh position={[-0.09, chinY + 0.03, jawZ + 0.014]} rotation={[0.08, 0, 0.12]} castShadow>
+        <mesh
+          position={[-0.09, chinY + 0.03, jawZ + 0.014]}
+          rotation={[0.08, 0, 0.12]}
+          castShadow
+        >
           <boxGeometry args={[0.07, 0.08, 0.075]} />
           {beardMat(color)}
         </mesh>
-        <mesh position={[0.09, chinY + 0.03, jawZ + 0.014]} rotation={[0.08, 0, -0.12]} castShadow>
+        <mesh
+          position={[0.09, chinY + 0.03, jawZ + 0.014]}
+          rotation={[0.08, 0, -0.12]}
+          castShadow
+        >
           <boxGeometry args={[0.07, 0.08, 0.075]} />
           {beardMat(color)}
         </mesh>
@@ -171,15 +198,27 @@ function Beard({ style, color }: { style: FacialHairStyle; color: string }) {
   if (style === "fullBeard") {
     return (
       <group>
-        <mesh position={[0, chinY + 0.002, jawZ + 0.008]} rotation={[0.1, 0, 0]} castShadow>
+        <mesh
+          position={[0, chinY + 0.002, jawZ + 0.008]}
+          rotation={[0.1, 0, 0]}
+          castShadow
+        >
           <boxGeometry args={[0.235, 0.13, 0.11]} />
           {beardMat(color)}
         </mesh>
-        <mesh position={[-0.11, chinY + 0.03, jawZ + 0.028]} rotation={[0.05, 0, 0.18]} castShadow>
+        <mesh
+          position={[-0.11, chinY + 0.03, jawZ + 0.028]}
+          rotation={[0.05, 0, 0.18]}
+          castShadow
+        >
           <boxGeometry args={[0.09, 0.13, 0.09]} />
           {beardMat(color)}
         </mesh>
-        <mesh position={[0.11, chinY + 0.03, jawZ + 0.028]} rotation={[0.05, 0, -0.18]} castShadow>
+        <mesh
+          position={[0.11, chinY + 0.03, jawZ + 0.028]}
+          rotation={[0.05, 0, -0.18]}
+          castShadow
+        >
           <boxGeometry args={[0.09, 0.13, 0.09]} />
           {beardMat(color)}
         </mesh>
@@ -223,21 +262,41 @@ function Face({ skin }: { skin: string }) {
       {/* Sclera (whites) — smaller than before for a more human read. */}
       <mesh position={[-eyeX, eyeY, eyeZ]}>
         <sphereGeometry args={[0.022, 18, 14]} />
-        <meshPhysicalMaterial color={sclera} roughness={0.22} clearcoat={0.6} clearcoatRoughness={0.1} />
+        <meshPhysicalMaterial
+          color={sclera}
+          roughness={0.22}
+          clearcoat={0.6}
+          clearcoatRoughness={0.1}
+        />
       </mesh>
       <mesh position={[eyeX, eyeY, eyeZ]}>
         <sphereGeometry args={[0.022, 18, 14]} />
-        <meshPhysicalMaterial color={sclera} roughness={0.22} clearcoat={0.6} clearcoatRoughness={0.1} />
+        <meshPhysicalMaterial
+          color={sclera}
+          roughness={0.22}
+          clearcoat={0.6}
+          clearcoatRoughness={0.1}
+        />
       </mesh>
 
       {/* Irises */}
       <mesh position={[-eyeX, eyeY - 0.001, eyeZ - 0.009]}>
         <sphereGeometry args={[0.011, 14, 12]} />
-        <meshPhysicalMaterial color={iris} roughness={0.35} clearcoat={0.7} clearcoatRoughness={0.2} />
+        <meshPhysicalMaterial
+          color={iris}
+          roughness={0.35}
+          clearcoat={0.7}
+          clearcoatRoughness={0.2}
+        />
       </mesh>
       <mesh position={[eyeX, eyeY - 0.001, eyeZ - 0.009]}>
         <sphereGeometry args={[0.011, 14, 12]} />
-        <meshPhysicalMaterial color={iris} roughness={0.35} clearcoat={0.7} clearcoatRoughness={0.2} />
+        <meshPhysicalMaterial
+          color={iris}
+          roughness={0.35}
+          clearcoat={0.7}
+          clearcoatRoughness={0.2}
+        />
       </mesh>
 
       {/* Pupils */}
@@ -253,29 +312,53 @@ function Face({ skin }: { skin: string }) {
       {/* Catchlights — offset to sell the eye curvature. */}
       <mesh position={[-eyeX - 0.006, eyeY + 0.006, eyeZ - 0.015]}>
         <sphereGeometry args={[0.003, 6, 6]} />
-        <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={0.55} />
+        <meshStandardMaterial
+          color="#ffffff"
+          emissive="#ffffff"
+          emissiveIntensity={0.55}
+        />
       </mesh>
       <mesh position={[eyeX - 0.006, eyeY + 0.006, eyeZ - 0.015]}>
         <sphereGeometry args={[0.003, 6, 6]} />
-        <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={0.55} />
+        <meshStandardMaterial
+          color="#ffffff"
+          emissive="#ffffff"
+          emissiveIntensity={0.55}
+        />
       </mesh>
 
       {/* Upper eyelids — thin curved caps that drop the cartoon-eye vibe. */}
-      <mesh position={[-eyeX, eyeY + 0.014, eyeZ + 0.002]} rotation={[0.35, 0, -0.08]}>
-        <sphereGeometry args={[0.028, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2]} />
+      <mesh
+        position={[-eyeX, eyeY + 0.014, eyeZ + 0.002]}
+        rotation={[0.35, 0, -0.08]}
+      >
+        <sphereGeometry
+          args={[0.028, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2]}
+        />
         <SkinMat color={skin} />
       </mesh>
-      <mesh position={[eyeX, eyeY + 0.014, eyeZ + 0.002]} rotation={[0.35, 0, 0.08]}>
-        <sphereGeometry args={[0.028, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2]} />
+      <mesh
+        position={[eyeX, eyeY + 0.014, eyeZ + 0.002]}
+        rotation={[0.35, 0, 0.08]}
+      >
+        <sphereGeometry
+          args={[0.028, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2]}
+        />
         <SkinMat color={skin} />
       </mesh>
 
       {/* Eyebrows — softer, lower-profile strokes. */}
-      <mesh position={[-0.068, HEAD_Y + 0.048, -HEAD_R + 0.05]} rotation={[0.18, 0, -0.14]}>
+      <mesh
+        position={[-0.068, HEAD_Y + 0.048, -HEAD_R + 0.05]}
+        rotation={[0.18, 0, -0.14]}
+      >
         <boxGeometry args={[0.082, 0.012, 0.01]} />
         <meshStandardMaterial color={browCol} roughness={0.95} />
       </mesh>
-      <mesh position={[0.068, HEAD_Y + 0.048, -HEAD_R + 0.05]} rotation={[0.18, 0, 0.14]}>
+      <mesh
+        position={[0.068, HEAD_Y + 0.048, -HEAD_R + 0.05]}
+        rotation={[0.18, 0, 0.14]}
+      >
         <boxGeometry args={[0.082, 0.012, 0.01]} />
         <meshStandardMaterial color={browCol} roughness={0.95} />
       </mesh>
@@ -292,7 +375,10 @@ function Face({ skin }: { skin: string }) {
       </mesh>
 
       {/* Nose — bridge + subtle tip + nostril shadow */}
-      <mesh position={[0, HEAD_Y - 0.015, -HEAD_R + 0.008]} rotation={[0.3, 0, 0]}>
+      <mesh
+        position={[0, HEAD_Y - 0.015, -HEAD_R + 0.008]}
+        rotation={[0.3, 0, 0]}
+      >
         <capsuleGeometry args={[0.026, 0.058, 6, 10]} />
         <SkinMat color={skin} />
       </mesh>
@@ -310,11 +396,17 @@ function Face({ skin }: { skin: string }) {
       </mesh>
 
       {/* Upper + lower lip — thin boxes with subtle offset for a shaped mouth */}
-      <mesh position={[0, HEAD_Y - 0.085, -HEAD_R + 0.012]} rotation={[0.12, 0, 0]}>
+      <mesh
+        position={[0, HEAD_Y - 0.085, -HEAD_R + 0.012]}
+        rotation={[0.12, 0, 0]}
+      >
         <boxGeometry args={[0.058, 0.009, 0.012]} />
         <meshStandardMaterial color={lipCol} roughness={0.4} />
       </mesh>
-      <mesh position={[0, HEAD_Y - 0.098, -HEAD_R + 0.01]} rotation={[0.08, 0, 0]}>
+      <mesh
+        position={[0, HEAD_Y - 0.098, -HEAD_R + 0.01]}
+        rotation={[0.08, 0, 0]}
+      >
         <boxGeometry args={[0.05, 0.013, 0.013]} />
         <meshStandardMaterial color={lipCol} roughness={0.5} />
       </mesh>
@@ -358,14 +450,24 @@ function Hair({ style, color }: { style: HairStyle; color: string }) {
     return (
       <group position={[0, crownY, 0]}>
         <mesh castShadow>
-          <sphereGeometry args={[0.175, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <sphereGeometry
+            args={[0.175, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2]}
+          />
           {hairMat(color)}
         </mesh>
-        <mesh position={[-0.09, 0.06, -0.02]} rotation={[0.2, 0, -0.35]} castShadow>
+        <mesh
+          position={[-0.09, 0.06, -0.02]}
+          rotation={[0.2, 0, -0.35]}
+          castShadow
+        >
           <coneGeometry args={[0.04, 0.16, 10]} />
           {hairMat(color)}
         </mesh>
-        <mesh position={[0.09, 0.06, -0.02]} rotation={[0.2, 0, 0.35]} castShadow>
+        <mesh
+          position={[0.09, 0.06, -0.02]}
+          rotation={[0.2, 0, 0.35]}
+          castShadow
+        >
           <coneGeometry args={[0.04, 0.16, 10]} />
           {hairMat(color)}
         </mesh>
@@ -373,11 +475,19 @@ function Hair({ style, color }: { style: HairStyle; color: string }) {
           <coneGeometry args={[0.038, 0.14, 10]} />
           {hairMat(color)}
         </mesh>
-        <mesh position={[-0.04, 0.09, 0.03]} rotation={[-0.3, 0, -0.1]} castShadow>
+        <mesh
+          position={[-0.04, 0.09, 0.03]}
+          rotation={[-0.3, 0, -0.1]}
+          castShadow
+        >
           <coneGeometry args={[0.033, 0.12, 8]} />
           {hairMat(color)}
         </mesh>
-        <mesh position={[0.04, 0.09, 0.03]} rotation={[-0.3, 0, 0.1]} castShadow>
+        <mesh
+          position={[0.04, 0.09, 0.03]}
+          rotation={[-0.3, 0, 0.1]}
+          castShadow
+        >
           <coneGeometry args={[0.033, 0.12, 8]} />
           {hairMat(color)}
         </mesh>
@@ -389,7 +499,9 @@ function Hair({ style, color }: { style: HairStyle; color: string }) {
     return (
       <group>
         <mesh position={[0, crownY - 0.02, 0]} castShadow>
-          <sphereGeometry args={[0.198, 26, 18, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <sphereGeometry
+            args={[0.198, 26, 18, 0, Math.PI * 2, 0, Math.PI / 2]}
+          />
           {hairMat(color)}
         </mesh>
         <mesh position={[0, 0.6, 0.12]} castShadow>
@@ -407,7 +519,9 @@ function Hair({ style, color }: { style: HairStyle; color: string }) {
   if (style === "buzz") {
     return (
       <mesh position={[0, crownY - 0.02, 0]} scale={[1, 0.38, 1]} castShadow>
-        <sphereGeometry args={[0.192, 24, 18, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <sphereGeometry
+          args={[0.192, 24, 18, 0, Math.PI * 2, 0, Math.PI / 2]}
+        />
         {hairMat(color)}
       </mesh>
     );
@@ -417,7 +531,9 @@ function Hair({ style, color }: { style: HairStyle; color: string }) {
     return (
       <group>
         <mesh position={[0, crownY - 0.02, 0]} castShadow>
-          <sphereGeometry args={[0.192, 24, 18, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <sphereGeometry
+            args={[0.192, 24, 18, 0, Math.PI * 2, 0, Math.PI / 2]}
+          />
           {hairMat(color)}
         </mesh>
         <mesh position={[0, 0.82, 0.2]} rotation={[-0.75, 0, 0]} castShadow>
@@ -443,12 +559,14 @@ function Hair({ style, color }: { style: HairStyle; color: string }) {
       [0.055, crownY + 0.01, 0.04],
       [0, crownY + 0.06, 0.02],
       [-0.11, crownY + 0.02, -0.04],
-      [0.11, crownY + 0.02, -0.04]
+      [0.11, crownY + 0.02, -0.04],
     ];
     return (
       <group>
         <mesh position={[0, crownY - 0.04, 0]} castShadow>
-          <sphereGeometry args={[0.17, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <sphereGeometry
+            args={[0.17, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2]}
+          />
           {hairMat(color)}
         </mesh>
         {curls.map((p, i) => (
@@ -464,11 +582,21 @@ function Hair({ style, color }: { style: HairStyle; color: string }) {
   if (style === "sidePart") {
     return (
       <group>
-        <mesh position={[0, crownY - 0.02, 0]} rotation={[0, 0, 0.08]} castShadow>
-          <sphereGeometry args={[0.192, 24, 18, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <mesh
+          position={[0, crownY - 0.02, 0]}
+          rotation={[0, 0, 0.08]}
+          castShadow
+        >
+          <sphereGeometry
+            args={[0.192, 24, 18, 0, Math.PI * 2, 0, Math.PI / 2]}
+          />
           {hairMat(color)}
         </mesh>
-        <mesh position={[-0.095, crownY - 0.05, 0.02]} rotation={[0.2, 0, -0.4]} castShadow>
+        <mesh
+          position={[-0.095, crownY - 0.05, 0.02]}
+          rotation={[0.2, 0, -0.4]}
+          castShadow
+        >
           <boxGeometry args={[0.12, 0.18, 0.14]} />
           {hairMat(color)}
         </mesh>
@@ -484,14 +612,24 @@ function Hair({ style, color }: { style: HairStyle; color: string }) {
     return (
       <group>
         <mesh position={[0, crownY - 0.02, 0]} castShadow>
-          <sphereGeometry args={[0.185, 22, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <sphereGeometry
+            args={[0.185, 22, 16, 0, Math.PI * 2, 0, Math.PI / 2]}
+          />
           {hairMat(color)}
         </mesh>
-        <mesh position={[-0.105, 0.76, 0.08]} rotation={[0.15, 0, -0.12]} castShadow>
+        <mesh
+          position={[-0.105, 0.76, 0.08]}
+          rotation={[0.15, 0, -0.12]}
+          castShadow
+        >
           <capsuleGeometry args={[0.035, 0.32, 6, 10]} />
           {hairMat(color)}
         </mesh>
-        <mesh position={[0.105, 0.76, 0.08]} rotation={[0.15, 0, 0.12]} castShadow>
+        <mesh
+          position={[0.105, 0.76, 0.08]}
+          rotation={[0.15, 0, 0.12]}
+          castShadow
+        >
           <capsuleGeometry args={[0.035, 0.32, 6, 10]} />
           {hairMat(color)}
         </mesh>
@@ -534,7 +672,7 @@ function Arm({
   outfit,
   skin,
   movingRef,
-  riding
+  riding,
 }: {
   /** −1 = left, +1 = right */
   side: -1 | 1;
@@ -556,76 +694,93 @@ function Arm({
     if (riding) {
       // Eased toward a static reins-holding pose rather than snapping, so the
       // transition between walking and mounting doesn't pop.
-      pivot.rotation.x = THREE.MathUtils.damp(pivot.rotation.x, RIDING_ARM_FORWARD, 10, dt);
+      pivot.rotation.x = THREE.MathUtils.damp(
+        pivot.rotation.x,
+        RIDING_ARM_FORWARD,
+        10,
+        dt,
+      );
       pivot.rotation.z = THREE.MathUtils.damp(pivot.rotation.z, 0, 10, dt);
       amp.current = 0;
       return;
     }
     const moving = movingRef?.current ?? false;
-    amp.current = THREE.MathUtils.damp(amp.current, moving ? 1 : 0, LIMB_SWING_ATTACK, dt);
+    amp.current = THREE.MathUtils.damp(
+      amp.current,
+      moving ? 1 : 0,
+      LIMB_SWING_ATTACK,
+      dt,
+    );
     // Arms swing opposite to the same-side leg: left arm forward when left leg
     // back, etc. `side` flips phase between left/right; the leading minus
     // inverts relative to Leg's swing so arm and leg on the same side oppose.
-    const swing = -Math.sin(state.clock.elapsedTime * LIMB_SWING_FREQ) * side * LIMB_SWING_AMP * amp.current;
+    const swing =
+      -Math.sin(state.clock.elapsedTime * LIMB_SWING_FREQ) *
+      side *
+      LIMB_SWING_AMP *
+      amp.current;
     pivot.rotation.x = THREE.MathUtils.damp(pivot.rotation.x, swing, 20, dt);
     pivot.rotation.z = THREE.MathUtils.damp(pivot.rotation.z, 0, 10, dt);
   });
   return (
     <group position={[sx, SHOULDER_Y, 0]} ref={pivotRef}>
-    <group position={[-sx, -SHOULDER_Y, 0]}>
-      {/* Shoulder cap */}
-      <mesh position={[sx, SHOULDER_Y + 0.02, 0]} castShadow>
-        <sphereGeometry args={[0.09, 18, 14]} />
-        <ClothMat color={outfit} roughness={0.7} />
-      </mesh>
-      {/* Upper arm */}
-      <mesh
-        position={[sx + 0.012 * side, SHOULDER_Y - 0.09, 0]}
-        rotation={[0, 0, 0.12 * -side]}
-        castShadow
-      >
-        <capsuleGeometry args={[0.062, 0.14, 8, 14]} />
-        <ClothMat color={outfit} roughness={0.72} />
-      </mesh>
-      {/* Elbow joint */}
-      <mesh position={[sx + 0.026 * side, SHOULDER_Y - 0.2, 0]} castShadow>
-        <sphereGeometry args={[0.055, 14, 12]} />
-        <ClothMat color={outfit} roughness={0.75} />
-      </mesh>
-      {/* Forearm — slight inward bend */}
-      <mesh
-        position={[sx + 0.036 * side, SHOULDER_Y - 0.29, 0.015]}
-        rotation={[-0.15, 0, 0.05 * -side]}
-        castShadow
-      >
-        <capsuleGeometry args={[0.05, 0.13, 8, 14]} />
-        <SkinMat color={skin} />
-      </mesh>
-      {/* Wrist cuff — tiny stripe that reads as sleeve edge */}
-      <mesh position={[sx + 0.048 * side, SHOULDER_Y - 0.22, 0.008]} castShadow>
-        <cylinderGeometry args={[0.055, 0.055, 0.025, 16]} />
-        <ClothMat color={outfit} roughness={0.6} />
-      </mesh>
-      {/* Hand — flattened ellipsoid, not a sphere */}
-      <group
-        position={[sx + 0.05 * side, SHOULDER_Y - 0.38, 0.028]}
-        rotation={[0, 0, 0.2 * -side]}
-      >
-        <mesh castShadow scale={[0.8, 1.2, 0.55]}>
-          <sphereGeometry args={[0.06, 14, 12]} />
-          <SkinMat color={skin} />
+      <group position={[-sx, -SHOULDER_Y, 0]}>
+        {/* Shoulder cap */}
+        <mesh position={[sx, SHOULDER_Y + 0.02, 0]} castShadow>
+          <sphereGeometry args={[0.09, 18, 14]} />
+          <ClothMat color={outfit} roughness={0.7} />
         </mesh>
-        {/* Thumb */}
+        {/* Upper arm */}
         <mesh
-          position={[-0.022 * side, -0.006, 0.022]}
-          rotation={[0.1, 0, 0.3 * side]}
+          position={[sx + 0.012 * side, SHOULDER_Y - 0.09, 0]}
+          rotation={[0, 0, 0.12 * -side]}
           castShadow
         >
-          <capsuleGeometry args={[0.014, 0.022, 4, 8]} />
+          <capsuleGeometry args={[0.062, 0.14, 8, 14]} />
+          <ClothMat color={outfit} roughness={0.72} />
+        </mesh>
+        {/* Elbow joint */}
+        <mesh position={[sx + 0.026 * side, SHOULDER_Y - 0.2, 0]} castShadow>
+          <sphereGeometry args={[0.055, 14, 12]} />
+          <ClothMat color={outfit} roughness={0.75} />
+        </mesh>
+        {/* Forearm — slight inward bend */}
+        <mesh
+          position={[sx + 0.036 * side, SHOULDER_Y - 0.29, 0.015]}
+          rotation={[-0.15, 0, 0.05 * -side]}
+          castShadow
+        >
+          <capsuleGeometry args={[0.05, 0.13, 8, 14]} />
           <SkinMat color={skin} />
         </mesh>
+        {/* Wrist cuff — tiny stripe that reads as sleeve edge */}
+        <mesh
+          position={[sx + 0.048 * side, SHOULDER_Y - 0.22, 0.008]}
+          castShadow
+        >
+          <cylinderGeometry args={[0.055, 0.055, 0.025, 16]} />
+          <ClothMat color={outfit} roughness={0.6} />
+        </mesh>
+        {/* Hand — flattened ellipsoid, not a sphere */}
+        <group
+          position={[sx + 0.05 * side, SHOULDER_Y - 0.38, 0.028]}
+          rotation={[0, 0, 0.2 * -side]}
+        >
+          <mesh castShadow scale={[0.8, 1.2, 0.55]}>
+            <sphereGeometry args={[0.06, 14, 12]} />
+            <SkinMat color={skin} />
+          </mesh>
+          {/* Thumb */}
+          <mesh
+            position={[-0.022 * side, -0.006, 0.022]}
+            rotation={[0.1, 0, 0.3 * side]}
+            castShadow
+          >
+            <capsuleGeometry args={[0.014, 0.022, 4, 8]} />
+            <SkinMat color={skin} />
+          </mesh>
+        </group>
       </group>
-    </group>
     </group>
   );
 }
@@ -635,7 +790,7 @@ function Leg({
   pants,
   bootCol,
   movingRef,
-  riding
+  riding,
 }: {
   side: -1 | 1;
   pants: string;
@@ -653,146 +808,174 @@ function Leg({
     if (riding) {
       // Splay outward to straddle the horse; keep X rotation flat so the leg
       // hangs vertically from the rotated hip. Damp for smooth mount / dismount.
-      pivot.rotation.z = THREE.MathUtils.damp(pivot.rotation.z, side * RIDING_LEG_SPREAD, 10, dt);
+      pivot.rotation.z = THREE.MathUtils.damp(
+        pivot.rotation.z,
+        side * RIDING_LEG_SPREAD,
+        10,
+        dt,
+      );
       pivot.rotation.x = THREE.MathUtils.damp(pivot.rotation.x, 0, 10, dt);
       amp.current = 0;
       return;
     }
     const moving = movingRef?.current ?? false;
-    amp.current = THREE.MathUtils.damp(amp.current, moving ? 1 : 0, LIMB_SWING_ATTACK, dt);
+    amp.current = THREE.MathUtils.damp(
+      amp.current,
+      moving ? 1 : 0,
+      LIMB_SWING_ATTACK,
+      dt,
+    );
     // Left leg (-1) and right leg (+1) swing out of phase via `side`.
-    const swing = Math.sin(state.clock.elapsedTime * LIMB_SWING_FREQ) * side * LIMB_SWING_AMP * amp.current;
+    const swing =
+      Math.sin(state.clock.elapsedTime * LIMB_SWING_FREQ) *
+      side *
+      LIMB_SWING_AMP *
+      amp.current;
     pivot.rotation.x = THREE.MathUtils.damp(pivot.rotation.x, swing, 20, dt);
     pivot.rotation.z = THREE.MathUtils.damp(pivot.rotation.z, 0, 10, dt);
   });
   return (
     <group position={[sx, HIP_Y, 0]} ref={pivotRef}>
-    <group position={[-sx, -HIP_Y, 0]}>
-      {/* Thigh */}
-      <mesh position={[sx, HIP_Y - 0.1, 0]} castShadow>
-        <capsuleGeometry args={[0.088, 0.16, 8, 14]} />
-        <LeatherMat color={pants} />
-      </mesh>
-      {/* Knee */}
-      <mesh position={[sx, HIP_Y - 0.22, 0.008]} castShadow>
-        <sphereGeometry args={[0.075, 14, 12]} />
-        <LeatherMat color={pants} />
-      </mesh>
-      {/* Calf */}
-      <mesh position={[sx, HIP_Y - 0.32, 0.002]} castShadow>
-        <capsuleGeometry args={[0.072, 0.16, 8, 14]} />
-        <LeatherMat color={pants} />
-      </mesh>
-      {/* Boot shaft — slightly wider than calf for silhouette */}
-      <mesh position={[sx, 0.06, 0.012]} castShadow>
-        <cylinderGeometry args={[0.08, 0.086, 0.08, 16]} />
-        <meshPhysicalMaterial color={bootCol} roughness={0.42} clearcoat={0.45} clearcoatRoughness={0.4} />
-      </mesh>
-      {/* Boot foot — elongated forward so the character reads oriented */}
-      <group position={[sx, 0.028, 0.05]}>
-        <mesh castShadow scale={[1, 0.55, 1.5]}>
-          <sphereGeometry args={[0.08, 16, 12]} />
-          <meshPhysicalMaterial color={bootCol} roughness={0.4} clearcoat={0.5} clearcoatRoughness={0.35} />
+      <group position={[-sx, -HIP_Y, 0]}>
+        {/* Thigh */}
+        <mesh position={[sx, HIP_Y - 0.1, 0]} castShadow>
+          <capsuleGeometry args={[0.088, 0.16, 8, 14]} />
+          <LeatherMat color={pants} />
         </mesh>
-        {/* Sole lip */}
-        <mesh position={[0, -0.028, -0.01]} scale={[1.02, 0.16, 1.45]}>
-          <sphereGeometry args={[0.08, 16, 10]} />
-          <meshStandardMaterial color="#1a1410" roughness={0.85} />
+        {/* Knee */}
+        <mesh position={[sx, HIP_Y - 0.22, 0.008]} castShadow>
+          <sphereGeometry args={[0.075, 14, 12]} />
+          <LeatherMat color={pants} />
         </mesh>
+        {/* Calf */}
+        <mesh position={[sx, HIP_Y - 0.32, 0.002]} castShadow>
+          <capsuleGeometry args={[0.072, 0.16, 8, 14]} />
+          <LeatherMat color={pants} />
+        </mesh>
+        {/* Boot shaft — slightly wider than calf for silhouette */}
+        <mesh position={[sx, 0.06, 0.012]} castShadow>
+          <cylinderGeometry args={[0.08, 0.086, 0.08, 16]} />
+          <meshPhysicalMaterial
+            color={bootCol}
+            roughness={0.42}
+            clearcoat={0.45}
+            clearcoatRoughness={0.4}
+          />
+        </mesh>
+        {/* Boot foot — elongated forward so the character reads oriented */}
+        <group position={[sx, 0.028, 0.05]}>
+          <mesh castShadow scale={[1, 0.55, 1.5]}>
+            <sphereGeometry args={[0.08, 16, 12]} />
+            <meshPhysicalMaterial
+              color={bootCol}
+              roughness={0.4}
+              clearcoat={0.5}
+              clearcoatRoughness={0.35}
+            />
+          </mesh>
+          {/* Sole lip */}
+          <mesh position={[0, -0.028, -0.01]} scale={[1.02, 0.16, 1.45]}>
+            <sphereGeometry args={[0.08, 16, 10]} />
+            <meshStandardMaterial color="#1a1410" roughness={0.85} />
+          </mesh>
+        </group>
       </group>
-    </group>
     </group>
   );
 }
 
 /* ── Root model ────────────────────────────────────────────────────────── */
 
-export function CharacterModel({ appearance, turntable = false, showFaceMarker = false, movingRef, riding = false }: CharacterModelProps) {
+export function CharacterModel({
+  appearance,
+  turntable = false,
+  showFaceMarker = false,
+  movingRef,
+  riding = false,
+}: CharacterModelProps) {
   const rootRef = useRef<THREE.Group>(null);
+
+  // Load the Knight FBX (base model + maybe some animations)
+  const fbx = useFBX("/Knight D Pelegrini.fbx");
+
+  // Load the walk animation GLB
+  const { animations: walkAnims } = useGLTF("/walk.glb");
+
+  // Combine the animations into a single array for useAnimations
+  const allAnimations = [...fbx.animations, ...walkAnims];
+  const { actions, names } = useAnimations(allAnimations, rootRef);
+
+  useEffect(() => {
+    if (names.length > 0) {
+      console.log("Available animations:", names);
+      // We will handle playing animations in a useFrame hook based on movingRef
+    }
+  }, [actions, names]);
+
+  // Handle animation state based on movingRef
+  useFrame(() => {
+    if (!actions) return;
+
+    // We assume the first animation from the walk.glb is the walk cycle
+    // and the first from the fbx is an idle cycle. We fall back to names[0] if needed.
+    const walkAnimName =
+      walkAnims.length > 0
+        ? walkAnims[0].name
+        : names.find((n) => n.toLowerCase().includes("walk")) || names[0];
+    const idleAnimName =
+      fbx.animations.length > 0
+        ? fbx.animations[0].name
+        : names.find((n) => n.toLowerCase().includes("idle")) || names[0];
+
+    const walkAction = actions[walkAnimName];
+    const idleAction = actions[idleAnimName];
+
+    if (movingRef?.current) {
+      if (idleAction && idleAction.isRunning()) {
+        idleAction.fadeOut(0.2);
+      }
+      if (walkAction && !walkAction.isRunning()) {
+        walkAction.reset().fadeIn(0.2).play();
+      }
+    } else {
+      if (walkAction && walkAction.isRunning()) {
+        walkAction.fadeOut(0.2);
+      }
+      if (idleAction && !idleAction.isRunning()) {
+        idleAction.reset().fadeIn(0.2).play();
+      }
+    }
+  });
+
+  // Turn table logic
   useFrame((_, dt) => {
     if (!turntable || !rootRef.current) return;
     rootRef.current.rotation.y += dt * 0.4;
   });
 
-  const skin = appearance.skin;
-  const hair = appearance.hair;
-  const outfit = appearance.outfit;
-  const pants = appearance.pants;
-  const bootCol = "#2a1a12";
-  const buckleCol = "#c8a24a";
+  // Adjust material properties on the FBX to fit our art style
+  useEffect(() => {
+    fbx.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+        // Optionally tweak materials here
+      }
+    });
+  }, [fbx]);
 
+  // We scale the model to match the player size
   return (
-    <group ref={rootRef}>
+    <group ref={rootRef} dispose={null}>
       {/* Soft ground contact shadow */}
       <mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <circleGeometry args={[0.34, 28]} />
         <meshBasicMaterial color="#000" transparent opacity={0.28} />
       </mesh>
 
-      {/* Legs + boots */}
-      <Leg side={-1} pants={pants} bootCol={bootCol} movingRef={movingRef} riding={riding} />
-      <Leg side={1} pants={pants} bootCol={bootCol} movingRef={movingRef} riding={riding} />
-
-      {/* Pelvis — small cylinder that bridges thighs */}
-      <mesh position={[0, HIP_Y + 0.008, 0]} castShadow>
-        <cylinderGeometry args={[0.16, 0.175, 0.07, 18]} />
-        <LeatherMat color={pants} />
-      </mesh>
-
-      {/* Belt */}
-      <mesh position={[0, WAIST_Y + 0.02, 0]} castShadow>
-        <cylinderGeometry args={[0.18, 0.18, 0.048, 22]} />
-        <meshPhysicalMaterial color="#2a2030" roughness={0.55} clearcoat={0.35} clearcoatRoughness={0.4} />
-      </mesh>
-      {/* Belt buckle */}
-      <mesh position={[0, WAIST_Y + 0.02, -0.18]} castShadow>
-        <boxGeometry args={[0.06, 0.038, 0.018]} />
-        <meshPhysicalMaterial color={buckleCol} roughness={0.3} metalness={0.75} clearcoat={0.8} />
-      </mesh>
-
-      {/* Torso — tapered waist + broader chest gives a more athletic silhouette
-          than a single capsule. Built from two stacked meshes. */}
-      <mesh position={[0, WAIST_Y + 0.12, 0]} castShadow>
-        <cylinderGeometry args={[0.185, 0.175, 0.18, 22]} />
-        <ClothMat color={outfit} />
-      </mesh>
-      <mesh position={[0, SHOULDER_Y - 0.04, 0]} castShadow>
-        <capsuleGeometry args={[0.21, 0.08, 10, 18]} />
-        <ClothMat color={outfit} />
-      </mesh>
-
-      {/* Chest V-neck / tunic collar */}
-      <mesh position={[0, SHOULDER_Y - 0.02, -0.185]} rotation={[0.35, 0, 0]} castShadow>
-        <boxGeometry args={[0.14, 0.06, 0.015]} />
-        <SkinMat color={skin} />
-      </mesh>
-
-      {/* Arms (articulated) */}
-      <Arm side={-1} outfit={outfit} skin={skin} movingRef={movingRef} riding={riding} />
-      <Arm side={1} outfit={outfit} skin={skin} movingRef={movingRef} riding={riding} />
-
-      {/* Neck — shorter + slightly narrower than head */}
-      <mesh position={[0, HEAD_Y - 0.18, 0]} castShadow>
-        <cylinderGeometry args={[0.072, 0.082, 0.09, 18]} />
-        <SkinMat color={skin} />
-      </mesh>
-
-      {/* Head — egg-shaped rather than perfect sphere */}
-      <mesh position={[0, HEAD_Y, 0]} castShadow>
-        <sphereGeometry args={[HEAD_R, 32, 24]} />
-        <SkinMat color={skin} />
-      </mesh>
-
-      <Face skin={skin} />
-      <Beard style={appearance.facialHair} color={appearance.beardColor} />
-      <Hair style={appearance.hairStyle} color={hair} />
-
-      {showFaceMarker && (
-        <mesh position={[0, HEAD_Y, -HEAD_R - 0.016]}>
-          <sphereGeometry args={[0.018, 8, 8]} />
-          <meshStandardMaterial color="#fff6dd" emissive="#ffe8aa" emissiveIntensity={0.22} />
-        </mesh>
-      )}
+      <group scale={[0.01, 0.01, 0.01]} position={[0, 0, 0]}>
+        <primitive object={fbx} />
+      </group>
     </group>
   );
 }

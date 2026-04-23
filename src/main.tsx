@@ -4,11 +4,10 @@ import App from "./App";
 import { ViewportScaler } from "./ViewportScaler";
 import "./styles.css";
 
-function hideInitialLoadSplash(): void {
+    function hideInitialLoadSplash(): void {
   const el = document.getElementById("initial-load-splash");
   if (!el) return;
-  el.classList.add("initial-load-splash--out");
-  window.setTimeout(() => el.remove(), 420);
+  el.remove();
 }
 
 const rootEl = document.getElementById("root")!;
@@ -20,8 +19,5 @@ ReactDOM.createRoot(rootEl).render(
   </React.StrictMode>
 );
 
-requestAnimationFrame(() => {
-  requestAnimationFrame(() => {
+// Remove unnecessary artificial delay for faster loading
     hideInitialLoadSplash();
-  });
-});

@@ -121,7 +121,7 @@ import {
   worldSeed as activeWorldSeed,
   worldVersion as activeWorldVersion
 } from "./worldMap";
-import { playSfx } from "./audio";
+import { playSfx, playMusic } from "./audio";
 import {
   innPatronRotationBucket,
   innPatronsForTown,
@@ -605,6 +605,7 @@ class GameStore {
     canThrone: boolean
   ): void {
     this.state.world.inTown = inTown;
+    this.updateMusic();
     this.state.world.canHeal = canHeal;
     this.state.world.canShop = canShop;
     this.state.world.canPetShop = canPetShop;
@@ -738,9 +739,11 @@ class GameStore {
     this.state.world.overworldReturnY = this.state.player.y;
     this.state.world.dungeon = dungeon;
     this.state.world.inDungeon = true;
+    this.updateMusic();
     this.state.world.canLeaveDungeon = true; // they materialize on the exit tile
     // Clear overworld flags so action overlays don't keep offering town shops etc.
     this.state.world.inTown = false;
+    this.updateMusic();
     this.state.world.canHeal = false;
     this.state.world.canShop = false;
     this.state.world.canPetShop = false;
@@ -799,8 +802,10 @@ class GameStore {
     this.state.world.overworldReturnY = this.state.player.y;
     this.state.world.dungeon = dungeon;
     this.state.world.inDungeon = true;
+    this.updateMusic();
     this.state.world.canLeaveDungeon = false;
     this.state.world.inTown = false;
+    this.updateMusic();
     this.state.world.canHeal = false;
     this.state.world.canShop = false;
     this.state.world.canPetShop = false;
@@ -851,6 +856,7 @@ class GameStore {
     this.state.player.x = this.state.world.overworldReturnX;
     this.state.player.y = this.state.world.overworldReturnY;
     this.state.world.inDungeon = false;
+    this.updateMusic();
     this.state.world.dungeon = null;
     this.state.world.canLeaveDungeon = false;
 
@@ -1110,6 +1116,7 @@ class GameStore {
       roamingMonsters: [],
       resourceNodes: []
     };
+    this.updateMusic();
     this.refreshRoamingMonsters();
     this.logEvent("The land reshapes itself. A new world stretches before you.");
     this.emit();
@@ -1654,7 +1661,16 @@ class GameStore {
     if (!this.canPlayerAct()) return;
     this.state.battle.dodgeReady = true;
     this.state.battle.nextHitMitigation = 0;
-    this.logBattle("You focus on footwork — ready to dodge the next strike.");
+    
+    // Add stance synergy: Balanced/Stealth give extra mitigation for dodging
+    const sm = battleStanceModifiers(this.state.battle.stance);
+    let msg = "You focus on footwork — ready to dodge the next strike.";
+    if (sm.label === "Balanced" || sm.label === "Shadow") {
+      this.state.battle.nextHitMitigation = 0.15; // Bonus mitigation
+      msg += " (Stance synergy: partial cover)";
+    }
+    
+    this.logBattle(msg);
     this.finishPlayerTurnWithoutOffense();
   }
 
@@ -1662,8 +1678,18 @@ class GameStore {
   playerBrace(): void {
     if (!this.canPlayerAct()) return;
     this.state.battle.dodgeReady = false;
-    this.state.battle.nextHitMitigation = 0.34;
-    this.logBattle("You brace behind your guard — the next hit will land softer.");
+    
+    // Add stance synergy: Power/Balanced provide better bracing
+    const sm = battleStanceModifiers(this.state.battle.stance);
+    let mitigation = 0.34;
+    let msg = "You brace behind your guard — the next hit will land softer.";
+    if (sm.label === "Balanced" || sm.label === "Strong") {
+      mitigation = 0.5; // Bonus mitigation
+      msg += " (Stance synergy: reinforced)";
+    }
+    
+    this.state.battle.nextHitMitigation = mitigation;
+    this.logBattle(msg);
     this.finishPlayerTurnWithoutOffense();
   }
 
@@ -1680,7 +1706,11 @@ class GameStore {
     const effDef = Math.max(0, enemy.defense * (1 - sm.defenseIgnore));
     const raw = Math.max(2, this.playerAttackPower() - effDef + this.randomVariance());
     const mult = elementDamageMultiplier(atkEl, enemy.element);
-    let damage = Math.max(2, Math.round(raw * mult * sm.outgoingDamageMult * 2));
+    
+    // Add stance synergy: Power stance doubles damage, others only 1.5x
+    const powerMult = (sm.label === "Strong") ? 2.5 : 2;
+    let damage = Math.max(2, Math.round(raw * mult * sm.outgoingDamageMult * powerMult));
+    
     const posMult = this.consumePositionalMultiplier();
     if (posMult.mult !== 1) {
       damage = Math.max(2, Math.round(damage * posMult.mult));
@@ -1695,8 +1725,10 @@ class GameStore {
     }
     enemy.hp = Math.max(0, enemy.hp - damage);
     const stanceTag = sm.label !== "Balanced" ? ` (${sm.label})` : "";
+    
+    const synergy = (sm.label === "Strong") ? " (Strong synergy: crushing weight)" : "";
     this.logBattle(
-      `HEAVY STRIKE for ${damage} damage — you're off-balance for the next turn.${elementBattleLogSuffix(mult)}${crit.suffix}${stanceTag}${posMult.suffix}${oil.suffix}`
+      `HEAVY STRIKE for ${damage} damage — you're off-balance for the next turn.${elementBattleLogSuffix(mult)}${crit.suffix}${stanceTag}${posMult.suffix}${oil.suffix}${synergy}`
     );
     this.state.battle.lastPlayerHitAt = nowMs();
     this.state.battle.stunTurns = 1;
@@ -3052,6 +3084,7 @@ class GameStore {
     }
     if (this.state.world.inDungeon === undefined) {
       this.state.world.inDungeon = false;
+    this.updateMusic();
     }
     if (this.state.world.dungeon === undefined) {
       this.state.world.dungeon = null;
@@ -3066,6 +3099,7 @@ class GameStore {
     // pop them out to the overworld return point so they aren't stuck.
     if (this.state.world.inDungeon && !this.state.world.dungeon) {
       this.state.world.inDungeon = false;
+    this.updateMusic();
       this.state.world.canLeaveDungeon = false;
       this.state.player.x = this.state.world.overworldReturnX;
       this.state.player.y = this.state.world.overworldReturnY;
@@ -3665,6 +3699,7 @@ class GameStore {
   private endBattle(): void {
     this.clearVictoryExitTimer();
     this.state.battle.inBattle = false;
+    this.updateMusic();
     this.state.battle.enemy = null;
     this.state.battle.itemAttackBonus = 0;
     this.state.battle.itemDefenseBonus = 0;
@@ -3842,6 +3877,18 @@ class GameStore {
 
   private logBattle(message: string): void {
     this.state.battle.log = [message, ...this.state.battle.log].slice(0, 8);
+  }
+
+  public updateMusic() {
+    if (this.state.battle.inBattle) {
+      playMusic("battle");
+    } else if (this.state.world.inDungeon) {
+      playMusic("dungeon");
+    } else if (this.state.world.inTown) {
+      playMusic("town");
+    } else {
+      playMusic("overworld");
+    }
   }
 
   private logEvent(message: string): void {

@@ -40,6 +40,9 @@ export class GameScene extends Phaser.Scene {
   private lastInDungeon = false;
   private unsubscribeStore: (() => void) | null = null;
 
+  private dungeonRoamerSprites: Phaser.GameObjects.Sprite[] = [];
+  private dungeonChestSprites: Phaser.GameObjects.Sprite[] = [];
+
   constructor() {
     super("GameScene");
   }
@@ -75,6 +78,14 @@ export class GameScene extends Phaser.Scene {
     this.dungeonRoamerGfx = this.add.graphics();
     this.dungeonRoamerGfx.setDepth(20);
 
+    // Initialize pools (dungeon chest/roamer limit can be estimated)
+    for (let i = 0; i < 50; i++) {
+        const s = this.add.sprite(0, 0, "chestSprite").setVisible(false).setDepth(19);
+        this.dungeonChestSprites.push(s);
+        const r = this.add.sprite(0, 0, "roamerSprite").setVisible(false).setDepth(20);
+        this.dungeonRoamerSprites.push(r);
+    }
+
     // Restart the scene whenever we enter/leave the dungeon so the static
     // map + sprites are rebuilt. Cheap since the scene is small.
     this.unsubscribeStore = gameStore.subscribe(() => {
@@ -91,25 +102,28 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_: number, delta: number): void {
+    const snap = gameStore.getSnapshot();
     this.syncFromStore();
     if (this.lastInDungeon) {
-      this.drawDungeonChests();
-      this.drawDungeonRoamers();
+      this.drawDungeonChests(snap);
+      this.drawDungeonRoamers(snap);
     } else {
-      this.drawResourceNodes();
-      this.drawRoamers();
+      this.drawResourceNodes(snap);
+      this.drawRoamers(snap);
     }
-    if (gameStore.getSnapshot().battle.inBattle) {
+    if (snap.battle.inBattle) {
       return;
     }
-    const walkMult = overworldHorseWalkSpeedMultiplier(gameStore.getSnapshot().player.horsesOwned);
-    const speed = 140 * walkMult * (delta / 1000);
+    const walkMult = overworldHorseWalkSpeedMultiplier(snap.player.horsesOwned);
+    const speed = 400 * walkMult * (delta / 1000);
     let vx = 0;
     let vy = 0;
     if (this.isLeft()) vx -= speed;
     if (this.isRight()) vx += speed;
     if (this.isUp()) vy -= speed;
     if (this.isDown()) vy += speed;
+    if (vx === 0 && vy === 0) return; // Optimization: Skip collision checks if stationary
+
     const nextX = Phaser.Math.Clamp(this.player.x + vx, TILE / 2, MAP_W * TILE - TILE / 2);
     const nextY = Phaser.Math.Clamp(this.player.y + vy, TILE / 2, MAP_H * TILE - TILE / 2);
     if (!isBlocked(nextX, nextY)) {
@@ -130,6 +144,10 @@ export class GameScene extends Phaser.Scene {
     }
     this.drawHardBorders(g);
     this.drawLandmarks();
+
+    g.generateTexture("mapTexture", MAP_W * TILE, MAP_H * TILE);
+    this.add.image(0, 0, "mapTexture").setOrigin(0).setDepth(0);
+    g.destroy();
 
     const SPRITE_BY_KIND: Record<BuildingKind, { sprite: string; tint?: number }> = {
       inn: { sprite: "innSprite" },
@@ -334,53 +352,39 @@ export class GameScene extends Phaser.Scene {
     this.dungeonGfx = g;
   }
 
-  /** Every frame: redraw treasure chests (closed = bright; opened = faded). */
-  private drawDungeonChests(): void {
-    const g = this.dungeonChestGfx;
-    if (!g) return;
-    g.clear();
-    const dungeon = gameStore.getSnapshot().world.dungeon;
+  private drawDungeonChests(snap: any): void {
+    const dungeon = snap.world.dungeon;
     if (!dungeon) return;
     const floor = currentDungeonFloor(dungeon);
     if (!floor) return;
-    for (const c of floor.chests) {
-      const cx = c.tx * TILE + TILE / 2;
-      const cy = c.ty * TILE + TILE / 2;
-      if (c.opened) {
-        g.fillStyle(0x3a2618, 1);
-        g.fillRect(cx - 10, cy - 6, 20, 12);
-        g.fillStyle(0x1e1410, 1);
-        g.fillRect(cx - 10, cy - 10, 20, 4);
-      } else {
-        g.fillStyle(0x6a4028, 1);
-        g.fillRect(cx - 10, cy - 6, 20, 12);
-        g.fillStyle(0x8a5838, 1);
-        g.fillRect(cx - 10, cy - 10, 20, 4);
-        g.fillStyle(0xd8b048, 1);
-        g.fillRect(cx - 2, cy - 3, 4, 6);
-      }
+    
+    // Hide all in pool first
+    for (const s of this.dungeonChestSprites) s.setVisible(false);
+
+    for (let i = 0; i < floor.chests.length && i < this.dungeonChestSprites.length; i++) {
+        const c = floor.chests[i];
+        const s = this.dungeonChestSprites[i];
+        s.setTexture(c.opened ? "chestOpenedSprite" : "chestSprite");
+        s.setPosition(c.tx * TILE + TILE / 2, c.ty * TILE + TILE / 2);
+        s.setVisible(true);
     }
   }
 
   /** Every frame: redraw visible dungeon monsters so kills disappear instantly. */
-  private drawDungeonRoamers(): void {
-    const g = this.dungeonRoamerGfx;
-    if (!g) return;
-    g.clear();
-    const dungeon = gameStore.getSnapshot().world.dungeon;
+  private drawDungeonRoamers(snap: any): void {
+    const dungeon = snap.world.dungeon;
     if (!dungeon) return;
     const floor = currentDungeonFloor(dungeon);
     if (!floor) return;
-    for (const r of floor.roamers) {
-      const cx = r.tx * TILE + TILE / 2;
-      const cy = r.ty * TILE + TILE / 2;
-      g.fillStyle(0xbfc0a0, 1);
-      g.fillCircle(cx, cy, 7);
-      g.fillStyle(0x1a1a1a, 1);
-      g.fillCircle(cx - 2, cy - 1, 1);
-      g.fillCircle(cx + 2, cy - 1, 1);
-      g.fillStyle(0x6a0c0c, 1);
-      g.fillRect(cx - 3, cy + 2, 6, 1);
+
+    // Hide all in pool
+    for (const s of this.dungeonRoamerSprites) s.setVisible(false);
+
+    for (let i = 0; i < floor.roamers.length && i < this.dungeonRoamerSprites.length; i++) {
+        const r = floor.roamers[i];
+        const s = this.dungeonRoamerSprites[i];
+        s.setPosition(r.tx * TILE + TILE / 2, r.ty * TILE + TILE / 2);
+        s.setVisible(true);
     }
   }
 
@@ -549,76 +553,87 @@ export class GameScene extends Phaser.Scene {
   private makeFlowerTexture(): void {
     if (this.textures.exists("flowerSprite")) return;
     const g = this.make.graphics({ x: 0, y: 0 }, false);
-    g.fillStyle(0x2d7c2d, 1);
-    g.fillRect(7, 8, 2, 7);
-    g.fillStyle(0xd85ba9, 1);
-    g.fillRect(5, 4, 2, 2);
-    g.fillRect(9, 4, 2, 2);
-    g.fillRect(7, 2, 2, 2);
-    g.fillRect(7, 6, 2, 2);
-    g.fillStyle(0xffe57a, 1);
-    g.fillRect(7, 4, 2, 2);
+    g.fillStyle(0x3b8a44, 1);
+    g.fillRect(7, 8, 2, 8);
+    g.fillStyle(0xd65d8e, 1);
+    g.fillCircle(8, 4, 4);
+    g.fillStyle(0xf1e48f, 1);
+    g.fillCircle(8, 4, 2);
     g.generateTexture("flowerSprite", 16, 16);
     g.destroy();
   }
 
-  private drawResourceNodes(): void {
+  private makeRoamerTexture(): void {
+    if (this.textures.exists("roamerSprite")) return;
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    g.fillStyle(0xbfc0a0, 1);
+    g.fillCircle(8, 8, 7);
+    g.fillStyle(0x1a1a1a, 1);
+    g.fillCircle(6, 7, 1);
+    g.fillCircle(10, 7, 1);
+    g.fillStyle(0x6a0c0c, 1);
+    g.fillRect(5, 10, 6, 1);
+    g.generateTexture("roamerSprite", 16, 16);
+    g.destroy();
+  }
+
+  private makeChestTexture(): void {
+    if (this.textures.exists("chestSprite")) return;
+    const g = this.make.graphics({ x: 0, y: 0 }, false);
+    // Closed chest
+    g.fillStyle(0x6a4028, 1);
+    g.fillRect(0, 0, 20, 12);
+    g.fillStyle(0x8a5838, 1);
+    g.fillRect(0, 0, 20, 4);
+    g.fillStyle(0xd8b048, 1);
+    g.fillRect(8, 3, 4, 6);
+    g.generateTexture("chestSprite", 20, 12);
+    g.destroy();
+    
+    // Opened chest texture (for pool/swapping)
+    const gOpen = this.make.graphics({ x: 0, y: 0 }, false);
+    gOpen.fillStyle(0x3a2618, 1);
+    gOpen.fillRect(0, 0, 20, 12);
+    gOpen.fillStyle(0x1e1410, 1);
+    gOpen.fillRect(0, 0, 20, 4);
+    gOpen.generateTexture("chestOpenedSprite", 20, 12);
+    gOpen.destroy();
+  }
+
+  private drawResourceNodes(snap: any): void {
     const g = this.resourceGfx;
     if (!g) return;
     g.clear();
-    if (gameStore.getSnapshot().battle.inBattle) return;
-    for (const n of gameStore.getSnapshot().world.resourceNodes ?? []) {
-      const def = RESOURCES[n.resourceKey];
+    if (snap.battle.inBattle) return;
+    
+    // Minimize state lookups and simplify draw calls per resources
+    for (const n of snap.world.resourceNodes ?? []) {
+      const def = RESOURCES[n.resourceKey as keyof typeof RESOURCES];
       if (!def) continue;
-      const cx = n.tx * TILE + TILE / 2;
-      const cy = n.ty * TILE + TILE / 2;
-      const primary = Phaser.Display.Color.HexStringToColor(def.colorPrimary).color;
-      const accent = Phaser.Display.Color.HexStringToColor(def.colorAccent).color;
+
+      const cx = (n.tx * TILE) + (TILE / 2);
+      const cy = (n.ty * TILE) + (TILE / 2);
+      const color = Phaser.Display.Color.HexStringToColor(def.colorPrimary).color;
+      
+      g.fillStyle(color, 1);
+      
+      // Use consolidated draw shapes to reduce draw calls
       if (def.shape === "mushroom") {
-        g.fillStyle(0xf4ead5);
         g.fillRect(cx - 2, cy - 1, 4, 5);
-        g.fillStyle(primary, 1);
         g.fillCircle(cx, cy - 2, 5);
-        g.fillStyle(accent, 0.85);
-        g.fillCircle(cx - 2, cy - 3, 1);
-        g.fillCircle(cx + 2, cy - 2, 1);
-      } else if (def.shape === "herb") {
-        g.fillStyle(accent, 1);
-        g.fillRect(cx - 3, cy + 2, 6, 2);
-        g.fillStyle(primary, 1);
-        for (let i = 0; i < 4; i++) {
-          const ang = (i / 4) * Math.PI - Math.PI / 2;
-          g.fillTriangle(
-            cx + Math.cos(ang) * 4,
-            cy - 4 + Math.sin(ang) * 2,
-            cx + Math.cos(ang) * 2 - 1,
-            cy + 1,
-            cx + Math.cos(ang) * 2 + 1,
-            cy + 1
-          );
-        }
       } else {
-        // flower / crystalBloom — small blossom glyph
-        g.fillStyle(0x3b8a44, 1);
-        g.fillRect(cx - 1, cy - 1, 2, 5);
-        g.fillStyle(primary, 1);
-        const petals = 5;
-        for (let i = 0; i < petals; i++) {
-          const ang = (i / petals) * Math.PI * 2;
-          g.fillCircle(cx + Math.cos(ang) * 3.2, cy - 2 + Math.sin(ang) * 3.2, 2);
-        }
-        g.fillStyle(accent, 1);
-        g.fillCircle(cx, cy - 2, 1.6);
+        // Uniform simple shape for other resources as a performant approximation
+        g.fillRect(cx - 3, cy - 3, 6, 6);
       }
     }
   }
 
-  private drawRoamers(): void {
+  private drawRoamers(snap: any): void {
     const g = this.roamerGfx;
     if (!g) return;
     g.clear();
-    if (gameStore.getSnapshot().battle.inBattle) return;
-    for (const r of gameStore.getSnapshot().world.roamingMonsters ?? []) {
+    if (snap.battle.inBattle) return;
+    for (const r of snap.world.roamingMonsters ?? []) {
       const cx = r.tx * TILE + TILE / 2;
       const cy = r.ty * TILE + TILE / 2;
       g.fillStyle(0xd94a3d, 0.92);

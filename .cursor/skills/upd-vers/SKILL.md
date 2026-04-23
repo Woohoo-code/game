@@ -5,14 +5,18 @@ description: Bumps the Monster Slayer release version by one semver patch step (
 
 # Update version (`/upd-vers`)
 
-In this repo, **"+0.01"** means **semver patch +1** (smallest release step): `1.0.0` → `1.0.1`, then `1.0.2`, etc.
+In this repo, **"+0.01"** means **semver patch +1** (smallest release step): `1.0.0` → `1.0.1`. If the patch version reaches `9` (e.g., `1.0.9`), it rolls over to the next minor version (e.g., `1.1.0`).
 
 ## Steps
 
-1. From the **project root**, bump npm version and lockfile in one step:
+1. From the **project root**, check the current version in `package.json`. If the patch version is `9` (e.g., `1.0.9`), bump the **minor** version instead of the patch version so it rolls over to `1.1.0`.
 
 ```powershell
+# If patch is < 9 (e.g., 1.0.8 -> 1.0.9):
 npm version patch --no-git-tag-version
+
+# If patch is 9 (e.g., 1.0.9 -> 1.1.0):
+npm version minor --no-git-tag-version
 ```
 
 This updates `package.json` and the root entry in `package-lock.json`. Do **not** edit the lockfile by hand.

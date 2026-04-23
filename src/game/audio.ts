@@ -20,6 +20,8 @@ export type SfxKind =
   | "defeat"
   | "ui"; // generic click
 
+export type MusicKind = "town" | "overworld" | "battle" | "dungeon";
+
 const STORAGE_KEY = "msty-audio";
 
 interface AudioPrefs {
@@ -56,6 +58,11 @@ let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 const listeners = new Set<() => void>();
 let lastStepAt = 0;
+
+// Background music state
+let currentMusicKind: MusicKind | null = null;
+let musicOscillators: OscillatorNode[] = [];
+let musicTimerId: number | null = null;
 
 function ensureCtx(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -97,6 +104,12 @@ export function setAudioMuted(muted: boolean): void {
   prefs = { ...prefs, muted };
   savePrefs(prefs);
   if (master && ctx) master.gain.setTargetAtTime(muted ? 0 : prefs.volume, ctx.currentTime, 0.02);
+  
+  if (muted) {
+    stopMusic();
+  } else if (currentMusicKind) {
+    playMusic(currentMusicKind);
+  }
   listeners.forEach((fn) => fn());
 }
 
@@ -106,6 +119,114 @@ export function setAudioVolume(volume: number): void {
   savePrefs(prefs);
   if (master && ctx && !prefs.muted) master.gain.setTargetAtTime(v, ctx.currentTime, 0.02);
   listeners.forEach((fn) => fn());
+}
+
+export function stopMusic() {
+  if (musicTimerId !== null) {
+    window.clearTimeout(musicTimerId);
+    musicTimerId = null;
+  }
+  for (const osc of musicOscillators) {
+    try { osc.stop(); } catch {}
+    try { osc.disconnect(); } catch {}
+  }
+  musicOscillators = [];
+}
+
+export function playMusic(kind: MusicKind) {
+  if (prefs.muted) {
+    currentMusicKind = kind; // Save so it resumes on unmute
+    return;
+  }
+  if (currentMusicKind === kind && musicOscillators.length > 0) return; // Already playing
+  
+  stopMusic();
+  currentMusicKind = kind;
+  
+  const c = ensureCtx();
+  if (!c || !master) return;
+  
+  let step = 0;
+  
+  const loop = () => {
+    if (currentMusicKind !== kind || prefs.muted || !master) return;
+    
+    if (kind === "town") {
+      // 8-step sequence, F Lydian
+      // F, G, A, B, C, D, Eb
+      const melody = [349.23, 392.00, 440.00, 392.00, 349.23, 311.13, 261.63, 293.66];
+      const bass = [174.61, 0, 155.56, 0, 130.81, 0, 146.83, 0];
+      
+      const mFreq = melody[step % 8];
+      const bFreq = bass[step % 8];
+      
+      playTone({ freq: mFreq, type: "sine", durationMs: 450, gain: 0.04, releaseMs: 300 });
+      if (bFreq > 0) {
+        playTone({ freq: bFreq, type: "triangle", durationMs: 900, gain: 0.07, releaseMs: 600 });
+      }
+      
+      musicTimerId = window.setTimeout(loop, 450);
+      
+    } else if (kind === "overworld") {
+      // 12-step sequence, C Dorian
+      // C, D, Eb, F, G, A, Bb
+      const melody = [261.63, 392.00, 311.13, 349.23, 261.63, 392.00, 466.16, 392.00, 349.23, 311.13, 293.66, 261.63];
+      const bass = [130.81, 0, 0, 155.56, 0, 0, 174.61, 0, 0, 116.54, 0, 0];
+      
+      const mFreq = melody[step % 12];
+      const bFreq = bass[step % 12];
+      
+      playTone({ freq: mFreq, type: "triangle", durationMs: 300, gain: 0.05, releaseMs: 250 });
+      if (bFreq > 0) {
+        playTone({ freq: bFreq, type: "square", durationMs: 500, gain: 0.05, releaseMs: 400 });
+      }
+      
+      musicTimerId = window.setTimeout(loop, 300);
+      
+    } else if (kind === "battle") {
+      // 16-step sequence, D Harmonic Minor
+      // D, E, F, G, A, Bb, C#
+      const melody = [293.66, 349.23, 440.00, 349.23, 554.37, 440.00, 349.23, 293.66, 466.16, 349.23, 293.66, 349.23, 440.00, 349.23, 293.66, 277.18];
+      const bass = [73.42, 0, 146.83, 0, 73.42, 0, 146.83, 0, 116.54, 0, 233.08, 0, 116.54, 0, 233.08, 0];
+      
+      const mFreq = melody[step % 16];
+      const bFreq = bass[step % 16];
+      
+      playTone({ freq: mFreq, type: "square", durationMs: 150, gain: 0.03, releaseMs: 50 });
+      playTone({ freq: bFreq, type: "sawtooth", durationMs: 180, gain: 0.06, releaseMs: 100 });
+      
+      if (step % 4 === 0) {
+        playNoise({ durationMs: 60, gain: 0.06, bandpass: { freq: 400, q: 0.5 } }); // Kick
+      }
+      if (step % 4 === 2) {
+        playNoise({ durationMs: 80, gain: 0.04, bandpass: { freq: 1500, q: 1.0 } }); // Snare
+      }
+      
+      musicTimerId = window.setTimeout(loop, 160);
+      
+    } else if (kind === "dungeon") {
+      // 16-step sequence, G Phrygian Dominant
+      // G, Ab, B, C, D, Eb, F
+      const drone = [98.00, 103.83, 98.00, 98.00];
+      const melody = [392.00, 0, 415.30, 0, 493.88, 0, 392.00, 0, 587.33, 0, 622.25, 0, 587.33, 0, 415.30, 0];
+      
+      const dFreq = drone[Math.floor(step / 4) % 4];
+      const mFreq = melody[step % 16];
+      
+      if (step % 4 === 0) {
+        playTone({ freq: dFreq, type: "sine", durationMs: 2000, gain: 0.08, releaseMs: 1500 });
+      }
+      if (mFreq > 0) {
+        playTone({ freq: mFreq, type: "triangle", durationMs: 500, gain: 0.03, releaseMs: 800 });
+      }
+      
+      musicTimerId = window.setTimeout(loop, 400);
+    }
+    
+    step++;
+  };
+  
+  loop();
 }
 
 export function subscribeAudioPrefs(fn: () => void): () => void {
@@ -132,6 +253,9 @@ function playTone(
   if (prefs.muted) return;
   const start = c.currentTime + (opts.delayMs ?? 0) / 1000;
   const dur = opts.durationMs / 1000;
+  const attack = (opts.attackMs ?? 8) / 1000;
+  const release = (opts.releaseMs ?? 20) / 1000; // longer release for smoother transitions
+  
   const osc = c.createOscillator();
   osc.type = opts.type ?? "sine";
   osc.frequency.setValueAtTime(opts.freq, start);
@@ -141,11 +265,20 @@ function playTone(
   const g = c.createGain();
   const peak = opts.gain ?? 0.25;
   g.gain.setValueAtTime(0, start);
-  g.gain.linearRampToValueAtTime(peak, start + (opts.attackMs ?? 8) / 1000);
-  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  g.gain.linearRampToValueAtTime(peak, start + attack);
+  // Use setTargetAtTime instead of exponentialRampToValueAtTime for a much smoother natural decay tail
+  g.gain.setTargetAtTime(0, start + dur - release, release / 4);
+  
   osc.connect(g).connect(master);
+  musicOscillators.push(osc); // Keep track of it in case we need to stop music abruptly
   osc.start(start);
-  osc.stop(start + dur + 0.02);
+  osc.stop(start + dur + release * 2); // Give it plenty of time to decay completely
+  
+  // Cleanup reference
+  osc.onended = () => {
+    const idx = musicOscillators.indexOf(osc);
+    if (idx > -1) musicOscillators.splice(idx, 1);
+  };
 }
 
 function playNoise(opts: {
