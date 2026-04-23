@@ -24,6 +24,8 @@ import {
   useStoryOverlays
 } from "./ui/Journal";
 import { MobileFullscreenButton } from "./ui/MobileFullscreenButton";
+import { MusicToggleButton } from "./ui/MusicToggleButton";
+import { BackgroundMusicMount } from "./game/music";
 import { InventoryBar } from "./ui/InventoryBar";
 
 /**
@@ -232,8 +234,10 @@ export default function App() {
     const hasChar = snapshot.player.hasCreatedCharacter;
     return (
       <div className="title-screen" role="document" aria-label="Monster Slayer — sign in or start">
+        <BackgroundMusicMount />
         <div className="title-screen-inner">
           <div className="title-screen-top-actions">
+            <MusicToggleButton />
             <MobileFullscreenButton />
           </div>
           <h1 className="title-screen-logo">Monster Slayer</h1>
@@ -326,7 +330,9 @@ export default function App() {
 
   if (effectiveScreen === "create") {
     return (
-      <CharacterCreation
+      <>
+        <BackgroundMusicMount />
+        <CharacterCreation
         onDone={() => {
           setTitleNotice(null);
           setScreen("play");
@@ -336,6 +342,7 @@ export default function App() {
           setScreen("title");
         }}
       />
+      </>
     );
   }
 
@@ -343,6 +350,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <BackgroundMusicMount />
       {ugcOpen && <UgcStudio onClose={closeUgc} />}
       {journalOpen && <Journal onClose={() => setJournalOpen(false)} />}
       {petsOpen && <PetsPanel onClose={() => setPetsOpen(false)} />}
@@ -358,6 +366,7 @@ export default function App() {
       <div className="main-column">
         <div className="game-wrap">
           <div className="app-mobile-fs-bar">
+            <MusicToggleButton />
             <MobileFullscreenButton />
           </div>
           <div className="game-viewport">

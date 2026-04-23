@@ -170,8 +170,14 @@ html[data-app-screen="create"] .viewport-scaler-inner > .character-create {
 .title-screen-top-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
   width: 100%;
   margin: 0 0 8px;
+}
+
+.app-mobile-fs-bar .mobile-fullscreen-btn + .mobile-fullscreen-btn {
+  margin-left: 6px;
 }
 
 @media (max-width: 900px) {
