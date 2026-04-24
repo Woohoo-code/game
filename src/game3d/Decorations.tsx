@@ -1,5 +1,6 @@
 import { Instance, Instances } from "@react-three/drei";
 import { useMemo } from "react";
+import * as THREE from "three";
 import type { BiomeKind } from "../game/types";
 import { MAP_H, MAP_W, biomeAt, terrainAt } from "../game/worldMap";
 import { useGameStore } from "../game/useGameStore";
@@ -613,14 +614,28 @@ export function AmbientSparkles() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [worldVersion]);
 
+  const pointsGeo = useMemo(() => {
+    const positions = new Float32Array(sparkles.length * 3);
+    const colors = new Float32Array(sparkles.length * 3);
+    const color = new THREE.Color();
+    sparkles.forEach((s, i) => {
+      positions[i * 3] = s.x;
+      positions[i * 3 + 1] = s.y;
+      positions[i * 3 + 2] = s.z;
+      color.set(s.color);
+      colors[i * 3] = color.r;
+      colors[i * 3 + 1] = color.g;
+      colors[i * 3 + 2] = color.b;
+    });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    return geo;
+  }, [sparkles]);
+
   return (
-    <>
-      {sparkles.map((s, i) => (
-        <mesh key={i} position={[s.x, s.y, s.z]}>
-          <sphereGeometry args={[0.035, 6, 6]} />
-          <meshBasicMaterial color={s.color} transparent opacity={0.75} />
-        </mesh>
-      ))}
-    </>
+    <points geometry={pointsGeo}>
+      <pointsMaterial vertexColors size={0.07} transparent opacity={0.75} sizeAttenuation />
+    </points>
   );
 }

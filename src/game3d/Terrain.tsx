@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { useGLTF } from "@react-three/drei";
@@ -294,6 +294,101 @@ const FOLIAGE_BY_BIOME_REALM2: Record<
   },
 };
 
+// Module-level scratch objects — allocated once, reused every frame, zero GC pressure.
+const _mat4 = new THREE.Matrix4();
+const _vec3 = new THREE.Vector3();
+
+interface BiomeTreesProps {
+  biomeTrees: Array<{
+    x: number;
+    y: number;
+    scale: number;
+    rot: number;
+    tint: number;
+    biome: BiomeKind;
+  }>;
+  palette: { base: THREE.Color; top: THREE.Color; trunk: THREE.Color };
+  treeGeometries: {
+    trunk: THREE.BufferGeometry;
+    cone1: THREE.BufferGeometry;
+    cone2: THREE.BufferGeometry;
+    cone3: THREE.BufferGeometry;
+  };
+}
+
+function BiomeTrees({ biomeTrees, palette, treeGeometries }: BiomeTreesProps) {
+  const trunkRef = useRef<THREE.InstancedMesh>(null);
+  const cone1Ref = useRef<THREE.InstancedMesh>(null);
+  const cone2Ref = useRef<THREE.InstancedMesh>(null);
+  const cone3Ref = useRef<THREE.InstancedMesh>(null);
+
+  // Imperatively set instance matrices once per biomeTrees change — no per-frame allocations.
+  useEffect(() => {
+    const refs = [trunkRef, cone1Ref, cone2Ref, cone3Ref];
+    const yOffsets = [0.32, 0.92, 1.45, 1.85];
+    for (let m = 0; m < refs.length; m++) {
+      const mesh = refs[m].current;
+      if (!mesh) continue;
+      for (let i = 0; i < biomeTrees.length; i++) {
+        const t = biomeTrees[i];
+        _mat4.makeRotationY(t.rot);
+        _vec3.set(t.scale, t.scale, t.scale);
+        _mat4.scale(_vec3);
+        _mat4.setPosition(t.x, yOffsets[m] * t.scale, t.y);
+        mesh.setMatrixAt(i, _mat4);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+  }, [biomeTrees]);
+
+  const trunkMat = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: palette.trunk, roughness: 0.9 }),
+    [palette],
+  );
+  const cone1Mat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: palette.base.clone().multiplyScalar(0.9),
+        roughness: 0.85,
+      }),
+    [palette],
+  );
+  // cone2 and cone3 share the same derived color
+  const coneMat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: palette.top.clone().multiplyScalar(0.92),
+        roughness: 0.85,
+      }),
+    [palette],
+  );
+
+  return (
+    <group>
+      <instancedMesh
+        ref={trunkRef}
+        args={[treeGeometries.trunk, trunkMat, biomeTrees.length]}
+        castShadow
+      />
+      <instancedMesh
+        ref={cone1Ref}
+        args={[treeGeometries.cone1, cone1Mat, biomeTrees.length]}
+        castShadow
+      />
+      <instancedMesh
+        ref={cone2Ref}
+        args={[treeGeometries.cone2, coneMat, biomeTrees.length]}
+        castShadow
+      />
+      <instancedMesh
+        ref={cone3Ref}
+        args={[treeGeometries.cone3, coneMat, biomeTrees.length]}
+        castShadow
+      />
+    </group>
+  );
+}
+
 /** Decorative tree clusters rendered on forest tiles with slight variation + biome palette. */
 export function Forests() {
   const snapshot = useGameStore();
@@ -364,161 +459,13 @@ export function Forests() {
         const palette = (
           realmTier >= 2 ? FOLIAGE_BY_BIOME_REALM2 : FOLIAGE_BY_BIOME
         )[biome];
-
-        // Setup InstancedMesh data for this biome
         return (
-          <group key={biome}>
-            {/* Trunk */}
-            <instancedMesh
-              args={[
-                treeGeometries.trunk,
-                new THREE.MeshStandardMaterial({
-                  color: palette.trunk,
-                  roughness: 0.9,
-                }),
-                biomeTrees.length,
-              ]}
-              castShadow
-            >
-              {biomeTrees.map((t, i) => {
-                const matrix = new THREE.Matrix4();
-                matrix.makeRotationY(t.rot);
-                matrix.scale(new THREE.Vector3(t.scale, t.scale, t.scale));
-                matrix.setPosition(t.x, 0.32 * t.scale, t.y);
-                return (
-                  <primitive
-                    key={`trunk-${i}`}
-                    object={new THREE.Object3D()}
-                    position={[0, 0, 0]}
-                    ref={(obj: any) => {
-                      if (obj) {
-                        obj.parent?.parent?.children[0]?.setMatrixAt?.(
-                          i,
-                          matrix,
-                        );
-                        if (i === biomeTrees.length - 1) {
-                          const m = obj.parent?.parent?.children[0];
-                          if (m && m.instanceMatrix)
-                            m.instanceMatrix.needsUpdate = true;
-                        }
-                      }
-                    }}
-                  />
-                );
-              })}
-            </instancedMesh>
-            {/* Cone 1 */}
-            <instancedMesh
-              args={[
-                treeGeometries.cone1,
-                new THREE.MeshStandardMaterial({
-                  color: palette.base.clone().multiplyScalar(0.9),
-                  roughness: 0.85,
-                }),
-                biomeTrees.length,
-              ]}
-              castShadow
-            >
-              {biomeTrees.map((t, i) => {
-                const matrix = new THREE.Matrix4();
-                matrix.makeRotationY(t.rot);
-                matrix.scale(new THREE.Vector3(t.scale, t.scale, t.scale));
-                matrix.setPosition(t.x, 0.92 * t.scale, t.y);
-                // Can't do instanced colors easily in R3F declarative without a hook, just use base color
-                return (
-                  <primitive
-                    key={`cone1-${i}`}
-                    object={new THREE.Object3D()}
-                    position={[0, 0, 0]}
-                    ref={(obj: any) => {
-                      if (obj)
-                        obj.parent?.parent?.children[1]?.setMatrixAt?.(
-                          i,
-                          matrix,
-                        );
-                    }}
-                  />
-                );
-              })}
-            </instancedMesh>
-            {/* Cone 2 */}
-            <instancedMesh
-              args={[
-                treeGeometries.cone2,
-                new THREE.MeshStandardMaterial({
-                  color: palette.top.clone().multiplyScalar(0.92),
-                  roughness: 0.85,
-                }),
-                biomeTrees.length,
-              ]}
-              castShadow
-            >
-              {biomeTrees.map((t, i) => {
-                const matrix = new THREE.Matrix4();
-                matrix.makeRotationY(t.rot);
-                matrix.scale(new THREE.Vector3(t.scale, t.scale, t.scale));
-                matrix.setPosition(t.x, 1.45 * t.scale, t.y);
-                return (
-                  <primitive
-                    key={`cone2-${i}`}
-                    object={new THREE.Object3D()}
-                    position={[0, 0, 0]}
-                    ref={(obj: any) => {
-                      if (obj)
-                        obj.parent?.parent?.children[2]?.setMatrixAt?.(
-                          i,
-                          matrix,
-                        );
-                    }}
-                  />
-                );
-              })}
-            </instancedMesh>
-            {/* Cone 3 */}
-            <instancedMesh
-              args={[
-                treeGeometries.cone3,
-                new THREE.MeshStandardMaterial({
-                  color: palette.top.clone().multiplyScalar(0.92),
-                  roughness: 0.85,
-                }),
-                biomeTrees.length,
-              ]}
-              castShadow
-            >
-              {biomeTrees.map((t, i) => {
-                const matrix = new THREE.Matrix4();
-                matrix.makeRotationY(t.rot);
-                matrix.scale(new THREE.Vector3(t.scale, t.scale, t.scale));
-                matrix.setPosition(t.x, 1.85 * t.scale, t.y);
-                return (
-                  <primitive
-                    key={`cone3-${i}`}
-                    object={new THREE.Object3D()}
-                    position={[0, 0, 0]}
-                    ref={(obj: any) => {
-                      if (obj) {
-                        obj.parent?.parent?.children[3]?.setMatrixAt?.(
-                          i,
-                          matrix,
-                        );
-                        // Trigger update on last item
-                        if (i === biomeTrees.length - 1) {
-                          const meshes = obj.parent?.parent?.children as any[];
-                          if (meshes) {
-                            meshes.forEach((m) => {
-                              if (m?.instanceMatrix)
-                                m.instanceMatrix.needsUpdate = true;
-                            });
-                          }
-                        }
-                      }
-                    }}
-                  />
-                );
-              })}
-            </instancedMesh>
-          </group>
+          <BiomeTrees
+            key={biome}
+            biomeTrees={biomeTrees}
+            palette={palette}
+            treeGeometries={treeGeometries}
+          />
         );
       })}
     </>

@@ -1,4 +1,4 @@
-import { useRef, type MutableRefObject, useEffect } from "react";
+import { useRef, type MutableRefObject, useEffect, Suspense } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { useFBX, useGLTF, useAnimations } from "@react-three/drei";
@@ -888,6 +888,238 @@ function Leg({
   );
 }
 
+/* ── Procedural full-body fallback ─────────────────────────────────────── */
+
+/** Renders the complete hero using only Three.js primitives.
+ *  Used as the <Suspense> fallback while the FBX model is loading so the
+ *  player always sees a character — never an invisible slot. */
+function ProceduralBody({
+  appearance,
+  movingRef,
+  riding = false,
+  showFaceMarker = false,
+}: {
+  appearance: PlayerAppearance;
+  movingRef?: MutableRefObject<boolean>;
+  riding?: boolean;
+  showFaceMarker?: boolean;
+}) {
+  const skin = appearance.skin;
+  const hair = appearance.hair;
+  const outfit = appearance.outfit;
+  const pants = appearance.pants;
+  const bootCol = "#2a1a12";
+  const buckleCol = "#c8a24a";
+  return (
+    <group>
+      {/* Legs + boots */}
+      <Leg side={-1} pants={pants} bootCol={bootCol} movingRef={movingRef} riding={riding} />
+      <Leg side={1} pants={pants} bootCol={bootCol} movingRef={movingRef} riding={riding} />
+      {/* Pelvis — small cylinder that bridges thighs */}
+      <mesh position={[0, HIP_Y + 0.008, 0]} castShadow>
+        <cylinderGeometry args={[0.16, 0.175, 0.07, 18]} />
+        <LeatherMat color={pants} />
+      </mesh>
+      {/* Belt */}
+      <mesh position={[0, WAIST_Y + 0.02, 0]} castShadow>
+        <cylinderGeometry args={[0.18, 0.18, 0.048, 22]} />
+        <meshPhysicalMaterial color="#2a2030" roughness={0.55} clearcoat={0.35} clearcoatRoughness={0.4} />
+      </mesh>
+      {/* Belt buckle */}
+      <mesh position={[0, WAIST_Y + 0.02, -0.18]} castShadow>
+        <boxGeometry args={[0.06, 0.038, 0.018]} />
+        <meshPhysicalMaterial color={buckleCol} roughness={0.3} metalness={0.75} clearcoat={0.8} />
+      </mesh>
+      {/* Torso — tapered waist + broader chest */}
+      <mesh position={[0, WAIST_Y + 0.12, 0]} castShadow>
+        <cylinderGeometry args={[0.185, 0.175, 0.18, 22]} />
+        <ClothMat color={outfit} />
+      </mesh>
+      <mesh position={[0, SHOULDER_Y - 0.04, 0]} castShadow>
+        <capsuleGeometry args={[0.21, 0.08, 10, 18]} />
+        <ClothMat color={outfit} />
+      </mesh>
+      {/* Chest V-neck / tunic collar */}
+      <mesh position={[0, SHOULDER_Y - 0.02, -0.185]} rotation={[0.35, 0, 0]} castShadow>
+        <boxGeometry args={[0.14, 0.06, 0.015]} />
+        <SkinMat color={skin} />
+      </mesh>
+      {/* Arms (articulated) */}
+      <Arm side={-1} outfit={outfit} skin={skin} movingRef={movingRef} riding={riding} />
+      <Arm side={1} outfit={outfit} skin={skin} movingRef={movingRef} riding={riding} />
+      {/* Neck */}
+      <mesh position={[0, HEAD_Y - 0.18, 0]} castShadow>
+        <cylinderGeometry args={[0.072, 0.082, 0.09, 18]} />
+        <SkinMat color={skin} />
+      </mesh>
+      {/* Head */}
+      <mesh position={[0, HEAD_Y, 0]} castShadow>
+        <sphereGeometry args={[HEAD_R, 32, 24]} />
+        <SkinMat color={skin} />
+      </mesh>
+      <Face skin={skin} />
+      <Beard style={appearance.facialHair} color={appearance.beardColor} />
+      <Hair style={appearance.hairStyle} color={hair} />
+      {showFaceMarker && (
+        <mesh position={[0, HEAD_Y, -HEAD_R - 0.016]}>
+          <sphereGeometry args={[0.018, 8, 8]} />
+          <meshStandardMaterial color="#fff6dd" emissive="#ffe8aa" emissiveIntensity={0.22} />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
+/* ── Asset preload ─────────────────────────────────────────────────────── */
+
+// Start fetching the idle animation as soon as this module is imported so it
+// arrives before the component mounts (critical-path asset).
+useGLTF.preload("/idle.glb");
+
+/* ── Shared type for lazily-loaded animation actions ──────────────────── */
+
+interface LazyAnimActions {
+  walk: THREE.AnimationAction | null;
+  death: THREE.AnimationAction | null;
+}
+
+/** Loads walk.glb and registers its first clip on the shared mixer.
+ *  Rendered inside a <Suspense fallback={null}> so it never blocks first paint. */
+function WalkAnimLoader({
+  mixer,
+  lazyRef,
+}: {
+  mixer: THREE.AnimationMixer;
+  lazyRef: MutableRefObject<LazyAnimActions>;
+}) {
+  const { animations } = useGLTF("/walk.glb");
+  useEffect(() => {
+    if (animations.length > 0) {
+      lazyRef.current.walk = mixer.clipAction(animations[0]);
+    }
+    return () => {
+      lazyRef.current.walk?.stop();
+      lazyRef.current.walk = null;
+    };
+  }, [animations, mixer, lazyRef]);
+  return null;
+}
+
+/** Loads death.fbx and registers its first clip on the shared mixer.
+ *  Rendered inside a <Suspense fallback={null}> so it only loads on demand. */
+function DeathAnimLoader({
+  mixer,
+  lazyRef,
+}: {
+  mixer: THREE.AnimationMixer;
+  lazyRef: MutableRefObject<LazyAnimActions>;
+}) {
+  const deathFbx = useFBX("/death.fbx");
+  useEffect(() => {
+    if (deathFbx.animations.length > 0) {
+      lazyRef.current.death = mixer.clipAction(deathFbx.animations[0]);
+    }
+    return () => {
+      lazyRef.current.death?.stop();
+      lazyRef.current.death = null;
+    };
+  }, [deathFbx, mixer, lazyRef]);
+  return null;
+}
+
+/* ── FBX character (inner, suspending) ─────────────────────────────────── */
+
+/** Loads the Knight FBX and drives all its animations.
+ *  This component suspends (via useFBX / useGLTF) until both the base model
+ *  and idle animation are ready — CharacterModel shows ProceduralBody as the
+ *  Suspense fallback in the meantime, so only ONE geometry is ever visible. */
+function FBXCharacterInner({
+  movingRef,
+  deadRef,
+}: {
+  movingRef?: MutableRefObject<boolean>;
+  deadRef?: MutableRefObject<boolean>;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  const fbx = useFBX("/Knight D Pelegrini.fbx");
+  const { animations: idleAnims } = useGLTF("/idle.glb");
+
+  const { actions, names, mixer } = useAnimations(
+    [...fbx.animations, ...idleAnims],
+    groupRef,
+  );
+
+  const lazyActionsRef = useRef<LazyAnimActions>({ walk: null, death: null });
+
+  useEffect(() => {
+    if (names.length > 0) {
+      console.log("Available animations:", names);
+    }
+  }, [actions, names]);
+
+  useFrame(() => {
+    if (!actions) return;
+
+    const idleAnimName =
+      idleAnims.length > 0
+        ? idleAnims[0].name
+        : names.find((n) => n.toLowerCase().includes("idle")) || names[0];
+
+    const idleAction = actions[idleAnimName];
+    const walkAction = lazyActionsRef.current.walk;
+    const deathAction = lazyActionsRef.current.death;
+
+    if (deadRef?.current) {
+      if (idleAction?.isRunning()) idleAction.fadeOut(0.2);
+      if (walkAction?.isRunning()) walkAction.fadeOut(0.2);
+      if (deathAction && !deathAction.isRunning()) {
+        deathAction.reset().fadeIn(0.2).play();
+        deathAction.clampWhenFinished = true;
+        deathAction.loop = THREE.LoopOnce;
+      }
+    } else if (movingRef?.current) {
+      if (deathAction?.isRunning()) deathAction.fadeOut(0.2);
+      if (idleAction?.isRunning()) idleAction.fadeOut(0.2);
+      if (walkAction && !walkAction.isRunning()) {
+        walkAction.reset().fadeIn(0.2).play();
+      } else if (!walkAction && idleAction && !idleAction.isRunning()) {
+        idleAction.reset().fadeIn(0.1).play();
+      }
+    } else {
+      if (deathAction?.isRunning()) deathAction.fadeOut(0.2);
+      if (walkAction?.isRunning()) walkAction.fadeOut(0.2);
+      if (idleAction && !idleAction.isRunning()) {
+        idleAction.reset().fadeIn(0.2).play();
+      }
+    }
+  });
+
+  useEffect(() => {
+    fbx.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+  }, [fbx]);
+
+  return (
+    <group ref={groupRef}>
+      <group scale={[0.01, 0.01, 0.01]} position={[0, 0, 0]}>
+        <primitive object={fbx} />
+      </group>
+      {/* Walk animation — loads lazily, doesn't block first paint */}
+      <Suspense fallback={null}>
+        <WalkAnimLoader mixer={mixer} lazyRef={lazyActionsRef} />
+      </Suspense>
+      {/* Death animation — loads lazily, only needed when character dies */}
+      <Suspense fallback={null}>
+        <DeathAnimLoader mixer={mixer} lazyRef={lazyActionsRef} />
+      </Suspense>
+    </group>
+  );
+}
+
 /* ── Root model ────────────────────────────────────────────────────────── */
 
 export function CharacterModel({
@@ -900,121 +1132,34 @@ export function CharacterModel({
 }: CharacterModelProps) {
   const rootRef = useRef<THREE.Group>(null);
 
-  // Load the Knight FBX (base model + maybe some animations)
-  const fbx = useFBX("/Knight D Pelegrini.fbx");
-
-  // Load the idle animation GLB
-  const { animations: idleAnims } = useGLTF("/idle.glb");
-
-  // Load the walk animation GLB
-  const { animations: walkAnims } = useGLTF("/walk.glb");
-
-  // Load the death animation FBX
-  const deathFbx = useFBX("/death.fbx");
-
-  // Combine the animations into a single array for useAnimations
-  const allAnimations = [
-    ...fbx.animations,
-    ...idleAnims,
-    ...walkAnims,
-    ...deathFbx.animations,
-  ];
-  const { actions, names } = useAnimations(allAnimations, rootRef);
-
-  useEffect(() => {
-    if (names.length > 0) {
-      console.log("Available animations:", names);
-      // We will handle playing animations in a useFrame hook based on movingRef
-    }
-  }, [actions, names]);
-
-  // Handle animation state based on movingRef and deadRef
-  useFrame(() => {
-    if (!actions) return;
-
-    // We assume the first animation from the walk.glb is the walk cycle
-    // and the first from the fbx is an idle cycle. We fall back to names[0] if needed.
-    const walkAnimName =
-      walkAnims.length > 0
-        ? walkAnims[0].name
-        : names.find((n) => n.toLowerCase().includes("walk")) || names[0];
-    const idleAnimName =
-      idleAnims.length > 0
-        ? idleAnims[0].name
-        : names.find((n) => n.toLowerCase().includes("idle")) || names[0];
-    const deathAnimName =
-      deathFbx.animations.length > 0
-        ? deathFbx.animations[0].name
-        : names.find((n) => n.toLowerCase().includes("death")) || names[0];
-
-    const walkAction = actions[walkAnimName];
-    const idleAction = actions[idleAnimName];
-    const deathAction = actions[deathAnimName];
-
-    if (deadRef?.current) {
-      if (idleAction && idleAction.isRunning()) {
-        idleAction.fadeOut(0.2);
-      }
-      if (walkAction && walkAction.isRunning()) {
-        walkAction.fadeOut(0.2);
-      }
-      if (deathAction && !deathAction.isRunning()) {
-        deathAction.reset().fadeIn(0.2).play();
-        deathAction.clampWhenFinished = true;
-        deathAction.loop = THREE.LoopOnce;
-      }
-    } else if (movingRef?.current) {
-      if (deathAction && deathAction.isRunning()) {
-        deathAction.fadeOut(0.2);
-      }
-      if (idleAction && idleAction.isRunning()) {
-        idleAction.fadeOut(0.2);
-      }
-      if (walkAction && !walkAction.isRunning()) {
-        walkAction.reset().fadeIn(0.2).play();
-      }
-    } else {
-      if (deathAction && deathAction.isRunning()) {
-        deathAction.fadeOut(0.2);
-      }
-      if (walkAction && walkAction.isRunning()) {
-        walkAction.fadeOut(0.2);
-      }
-      if (idleAction && !idleAction.isRunning()) {
-        idleAction.reset().fadeIn(0.2).play();
-      }
-    }
-  });
-
-  // Turn table logic
+  // ── Turntable (preview mode only) ────────────────────────────────────────
   useFrame((_, dt) => {
     if (!turntable || !rootRef.current) return;
     rootRef.current.rotation.y += dt * 0.4;
   });
 
-  // Adjust material properties on the FBX to fit our art style
-  useEffect(() => {
-    fbx.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-        // Optionally tweak materials here
-      }
-    });
-  }, [fbx]);
-
-  // We scale the model to match the player size
   return (
     <group ref={rootRef} dispose={null}>
-      {/* Soft ground contact shadow */}
+      {/* Soft ground contact shadow — always visible */}
       <mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <circleGeometry args={[0.34, 28]} />
         <meshBasicMaterial color="#000" transparent opacity={0.28} />
       </mesh>
 
-      <group scale={[0.01, 0.01, 0.01]} position={[0, 0, 0]}>
-        <primitive object={fbx} />
-      </group>
+      {/* Body — FBX model once loaded (preferred); procedural geometry until
+          then so the character is never invisible during the initial load. */}
+      <Suspense
+        fallback={
+          <ProceduralBody
+            appearance={appearance}
+            movingRef={movingRef}
+            riding={riding}
+            showFaceMarker={showFaceMarker}
+          />
+        }
+      >
+        <FBXCharacterInner movingRef={movingRef} deadRef={deadRef} />
+      </Suspense>
     </group>
   );
 }

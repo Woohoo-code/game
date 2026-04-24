@@ -1,7 +1,8 @@
 import { Html } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { mergeBufferGeometries } from "three-stdlib";
 import { currentDungeonFloor } from "../game/dungeon";
 import { ENEMIES } from "../game/data";
 import type { DungeonFloorState, EnemyState } from "../game/types";
@@ -75,60 +76,92 @@ function DungeonFloor({ width, height, throneHall }: { width: number; height: nu
 }
 
 function DungeonTiles({ floor, throneHall }: { floor: DungeonFloorState; throneHall?: boolean }) {
-  const walls: { x: number; y: number }[] = [];
-  const pillars: { x: number; y: number }[] = [];
-  const floors: { x: number; y: number }[] = [];
-  let exitTile: { x: number; y: number } | null = null;
+  const audience = floor.throneHallAudience;
 
-  for (let y = 0; y < floor.height; y++) {
-    for (let x = 0; x < floor.width; x++) {
-      const t = floor.tiles[y * floor.width + x] ?? DUNGEON_TILE_WALL;
-      if (t === DUNGEON_TILE_WALL) {
-        walls.push({ x, y });
-      } else if (t === DUNGEON_TILE_PILLAR) {
-        pillars.push({ x, y });
-        floors.push({ x, y });
-      } else if (t === DUNGEON_TILE_FLOOR) {
-        floors.push({ x, y });
-      } else if (t === DUNGEON_TILE_EXIT) {
-        floors.push({ x, y });
-        exitTile = { x, y };
-      } else if (t === DUNGEON_TILE_STAIRS_DOWN || t === DUNGEON_TILE_STAIRS_UP) {
-        floors.push({ x, y });
+  const { floorGeo, wallGeo, pillars, exitTile, audienceTile } = useMemo(() => {
+    const wallPositions: { x: number; y: number }[] = [];
+    const pillarPositions: { x: number; y: number }[] = [];
+    const regularFloorPositions: { x: number; y: number }[] = [];
+    let audienceTile: { x: number; y: number } | null = null;
+    let exitTile: { x: number; y: number } | null = null;
+
+    for (let y = 0; y < floor.height; y++) {
+      for (let x = 0; x < floor.width; x++) {
+        const t = floor.tiles[y * floor.width + x] ?? DUNGEON_TILE_WALL;
+        if (t === DUNGEON_TILE_WALL) {
+          wallPositions.push({ x, y });
+        } else if (t === DUNGEON_TILE_PILLAR) {
+          pillarPositions.push({ x, y });
+          regularFloorPositions.push({ x, y });
+        } else if (t === DUNGEON_TILE_FLOOR) {
+          if (throneHall && audience && x === audience.tx && y === audience.ty) {
+            audienceTile = { x, y };
+          } else {
+            regularFloorPositions.push({ x, y });
+          }
+        } else if (t === DUNGEON_TILE_EXIT) {
+          regularFloorPositions.push({ x, y });
+          exitTile = { x, y };
+        } else if (t === DUNGEON_TILE_STAIRS_DOWN || t === DUNGEON_TILE_STAIRS_UP) {
+          regularFloorPositions.push({ x, y });
+        }
       }
     }
-  }
 
-  const audience = floor.throneHallAudience;
+    // Merge all regular floor tiles into one geometry
+    const floorTemplate = new THREE.BoxGeometry(0.98, 0.06, 0.98);
+    const floorGeos = regularFloorPositions.map(({ x, y }) => {
+      const g = floorTemplate.clone();
+      g.translate(x + 0.5, 0, y + 0.5);
+      return g;
+    });
+    const floorGeo = floorGeos.length > 0 ? mergeBufferGeometries(floorGeos) : null;
+    floorGeos.forEach((g) => g.dispose());
+    floorTemplate.dispose();
+
+    // Merge all wall tiles into one geometry
+    const wallTemplate = new THREE.BoxGeometry(1, 1.4, 1);
+    const wallGeos = wallPositions.map(({ x, y }) => {
+      const g = wallTemplate.clone();
+      g.translate(x + 0.5, 0.6, y + 0.5);
+      return g;
+    });
+    const wallGeo = wallGeos.length > 0 ? mergeBufferGeometries(wallGeos) : null;
+    wallGeos.forEach((g) => g.dispose());
+    wallTemplate.dispose();
+
+    return { floorGeo, wallGeo, pillars: pillarPositions, exitTile, audienceTile };
+  }, [floor, throneHall, audience]);
+
+  // Dispose merged geometries when they change or the component unmounts
+  useEffect(() => {
+    return () => {
+      floorGeo?.dispose();
+      wallGeo?.dispose();
+    };
+  }, [floorGeo, wallGeo]);
+
+  const floorColor = throneHall ? "#5a2020" : "#3a2f34";
+  const floorRoughness = throneHall ? 0.82 : 0.9;
 
   return (
     <group>
-      {floors.map((f) => (
-        <mesh key={`f-${f.x}-${f.y}`} position={[f.x + 0.5, 0, f.y + 0.5]} receiveShadow>
-          <boxGeometry args={[0.98, 0.06, 0.98]} />
-          <meshStandardMaterial
-            color={
-              throneHall && audience && f.x === audience.tx && f.y === audience.ty
-                ? "#6a4a2a"
-                : throneHall
-                  ? "#5a2020"
-                  : "#3a2f34"
-            }
-            roughness={throneHall ? 0.82 : 0.9}
-          />
+      {floorGeo && (
+        <mesh geometry={floorGeo} receiveShadow>
+          <meshStandardMaterial color={floorColor} roughness={floorRoughness} />
         </mesh>
-      ))}
-      {walls.map((w) => (
-        <mesh
-          key={`w-${w.x}-${w.y}`}
-          position={[w.x + 0.5, 0.6, w.y + 0.5]}
-          castShadow
-          receiveShadow
-        >
-          <boxGeometry args={[1, 1.4, 1]} />
+      )}
+      {audienceTile && (
+        <mesh position={[audienceTile.x + 0.5, 0, audienceTile.y + 0.5]} receiveShadow>
+          <boxGeometry args={[0.98, 0.06, 0.98]} />
+          <meshStandardMaterial color="#6a4a2a" roughness={0.82} />
+        </mesh>
+      )}
+      {wallGeo && (
+        <mesh geometry={wallGeo} castShadow receiveShadow>
           <meshStandardMaterial color="#1e181c" roughness={0.96} />
         </mesh>
-      ))}
+      )}
       {pillars.map((p) => (
         <DungeonPillar key={`p-${p.x}-${p.y}`} x={p.x} y={p.y} />
       ))}
