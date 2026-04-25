@@ -1109,8 +1109,7 @@ function FBXCharacterInner({
   movingRef?: MutableRefObject<boolean>;
   deadRef?: MutableRefObject<boolean>;
 }) {
-  const fbxTemplate = useFBX(publicAssetUrl("Knight D Pelegrini.fbx")) as THREE.Group;
-  const fbx = useMemo(() => fbxTemplate.clone(true) as THREE.Group, [fbxTemplate]);
+  const fbx = useFBX(publicAssetUrl("Knight D Pelegrini.fbx")) as THREE.Group;
   const { animations: idleAnims } = useGLTF(publicAssetUrl("idle.glb"));
 
   /**
