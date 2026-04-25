@@ -1,5 +1,15 @@
 import type { BiomeKind, StoryStage, StoryState } from "./types";
 
+/** Guild campaign chapters (excludes prologue/epilogue) — for the quest log. */
+export const GUILD_CAMPAIGN_STAGES: StoryStage[] = [
+  "ch1_firstHunts",
+  "ch2_gearUp",
+  "ch3_wanderer",
+  "ch4_whispers",
+  "ch5_trials",
+  "ch6_titanAwaits"
+];
+
 /**
  * Static storyline definitions for Monster Slayer.
  *

@@ -1,6 +1,6 @@
 /**
- * Shared day / night phase for the overworld (0 = midnight, 0.25 = dawn, 0.5 = noon, 0.75 = dusk).
- * `worldTime` is unbounded; always reduce with {@link fractDay} for cycles.
+ * Shared day / night for the overworld. `fractDay(t)` = 0 at midnight, 0.5 at noon.
+ * Schedule (24h): **dusk** 17:00–19:00, **night** 19:00–07:00 (combat/encounter night).
  */
 
 /** Real seconds for one full in-game day at 1 Hz {@link WORLD_CLOCK_TICK_FRACTION} ticks (default 6 min). */
@@ -20,15 +20,29 @@ export function sunHeight01(worldTime: number): number {
   return 0.5 + 0.5 * Math.cos((u - 0.25) * Math.PI * 2);
 }
 
+const FRAC_7AM = 7 / 24;
+const FRAC_5PM = 17 / 24;
+const FRAC_7PM = 19 / 24;
+
 /** 0 = full day visuals, 1 = full night. */
 export function nightVisualBlend(worldTime: number): number {
+  const u = fractDay(worldTime);
+  if (u >= FRAC_7PM || u < FRAC_7AM) {
+    const s = sunHeight01(worldTime);
+    return Math.min(1, Math.max(0.55, 1 - s * 0.95));
+  }
+  if (u >= FRAC_5PM && u < FRAC_7PM) {
+    const t = (u - FRAC_5PM) / (FRAC_7PM - FRAC_5PM);
+    return 0.22 + t * 0.48;
+  }
   const s = sunHeight01(worldTime);
-  return Math.min(1, Math.max(0, 1 - s * 1.15));
+  return Math.min(1, Math.max(0, 1 - s * 1.12));
 }
 
-/** True when wilds are considered “night” for encounter + enemy buffs. */
+/** True when wilds are “night” for encounter + enemy buffs (19:00–07:00). */
 export function isNightWilds(worldTime: number): boolean {
-  return sunHeight01(worldTime) < 0.38;
+  const u = fractDay(worldTime);
+  return u >= FRAC_7PM || u < FRAC_7AM;
 }
 
 /** Multiplies per-step encounter rate (still clamped globally). Stronger at deeper night. */
@@ -60,13 +74,11 @@ export function timeOfDayClock24(worldTime: number): string {
 
 export function timeOfDayLabel(worldTime: number): string {
   const u = fractDay(worldTime);
-  if (u < 0.07) return "Midnight";
-  if (u < 0.14) return "Night";
-  if (u < 0.22) return "Dawn";
+  if (u >= FRAC_7PM || u < FRAC_7AM) return "Night";
+  if (u >= FRAC_5PM && u < FRAC_7PM) return "Dusk";
+  if (u < 0.12) return "Dawn";
   if (u < 0.36) return "Morning";
   if (u < 0.52) return "Day";
-  if (u < 0.62) return "Afternoon";
-  if (u < 0.72) return "Dusk";
-  if (u < 0.82) return "Nightfall";
-  return "Night";
+  if (u < FRAC_5PM) return "Afternoon";
+  return "Dusk";
 }

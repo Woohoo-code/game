@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { gameStore } from "../game/state";
-import { CAMPAIGN_PREMISE, STORY_CHAPTERS, missingBiomes, progressLabelFor } from "../game/story";
+import {
+  CAMPAIGN_PREMISE,
+  GUILD_CAMPAIGN_STAGES,
+  STORY_CHAPTERS,
+  isStageComplete,
+  missingBiomes,
+  progressLabelFor
+} from "../game/story";
 import type { StoryStage } from "../game/types";
 import { useGameStore } from "../game/useGameStore";
 import { biomeDisplayName } from "../game/worldMap";
@@ -170,6 +177,45 @@ export function Journal({ onClose }: { onClose: () => void }) {
             <div className="journal-next">
               <span className="journal-label">Next chapter</span>
               <p>{STORY_CHAPTERS[nextStage].title}</p>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="journal-quest-log" aria-label="Quest log">
+          <h3>Quest log</h3>
+          <div className="journal-quest-block">
+            <span className="journal-label">Guild campaign</span>
+            <ul className="journal-quest-lines">
+              {GUILD_CAMPAIGN_STAGES.map((st) => {
+                const def = STORY_CHAPTERS[st];
+                const done =
+                  story.completed.some((c) => c.stage === st) || isStageComplete(st, story, level);
+                const active = story.stage === st;
+                return (
+                  <li
+                    key={st}
+                    className={
+                      done ? "journal-quest--done" : active ? "journal-quest--active" : "journal-quest--upcoming"
+                    }
+                  >
+                    <span className="journal-quest-mark" aria-hidden>
+                      {done ? "☑" : active ? "▸" : "○"}
+                    </span>
+                    <span className="journal-quest-title">{def.title}</span>
+                    {!done && active ? <span className="journal-quest-obj"> — {def.objective}</span> : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+          {(snapshot.world.realmTier ?? 1) === 1 ? (
+            <div className="journal-quest-block">
+              <span className="journal-label">Crown & throne</span>
+              <p className="journal-quest-royal">
+                In the King&apos;s name — after hunts in the wilds, present yourself at the Royal Hall in
+                Crownkeep (north courtyard) when the doors stand open. Royal favors accrue with repeated
+                audiences; see the playfield when you stand before the throne.
+              </p>
             </div>
           ) : null}
         </section>

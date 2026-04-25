@@ -771,6 +771,11 @@ class GameStore {
         : "You descend the dungeon stairs. Cold stone swallows the light."
     );
     this.emit();
+    {
+      const tx = Math.floor(this.state.player.x / TILE);
+      const ty = Math.floor(this.state.player.y / TILE);
+      this.dispatchDungeonTile(tx, ty);
+    }
   }
 
   /** Enter Crownkeep's Royal Hall toward the king (realm 1, only while standing on the Royal Hall building). */
@@ -951,6 +956,7 @@ class GameStore {
     this.state.player.gold += chest.lootGold;
     const itemLabel = ITEM_DATA[chest.lootItem]?.name ?? chest.lootItem;
     this.logEvent(`Chest! ${itemLabel} (+${chest.lootGold}g).`);
+    playSfx("pickup");
     this.emit();
   }
 
@@ -974,6 +980,11 @@ class GameStore {
     this.state.world.canDescendStairs = false;
     this.state.world.canAscendStairs = false;
     this.emit();
+    {
+      const tx = Math.floor(this.state.player.x / TILE);
+      const ty = Math.floor(this.state.player.y / TILE);
+      this.dispatchDungeonTile(tx, ty);
+    }
   }
 
   /**
@@ -999,6 +1010,11 @@ class GameStore {
     this.state.world.canDescendStairs = false;
     this.state.world.canAscendStairs = false;
     this.emit();
+    {
+      const tx = Math.floor(this.state.player.x / TILE);
+      const ty = Math.floor(this.state.player.y / TILE);
+      this.dispatchDungeonTile(tx, ty);
+    }
   }
 
   challengeBoss(): void {
@@ -1450,6 +1466,7 @@ class GameStore {
     bag[node.resourceKey] = (bag[node.resourceKey] ?? 0) + 1;
     this.state.player.resources = bag;
     this.logEvent(`Gathered a ${def.name} (market value ${def.sellPrice}g).`);
+    playSfx("pickup");
     this.emit();
     return true;
   }
@@ -1560,7 +1577,10 @@ class GameStore {
     return this.engageRoamerAtIndex(idx, { tx: row.tx, ty: row.ty });
   }
 
-  startEncounter(biome?: BiomeKind, opts?: { forcedTemplate?: EnemyDefinition; roamerEngage?: boolean }): void {
+  startEncounter(
+    biome?: BiomeKind,
+    opts?: { forcedTemplate?: EnemyDefinition; roamerEngage?: boolean; preferWeakestWild?: boolean }
+  ): void {
     if (this.state.battle.inBattle) {
       return;
     }
@@ -1570,12 +1590,24 @@ class GameStore {
     const pool: EnemyDefinition[] = forced
       ? [forced]
       : [...realmBuiltInRandom, ...this.state.ugc.monsters.map(ugcMonsterToEnemyDef)];
-    const template = forced
+
+    let template: EnemyDefinition | null = forced
       ? forced
-      : pickEncounterFromPool(pool, this.state.player.level) ??
+      : null;
+
+    if (!template && opts?.preferWeakestWild && realmBuiltInRandom.length > 0) {
+      const minLv = Math.min(...realmBuiltInRandom.map((e) => e.minLevel));
+      const lowTier = realmBuiltInRandom.filter((e) => e.minLevel === minLv);
+      template = lowTier[Math.floor(Math.random() * lowTier.length)]!;
+    }
+
+    if (!template) {
+      template =
+        pickEncounterFromPool(pool, this.state.player.level) ??
         pickEncounterFromPool(realmBuiltInRandom, 99) ??
         pickEncounterFromPool(enemiesForRealm(rt, undefined, { randomEncounterOnly: true }), this.state.player.level) ??
         pickEncounterEnemy(this.state.player.level, rt);
+    }
     if (!template) return;
     const level = this.state.player.level;
     const ugcMatch = this.state.ugc.monsters.find((m) => m.id === template.id);

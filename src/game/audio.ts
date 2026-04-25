@@ -1,10 +1,21 @@
 /**
- * Procedural game audio — WebAudio SFX, plus optional scene-based BGM. When
- * the user enables the file-based theme in `music.tsx`, that loop replaces
- * procedural `playMusic` so only one background layer runs.
+ * Procedural game audio — WebAudio SFX, plus WebAudio BGM. Music on/off
+ * (localStorage `msty-music`, toggled in the UI) gates procedural BGM.
  */
 
-import { isThemeStreamPreferred, syncThemeWithGameAudioMasterMuted } from "./music";
+const MUSIC_PREFS_KEY = "msty-music";
+
+function isProceduralBgmUnmutedInSettings(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const raw = window.localStorage.getItem(MUSIC_PREFS_KEY);
+    if (!raw) return true;
+    const p = JSON.parse(raw) as { enabled?: boolean };
+    return p.enabled !== false;
+  } catch {
+    return true;
+  }
+}
 
 export type SfxKind =
   | "attack" // plain weapon swing
@@ -16,7 +27,8 @@ export type SfxKind =
   | "encounter" // wild foe appears
   | "victory"
   | "defeat"
-  | "ui"; // generic click
+  | "ui" // generic click
+  | "pickup"; // item / gather
 
 export type MusicKind = "town" | "overworld" | "battle" | "dungeon";
 
@@ -108,7 +120,6 @@ export function setAudioMuted(muted: boolean): void {
   } else if (currentMusicKind) {
     playMusic(currentMusicKind);
   }
-  syncThemeWithGameAudioMasterMuted(muted);
   listeners.forEach((fn) => fn());
 }
 
@@ -132,10 +143,24 @@ export function stopMusic() {
   musicOscillators = [];
 }
 
-export function playMusic(kind: MusicKind) {
-  if (isThemeStreamPreferred()) {
+/** After toggling `msty-music` in the UI — reapply the current scene BGM. */
+export function syncProceduralBgmToMusicPreference(): void {
+  if (prefs.muted) return;
+  if (!isProceduralBgmUnmutedInSettings()) {
     stopMusic();
-    currentMusicKind = kind; // so procedural can resume the right scene if the user turns the theme off
+    return;
+  }
+  if (currentMusicKind) {
+    const k = currentMusicKind;
+    currentMusicKind = null;
+    playMusic(k);
+  }
+}
+
+export function playMusic(kind: MusicKind) {
+  if (!isProceduralBgmUnmutedInSettings()) {
+    stopMusic();
+    currentMusicKind = kind;
     return;
   }
   if (prefs.muted) {
@@ -376,6 +401,11 @@ export function playSfx(kind: SfxKind): void {
     }
     case "ui": {
       playTone({ freq: 720, endFreq: 880, type: "sine", durationMs: 80, gain: 0.14 });
+      return;
+    }
+    case "pickup": {
+      playTone({ freq: 880, endFreq: 1320, type: "sine", durationMs: 70, gain: 0.12 });
+      playTone({ freq: 1320, endFreq: 1760, type: "triangle", durationMs: 90, gain: 0.08, delayMs: 35 });
       return;
     }
   }

@@ -4143,6 +4143,8 @@ button.reset-game-btn:not(:disabled):hover {
   max-width: none;
   flex: 1 1 auto;
   overflow: hidden;
+  /* Settings → World zoom (see App --world-zoom on :root). */
+  zoom: var(--world-zoom, 1);
 }
 
 .world-status-overlay {
@@ -5659,6 +5661,60 @@ button.reset-game-btn:not(:disabled):hover {
   margin: 0;
   color: #c6b07b;
   font-style: italic;
+}
+.journal-quest-log {
+  margin-top: 18px;
+  border-top: 1px solid rgba(160, 130, 70, 0.25);
+  padding-top: 12px;
+}
+.journal-quest-log h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  color: #c8a552;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.journal-quest-block {
+  margin-bottom: 12px;
+}
+.journal-quest-block .journal-label {
+  display: block;
+  margin-bottom: 6px;
+}
+.journal-quest-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: #c4a878;
+}
+.journal-quest--done .journal-quest-title {
+  text-decoration: line-through;
+  opacity: 0.75;
+}
+.journal-quest--active {
+  color: #f0e0a8;
+  font-weight: 600;
+}
+.journal-quest-obj {
+  font-weight: 400;
+  opacity: 0.92;
+}
+.journal-quest-royal {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #b8a070;
+}
+.journal-quest-mark {
+  display: inline-block;
+  width: 1.1em;
+  margin-right: 4px;
+  opacity: 0.9;
 }
 .journal-completed {
   margin-top: 22px;

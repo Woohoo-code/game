@@ -176,18 +176,6 @@ function drawRoad(ctx: CanvasRenderingContext2D, s: number): void {
     ctx.stroke();
   }
 
-  ctx.strokeStyle = "rgba(42, 32, 20, 0.42)";
-  ctx.lineWidth = 1.6 + r() * 1.2;
-  for (let i = 0; i < 2; i++) {
-    ctx.beginPath();
-    const y = s * (0.31 + i * 0.36) + (r() - 0.5) * 5;
-    ctx.moveTo(0, y);
-    for (let x = 0; x <= s; x += 2) {
-      ctx.lineTo(x, y + Math.sin(x * 0.095 + i * 1.7) * 1.8);
-    }
-    ctx.stroke();
-  }
-
   for (let i = 0; i < density(s, 160); i++) {
     const x = r() * s;
     const y = r() * s;

@@ -177,20 +177,50 @@ function DungeonTiles({ floor, throneHall }: { floor: DungeonFloorState; throneH
 function ThroneDais({ x, y }: { x: number; y: number }) {
   return (
     <group position={[x + 0.5, 0, y + 0.5]}>
-      <mesh position={[0, 0.2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[1.15, 0.28, 1.15]} />
-        <meshStandardMaterial color="#4a3a28" roughness={0.85} metalness={0.08} />
+      <pointLight position={[0, 1.8, 0.6]} intensity={1.1} distance={5} color="#ffe8c0" />
+      <pointLight position={[-0.7, 1.1, 0.5]} intensity={0.5} distance={3.5} color="#6a8cff" />
+      <pointLight position={[0.7, 1.1, 0.5]} intensity={0.5} distance={3.5} color="#ff9a4a" />
+      <mesh position={[0, 0.02, 0.4]} receiveShadow rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[1.4, 1.1]} />
+        <meshStandardMaterial color="#4a0a0a" roughness={0.92} />
       </mesh>
-      <mesh position={[0, 0.62, -0.12]} castShadow>
-        <boxGeometry args={[0.55, 0.55, 0.35]} />
-        <meshStandardMaterial color="#3a4868" roughness={0.75} />
+      <mesh position={[0, 0.28, 0]} castShadow receiveShadow>
+        <boxGeometry args={[1.35, 0.4, 1.35]} />
+        <meshStandardMaterial color="#3a2a1a" roughness={0.82} metalness={0.1} />
       </mesh>
-      <mesh position={[0, 1.05, -0.12]}>
-        <sphereGeometry args={[0.22, 12, 12]} />
-        <meshStandardMaterial color="#ffd080" emissive="#c08040" emissiveIntensity={0.6} />
+      <mesh position={[0, 0.72, -0.15]} castShadow>
+        <boxGeometry args={[0.7, 0.7, 0.55]} />
+        <meshStandardMaterial color="#1a1c28" roughness={0.45} metalness={0.35} />
       </mesh>
-      <Html center position={[0, 1.55, -0.1]} distanceFactor={10} zIndexRange={[20, 0]} pointerEvents="none">
-        <div className="building-label-3d" style={{ borderColor: "#c9a020", fontSize: "9px" }}>
+      <mesh position={[0, 0.25, -0.48]} castShadow>
+        <boxGeometry args={[0.85, 0.5, 0.12]} />
+        <meshStandardMaterial color="#5a1a1a" roughness={0.7} emissive="#300808" emissiveIntensity={0.2} />
+      </mesh>
+      <mesh position={[0, 1.2, -0.15]} castShadow>
+        <cylinderGeometry args={[0.05, 0.06, 0.5, 8]} />
+        <meshStandardMaterial color="#8a7a20" metalness={0.6} roughness={0.35} />
+      </mesh>
+      <mesh position={[0, 1.5, -0.15]}>
+        <boxGeometry args={[0.5, 0.28, 0.35]} />
+        <meshStandardMaterial color="#a01818" emissive="#501010" emissiveIntensity={0.15} />
+      </mesh>
+      <mesh position={[0, 1.2, 0.25]}>
+        <sphereGeometry args={[0.25, 16, 16]} />
+        <meshStandardMaterial color="#ffe8c0" emissive="#c08030" emissiveIntensity={0.5} />
+      </mesh>
+      <mesh position={[-0.32, 0.95, -0.35]} castShadow>
+        <cylinderGeometry args={[0.04, 0.05, 0.7, 6]} />
+        <meshStandardMaterial color="#4a3a1a" roughness={0.75} />
+      </mesh>
+      <mesh position={[0.32, 0.95, -0.35]} castShadow>
+        <cylinderGeometry args={[0.04, 0.05, 0.7, 6]} />
+        <meshStandardMaterial color="#4a3a1a" roughness={0.75} />
+      </mesh>
+      <Html center position={[0, 1.9, -0.1]} distanceFactor={10} zIndexRange={[20, 0]} pointerEvents="none">
+        <div
+          className="building-label-3d"
+          style={{ borderColor: "#e8c040", fontSize: "10px", fontWeight: 700, letterSpacing: "0.12em" }}
+        >
           THE KING
         </div>
       </Html>

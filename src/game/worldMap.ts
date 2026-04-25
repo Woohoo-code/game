@@ -716,7 +716,8 @@ export function dispatchZonesAndEncounter(tx: number, ty: number): boolean {
     return false;
   }
   if (Math.random() < encounterRate) {
-    gameStore.startEncounter(biome);
+    // Safer path fights — roads stay low-tier so travel isn't a spiky death spiral.
+    gameStore.startEncounter(biome, { preferWeakestWild: kind === "road" });
     return true;
   }
   return false;

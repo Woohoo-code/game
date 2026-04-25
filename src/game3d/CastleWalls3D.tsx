@@ -29,7 +29,7 @@ function WallSegmentMesh({ seg }: { seg: CastleWallSegment }) {
     <group position={[cx, 0, cz]}>
       <mesh castShadow receiveShadow position={[0, WALL_H / 2, 0]}>
         <boxGeometry args={[w, WALL_H, d]} />
-        <meshStandardMaterial color={col} roughness={0.88} metalness={0.06} />
+        <meshStandardMaterial color={col} roughness={0.76} metalness={0.1} envMapIntensity={0.4} />
       </mesh>
       {/* Merlons — read as crenellated curtain, not one solid block */}
       {Array.from({ length: merlons }, (_, i) => (
@@ -39,7 +39,7 @@ function WallSegmentMesh({ seg }: { seg: CastleWallSegment }) {
           position={[isEw ? off(i) : 0, WALL_H + MERLON_H / 2, isEw ? 0 : off(i)]}
         >
           <boxGeometry args={[isEw ? MERLON_W : THICK * 0.95, MERLON_H, isEw ? THICK * 0.95 : MERLON_W]} />
-          <meshStandardMaterial color={col} roughness={0.82} metalness={0.05} />
+          <meshStandardMaterial color={col} roughness={0.72} metalness={0.1} envMapIntensity={0.35} />
         </mesh>
       ))}
     </group>
@@ -64,8 +64,11 @@ export function CrownkeepCastleWalls3D() {
 export function CrownkeepSouthGate3D() {
   const ck = getActiveWorld().crownkeep;
   if (!ck) return null;
-  const cx = (ck.minX + ck.maxX) / 2 + 0.5;
-  const z = ck.maxY + 0.62;
+  const gateTiles = ck.gateTiles;
+  const gi = Math.min(Math.max(0, Math.floor((gateTiles.length - 1) / 2)), Math.max(0, gateTiles.length - 1));
+  const center = gateTiles[gi];
+  const cx = center ? center.tx + 0.5 : (ck.minX + ck.maxX) / 2 + 0.5;
+  const z = center ? center.ty + 0.5 : ck.maxY + 1 + 0.5;
   const stone = "#5a5048";
   return (
     <group name="crownkeep-south-gate" position={[cx, 0, z]}>

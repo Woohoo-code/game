@@ -112,7 +112,10 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
           </div>
           <p className="character-create-eyebrow">Sign up</p>
           <h1>Create your hero</h1>
-          <p>Pick a name and look. Progress is saved in this browser when you use Save in town.</p>
+          <p>
+            Pick a name, class, and look — the preview shows the full-armor Knight (your colors tune cloth trim and
+            UI where supported). Progress is saved in this browser when you use Save in town.
+          </p>
         </header>
 
         <div className="character-create-body">

@@ -24,8 +24,8 @@ import {
 import { CharacterModel } from "./CharacterModel";
 import { MountHorse3D } from "./MountHorse3D";
 
-/** Phaser uses 140 px/s; 1 tile = 32 px, so this is tiles-per-second. */
-const WALK_SPEED_TILES = 400 / TILE;
+/** Match legacy Phaser walk: 140 px/s ÷ 32 px per tile. */
+const WALK_SPEED_TILES = 140 / TILE;
 const HALF_TILE = 0.5;
 const CAM_OFFSET = new THREE.Vector3(0, 9, 9);
 
