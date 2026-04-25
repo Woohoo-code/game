@@ -330,7 +330,10 @@ export default function App() {
     setTitleNotice(null);
     const loaded = await gameStore.load();
     if (loaded) {
-      setScreen("play");
+      // Use functional update so we only navigate if the user is still on the
+      // title screen.  If they have already clicked "New hero" (screen="create")
+      // while the async load was in flight, we leave them where they are.
+      setScreen((prev) => (prev === "title" ? "play" : prev));
     } else {
       setTitleNotice({
         text: "No save found in this browser. Start with New hero, or paste a transfer line from another device.",

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { flushSync } from "react-dom";
 import { CharacterPreview } from "../game3d/CharacterPreview";
 import { MobileFullscreenButton } from "./MobileFullscreenButton";
 import { gameStore, defaultAppearance } from "../game/state";
@@ -93,8 +94,13 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
   };
 
   const submit = () => {
+    // Flush the screen transition synchronously before emitting the store change.
+    // Without this, useSyncExternalStore fires a synchronous re-render from
+    // createCharacter() while screen is still "create", causing a one-frame
+    // flash of the creation form with disabled class buttons before the
+    // play screen appears.
+    flushSync(() => onDone());
     gameStore.createCharacter(name || "Hero", appearance, fightingClass);
-    onDone();
   };
 
   return (
