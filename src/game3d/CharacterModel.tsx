@@ -1037,6 +1037,10 @@ function retargetGlbClipToKnight(clip: THREE.AnimationClip): THREE.AnimationClip
       if (dot <= 0) return null;
       const node = track.name.slice(0, dot);
       const prop = track.name.slice(dot + 1);
+      // The source GLB root/translation channels are authored for a different
+      // rig orientation and scale. Keep the Knight's FBX bind height/upright
+      // root, and retarget only rotations onto matching bones.
+      if (node === "root" || prop === "position" || prop === "translation") return null;
       const mapped = GLB_TO_KNIGHT_BONE[node];
       if (!mapped) return null;
       const next = track.clone();
