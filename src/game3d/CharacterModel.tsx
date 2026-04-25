@@ -1002,7 +1002,14 @@ function WalkAnimLoader({
     const fromFbx = fbx.animations.find((a) =>
       /walk|Walk|WALK|jog|Jog|JOG|run|Run|RUN|march|March|forward|Forward/.test(a.name),
     );
-    const clip = fromFbx ?? walkGlb[0] ?? null;
+    const fromGlb =
+      walkGlb.find(
+        (a) =>
+          /Walk_Loop|walk|Walk|WALK|jog|Jog|run|Run|march|March|forward|Forward/.test(
+            a.name,
+          ),
+      ) ?? walkGlb[0];
+    const clip = fromFbx ?? fromGlb ?? null;
     if (clip) {
       const act = mixer.clipAction(clip);
       act.setEffectiveWeight(1);
@@ -1064,14 +1071,23 @@ function FBXCharacterInner({
 
   const lazyActionsRef = useRef<LazyAnimActions>({ walk: null, death: null });
 
-  /** Prefer idle on the Knight FBX so the clip targets the same skeleton as the mesh. */
+  /**
+   * Idle clip: `idle.glb` ships `Idle_No_Loop`; the Knight mesh FBX may only have a
+   * useless placeholder clip named "mixamo.com" — do not prefer that over the GLB idle.
+   */
   const idleNameRef = useRef<string>("");
   useEffect(() => {
-    const fbxIdle = fbx.animations.find((a) =>
-      /idle|Idle|IDLE|breathe|Breathe|standing|Standing|neutral|Neutral|Armature|mixamo|Layer/i.test(a.name),
+    const glbIdle = idleAnims.find(
+      (a) => /idle|Idl|breathe|standing|neutral/i.test(a.name) && a.name.length > 0,
+    );
+    const fbxIdle = fbx.animations.find(
+      (a) =>
+        a.duration > 0.2 &&
+        !/^mixamo\.com$/i.test(a.name.trim()) &&
+        /idle|breathe|standing|neutral/i.test(a.name),
     );
     idleNameRef.current =
-      fbxIdle?.name ?? idleAnims[0]?.name ?? names.find((n) => n.toLowerCase().includes("idle")) ?? names[0] ?? "";
+      glbIdle?.name ?? fbxIdle?.name ?? idleAnims[0]?.name ?? names.find((n) => /idle/i.test(n)) ?? names[0] ?? "";
   }, [fbx, idleAnims, names]);
 
   useFrame(() => {
