@@ -118,12 +118,14 @@ export function Player3D({
         );
         const nextPxX = nextX * TILE;
         const nextPxY = nextZ * TILE;
+        // Standard Three.js XZ move direction — mesh forward should align to (vx, vz) when
+        // the asset faces +Z; face movement even when a wall blocks position (stops sliding
+        // but shows intended direction). Previously atan2(-vx, -vz) was ~180° off for many FBX.
+        group.rotation.y = Math.atan2(vx, vz);
+
         if (!isBlocked(nextPxX, nextPxY)) {
           group.position.x = nextX;
           group.position.z = nextZ;
-          if (vx !== 0 || vz !== 0) {
-            group.rotation.y = Math.atan2(-vx, -vz);
-          }
           gameStore.setPosition(nextPxX, nextPxY);
           const tx = Math.floor(nextX);
           const ty = Math.floor(nextZ);

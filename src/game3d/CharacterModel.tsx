@@ -984,25 +984,37 @@ interface LazyAnimActions {
   death: THREE.AnimationAction | null;
 }
 
-/** Loads walk.glb and registers its first clip on the shared mixer.
- *  Rendered inside a <Suspense fallback={null}> so it never blocks first paint. */
+/**
+ * Binds a walk loop on the shared mixer. Prefer a clip on the **same** Knight FBX so bones
+ * retarget; `walk.glb` is a fallback and only animates if it matches that rig (otherwise T-pose).
+ */
 function WalkAnimLoader({
+  fbx,
   mixer,
   lazyRef,
 }: {
+  fbx: THREE.Object3D;
   mixer: THREE.AnimationMixer;
   lazyRef: MutableRefObject<LazyAnimActions>;
 }) {
-  const { animations } = useGLTF(publicAssetUrl("walk.glb"));
+  const { animations: walkGlb } = useGLTF(publicAssetUrl("walk.glb"));
   useEffect(() => {
-    if (animations.length > 0) {
-      lazyRef.current.walk = mixer.clipAction(animations[0]);
+    const fromFbx = fbx.animations.find((a) =>
+      /walk|Walk|WALK|jog|Jog|JOG|run|Run|RUN|march|March|forward|Forward/.test(a.name),
+    );
+    const clip = fromFbx ?? walkGlb[0] ?? null;
+    if (clip) {
+      const act = mixer.clipAction(clip);
+      act.setEffectiveWeight(1);
+      lazyRef.current.walk = act;
+    } else {
+      lazyRef.current.walk = null;
     }
     return () => {
       lazyRef.current.walk?.stop();
       lazyRef.current.walk = null;
     };
-  }, [animations, mixer, lazyRef]);
+  }, [fbx, walkGlb, mixer, lazyRef]);
   return null;
 }
 
@@ -1052,21 +1064,21 @@ function FBXCharacterInner({
 
   const lazyActionsRef = useRef<LazyAnimActions>({ walk: null, death: null });
 
+  /** Prefer idle on the Knight FBX so the clip targets the same skeleton as the mesh. */
+  const idleNameRef = useRef<string>("");
   useEffect(() => {
-    if (names.length > 0) {
-      console.log("Available animations:", names);
-    }
-  }, [actions, names]);
+    const fbxIdle = fbx.animations.find((a) =>
+      /idle|Idle|IDLE|breathe|Breathe|standing|Standing|neutral|Neutral|Armature|mixamo|Layer/i.test(a.name),
+    );
+    idleNameRef.current =
+      fbxIdle?.name ?? idleAnims[0]?.name ?? names.find((n) => n.toLowerCase().includes("idle")) ?? names[0] ?? "";
+  }, [fbx, idleAnims, names]);
 
   useFrame(() => {
     if (!actions) return;
 
-    const idleAnimName =
-      idleAnims.length > 0
-        ? idleAnims[0].name
-        : names.find((n) => n.toLowerCase().includes("idle")) || names[0];
-
-    const idleAction = actions[idleAnimName];
+    const idleAnimName = idleNameRef.current;
+    const idleAction = idleAnimName ? actions[idleAnimName] : undefined;
     const walkAction = lazyActionsRef.current.walk;
     const deathAction = lazyActionsRef.current.death;
 
@@ -1106,12 +1118,15 @@ function FBXCharacterInner({
 
   return (
     <group ref={groupRef}>
+      {/*
+        If the hero still looks ~90°/180° off after Player3D facing fixes, add rotation.y on
+        this inner group (e.g. Math.PI) — FBX forward axes vary by export. */}
       <group scale={[0.01, 0.01, 0.01]} position={[0, 0, 0]}>
         <primitive object={fbx} />
       </group>
       {/* Walk animation — loads lazily, doesn't block first paint */}
       <Suspense fallback={null}>
-        <WalkAnimLoader mixer={mixer} lazyRef={lazyActionsRef} />
+        <WalkAnimLoader fbx={fbx} mixer={mixer} lazyRef={lazyActionsRef} />
       </Suspense>
       {/* Death animation — loads lazily, only needed when character dies */}
       <Suspense fallback={null}>
