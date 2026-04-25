@@ -9,6 +9,8 @@ interface CharacterModelProps {
   appearance: PlayerAppearance;
   /** When true, skip the soft foot disc (e.g. overworld uses a sun-aligned shadow instead). */
   omitContactShadow?: boolean;
+  /** When true, show no procedural placeholder while the FBX loads. */
+  hideLoadingFallback?: boolean;
   /** When true, the model auto-rotates (preview). */
   turntable?: boolean;
   /** When true, adds a soft forward marker so facing reads clearly in gameplay. */
@@ -1037,10 +1039,10 @@ function retargetGlbClipToKnight(clip: THREE.AnimationClip): THREE.AnimationClip
       if (dot <= 0) return null;
       const node = track.name.slice(0, dot);
       const prop = track.name.slice(dot + 1);
-      // The source GLB root/translation channels are authored for a different
-      // rig orientation and scale. Keep the Knight's FBX bind height/upright
-      // root, and retarget only rotations onto matching bones.
-      if (node === "root" || prop === "position" || prop === "translation") return null;
+      // The source GLB root/pelvis channels are authored for a different rig
+      // orientation and scale. Keep the Knight's FBX hips upright/in-place,
+      // and retarget only child bone rotations.
+      if (node === "root" || node === "pelvis" || prop === "position" || prop === "translation") return null;
       const mapped = GLB_TO_KNIGHT_BONE[node];
       if (!mapped) return null;
       const next = track.clone();
@@ -1307,6 +1309,7 @@ function FBXCharacterInner({
 export function CharacterModel({
   appearance,
   omitContactShadow = false,
+  hideLoadingFallback = false,
   turntable = false,
   showFaceMarker = false,
   movingRef,
@@ -1335,12 +1338,14 @@ export function CharacterModel({
             then so the character is never invisible during the initial load. */}
         <Suspense
           fallback={
-            <ProceduralBody
-              appearance={appearance}
-              movingRef={movingRef}
-              riding={riding}
-              showFaceMarker={showFaceMarker}
-            />
+            hideLoadingFallback ? null : (
+              <ProceduralBody
+                appearance={appearance}
+                movingRef={movingRef}
+                riding={riding}
+                showFaceMarker={showFaceMarker}
+              />
+            )
           }
         >
           <FBXCharacterInner appearance={appearance} movingRef={movingRef} deadRef={deadRef} />

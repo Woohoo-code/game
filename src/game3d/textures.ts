@@ -526,6 +526,7 @@ const DRAWERS: Record<TerrainKind, (ctx: CanvasRenderingContext2D, size: number)
 
 export function getTerrainTexture(kind: TerrainKind): THREE.Texture {
   if (kind === "grass") return getImageTexture("terrain-grass-upload-v1", "terrain/grass.png");
+  if (kind === "water") return getImageTexture("terrain-water-upload-v1", "terrain/water.png");
   const key = `${kind}-v${TERRAIN_TEX_CACHE_VER}`;
   const cached = cache.get(key);
   if (cached) return cached;
@@ -796,6 +797,12 @@ export function getBiomeGroundTexture(biome: BiomeKind, realmTier: number = 1): 
   const tier = Math.max(1, Math.floor(realmTier));
   if (tier === 1 && biome === "meadow") {
     return getImageTexture("biome-meadow-grass-upload-v1", "terrain/grass.png");
+  }
+  if (tier === 1 && biome === "desert") {
+    return getImageTexture("biome-desert-sand-upload-v1", "terrain/sand.png");
+  }
+  if (tier === 1 && biome === "swamp") {
+    return getImageTexture("biome-swamp-bog-upload-v1", "terrain/bog.png");
   }
   const key = `biome-${tier}-${biome}-v${TERRAIN_TEX_CACHE_VER}`;
   const cached = cache.get(key);

@@ -29,7 +29,7 @@ export function CharacterPreview({ appearance }: { appearance: PlayerAppearance 
             <circleGeometry args={[1.5, 40]} />
             <meshStandardMaterial color="#1b2a3a" roughness={1} />
           </mesh>
-          <CharacterModel appearance={appearance} turntable />
+          <CharacterModel appearance={appearance} hideLoadingFallback turntable />
         </group>
       </Canvas>
     </div>
