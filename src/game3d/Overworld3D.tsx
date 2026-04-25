@@ -178,7 +178,7 @@ function Overworld3DScene() {
               <Stars
                 radius={140}
                 depth={52}
-                count={800}
+                count={1600}
                 factor={3.2}
                 saturation={0}
                 fade
@@ -216,8 +216,8 @@ function Overworld3DScene() {
           intensity={snapshot.world.inDungeon ? 0 : sunIntensity}
           color={sunColor}
           castShadow
-          shadow-mapSize-width={512}
-          shadow-mapSize-height={512}
+          shadow-mapSize-width={2048}
+          shadow-mapSize-height={2048}
           shadow-camera-near={1}
           shadow-camera-far={view.shadowCamFar}
           shadow-camera-left={-view.shadowHalf}

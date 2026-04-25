@@ -1,7 +1,6 @@
 import { useMemo, useRef, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { useGLTF } from "@react-three/drei";
 import type { BiomeKind } from "../game/types";
 import {
   MAP_H,
@@ -16,7 +15,6 @@ import {
   getBiomeGroundTexture,
   getTerrainTexture,
 } from "./textures";
-import { publicAssetUrl } from "./publicAssetUrl";
 
 /** Each terrain kind sits at a slightly different height so water dips and road rides slightly above grass. */
 const HEIGHT_BY_TERRAIN: Record<TerrainKind, number> = {
@@ -203,28 +201,64 @@ function buildTerrainGroups(): TerrainGroup[] {
 }
 
 export function Terrain() {
-  // We'll return our custom GLB model directly instead of building the procedural terrain geometry.
-  // The model may need rotation/scaling depending on its original orientation.
-  const { scene } = useGLTF(publicAssetUrl("map.glb"));
+  const snapshot = useGameStore();
+  const worldVersion = snapshot.world.worldVersion;
+  const realmTier = Math.max(1, Math.floor(snapshot.world.realmTier ?? 1));
 
-  // Clone it so we don't mutate the cached loaded original, then traverse to enable shadows.
-  const mapScene = useMemo(() => {
-    const cloned = scene.clone();
-    cloned.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        child.receiveShadow = true;
-        child.castShadow = true;
-      }
-    });
-    // Optional: Center or scale the model here if needed.
-    // e.g. cloned.position.set(MAP_W / 2, 0, MAP_H / 2);
-    return cloned;
-  }, [scene]);
+  const terrainGroups = useMemo(buildTerrainGroups, [worldVersion]);
+  const waterMats = useRef<THREE.MeshStandardMaterial[]>([]);
+
+  useFrame((_, delta) => {
+    for (const mat of waterMats.current) {
+      if (!mat?.map) continue;
+      mat.map.offset.x = (mat.map.offset.x + delta * 0.03) % 1;
+      mat.map.offset.y = (mat.map.offset.y + delta * 0.018) % 1;
+    }
+  });
+
+  // Reset refs each render — we rebuild them in the map below.
+  waterMats.current = [];
 
   return (
-    <group scale={[0.1, 0.1, 0.1]} position={[MAP_W / 2, -2, MAP_H / 2]}>
-      <primitive object={mapScene} />
-    </group>
+    <>
+      {terrainGroups.map(({ kind, biome, geometry }, i) => {
+        // For "grass" kind we use a biome-specific texture (sand/snow/mud/meadow/forest-floor).
+        // For other kinds we use the shared texture and tint it per biome.
+        const tex = kind === "grass" ? getBiomeGroundTexture(biome, realmTier) : getTerrainTexture(kind);
+        const tint = kind === "grass" ? "#ffffff" : biomeTerrainTint(biome, kind, realmTier);
+        const key = `${kind}-${biome}-${i}`;
+        if (kind === "water") {
+          return (
+            <mesh key={key} geometry={geometry} receiveShadow renderOrder={1}>
+              <meshStandardMaterial
+                ref={(m) => {
+                  if (m) waterMats.current.push(m);
+                }}
+                map={tex}
+                color={tint}
+                roughness={0.35}
+                metalness={0.15}
+                transparent
+                opacity={0.94}
+                emissive={new THREE.Color("#0a1a2e")}
+                emissiveIntensity={0.25}
+              />
+            </mesh>
+          );
+        }
+        return (
+          <mesh key={key} geometry={geometry} receiveShadow>
+            <meshStandardMaterial
+              map={tex}
+              color={tint}
+              roughness={0.78}
+              metalness={0.02}
+              envMapIntensity={0.35}
+            />
+          </mesh>
+        );
+      })}
+    </>
   );
 }
 
