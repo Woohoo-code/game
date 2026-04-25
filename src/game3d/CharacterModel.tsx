@@ -7,6 +7,7 @@ import type {
   HairStyle,
   PlayerAppearance,
 } from "../game/types";
+import { publicAssetUrl } from "./publicAssetUrl";
 
 interface CharacterModelProps {
   appearance: PlayerAppearance;
@@ -974,7 +975,7 @@ function ProceduralBody({
 
 // Start fetching the idle animation as soon as this module is imported so it
 // arrives before the component mounts (critical-path asset).
-useGLTF.preload("/idle.glb");
+useGLTF.preload(publicAssetUrl("idle.glb"));
 
 /* ── Shared type for lazily-loaded animation actions ──────────────────── */
 
@@ -992,7 +993,7 @@ function WalkAnimLoader({
   mixer: THREE.AnimationMixer;
   lazyRef: MutableRefObject<LazyAnimActions>;
 }) {
-  const { animations } = useGLTF("/walk.glb");
+  const { animations } = useGLTF(publicAssetUrl("walk.glb"));
   useEffect(() => {
     if (animations.length > 0) {
       lazyRef.current.walk = mixer.clipAction(animations[0]);
@@ -1014,7 +1015,7 @@ function DeathAnimLoader({
   mixer: THREE.AnimationMixer;
   lazyRef: MutableRefObject<LazyAnimActions>;
 }) {
-  const deathFbx = useFBX("/death.fbx");
+  const deathFbx = useFBX(publicAssetUrl("death.fbx"));
   useEffect(() => {
     if (deathFbx.animations.length > 0) {
       lazyRef.current.death = mixer.clipAction(deathFbx.animations[0]);
@@ -1041,8 +1042,8 @@ function FBXCharacterInner({
   deadRef?: MutableRefObject<boolean>;
 }) {
   const groupRef = useRef<THREE.Group>(null);
-  const fbx = useFBX("/Knight D Pelegrini.fbx");
-  const { animations: idleAnims } = useGLTF("/idle.glb");
+  const fbx = useFBX(publicAssetUrl("Knight D Pelegrini.fbx"));
+  const { animations: idleAnims } = useGLTF(publicAssetUrl("idle.glb"));
 
   const { actions, names, mixer } = useAnimations(
     [...fbx.animations, ...idleAnims],

@@ -16,6 +16,7 @@ import {
   getBiomeGroundTexture,
   getTerrainTexture,
 } from "./textures";
+import { publicAssetUrl } from "./publicAssetUrl";
 
 /** Each terrain kind sits at a slightly different height so water dips and road rides slightly above grass. */
 const HEIGHT_BY_TERRAIN: Record<TerrainKind, number> = {
@@ -204,7 +205,7 @@ function buildTerrainGroups(): TerrainGroup[] {
 export function Terrain() {
   // We'll return our custom GLB model directly instead of building the procedural terrain geometry.
   // The model may need rotation/scaling depending on its original orientation.
-  const { scene } = useGLTF("/map.glb");
+  const { scene } = useGLTF(publicAssetUrl("map.glb"));
 
   // Clone it so we don't mutate the cached loaded original, then traverse to enable shadows.
   const mapScene = useMemo(() => {
