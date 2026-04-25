@@ -1,12 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
-import { Canvas } from "@react-three/fiber";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
 import { Cloud, Clouds, Sky, Stars } from "@react-three/drei";
 import * as THREE from "three";
 import { inputController, type MoveDirection } from "../game/inputController";
 import { gameStore } from "../game/state";
 import { useGameStore } from "../game/useGameStore";
 import { MAP_H, MAP_W } from "../game/worldMap";
-import { WORLD_CLOCK_TICK_FRACTION, nightVisualBlend, sunHeight01 } from "../game/worldClock";
+import {
+  WORLD_CLOCK_TICK_FRACTION,
+  nightVisualBlend,
+  sunHeight01,
+  sunShadowLightForMap,
+} from "../game/worldClock";
 import { Buildings } from "./Buildings";
 import { CrownkeepCastleWalls3D, CrownkeepSouthGate3D } from "./CastleWalls3D";
 import { AmbientSparkles, GroundDecorations, TownFencing } from "./Decorations";
@@ -44,6 +49,65 @@ function keyboardTargetIsTyping(event: KeyboardEvent): boolean {
 export function Overworld3D({ cameraMotionEnabled = false }: { cameraMotionEnabled?: boolean }) {
   const worldVersion = useGameStore().world.worldVersion;
   return <Overworld3DScene key={worldVersion} cameraMotionEnabled={cameraMotionEnabled} />;
+}
+
+function SunDirectionalLightWithTarget({
+  worldTime,
+  inDungeon,
+  sunIntensity,
+  sunColor,
+  shadowCamFar,
+  shadowHalf,
+}: {
+  worldTime: number;
+  inDungeon: boolean;
+  sunIntensity: number;
+  sunColor: string;
+  shadowCamFar: number;
+  shadowHalf: number;
+}) {
+  const lightRef = useRef<THREE.DirectionalLight>(null);
+  const { scene } = useThree();
+
+  useLayoutEffect(() => {
+    const L = lightRef.current;
+    if (!L) return;
+    if (inDungeon) {
+      if (L.target.parent) scene.remove(L.target);
+      return;
+    }
+    if (!L.target.parent) scene.add(L.target);
+    return () => {
+      if (L.target.parent) scene.remove(L.target);
+    };
+  }, [scene, inDungeon]);
+
+  useLayoutEffect(() => {
+    const L = lightRef.current;
+    if (!L || inDungeon) return;
+    const { pos, target } = sunShadowLightForMap(worldTime, MAP_W, MAP_H);
+    L.position.set(pos[0], pos[1], pos[2]);
+    L.target.position.set(target[0], target[1], target[2]);
+    L.target.updateMatrixWorld();
+  }, [inDungeon, worldTime]);
+
+  return (
+    <directionalLight
+      ref={lightRef}
+      intensity={inDungeon ? 0 : sunIntensity}
+      color={sunColor}
+      castShadow={!inDungeon}
+      shadow-mapSize-width={2048}
+      shadow-mapSize-height={2048}
+      shadow-camera-near={1}
+      shadow-camera-far={shadowCamFar}
+      shadow-camera-left={-shadowHalf}
+      shadow-camera-right={shadowHalf}
+      shadow-camera-top={shadowHalf}
+      shadow-camera-bottom={-shadowHalf}
+      shadow-bias={-0.0008}
+    />
+  );
 }
 
 function Overworld3DScene({ cameraMotionEnabled }: { cameraMotionEnabled: boolean }) {
@@ -211,20 +275,13 @@ function Overworld3DScene({ cameraMotionEnabled }: { cameraMotionEnabled: boolea
 
         <hemisphereLight args={["#cde3f2", "#2b2a36", snapshot.world.inDungeon ? 0 : hemiIntensity]} />
         <ambientLight intensity={snapshot.world.inDungeon ? 0 : ambIntensity} />
-        <directionalLight
-          position={[MAP_W * 0.75, 38, MAP_H * 0.3]}
-          intensity={snapshot.world.inDungeon ? 0 : sunIntensity}
-          color={sunColor}
-          castShadow
-          shadow-mapSize-width={2048}
-          shadow-mapSize-height={2048}
-          shadow-camera-near={1}
-          shadow-camera-far={view.shadowCamFar}
-          shadow-camera-left={-view.shadowHalf}
-          shadow-camera-right={view.shadowHalf}
-          shadow-camera-top={view.shadowHalf}
-          shadow-camera-bottom={-view.shadowHalf}
-          shadow-bias={-0.0008}
+        <SunDirectionalLightWithTarget
+          worldTime={worldTime}
+          inDungeon={snapshot.world.inDungeon}
+          sunIntensity={sunIntensity}
+          sunColor={sunColor}
+          shadowCamFar={view.shadowCamFar}
+          shadowHalf={view.shadowHalf}
         />
         <directionalLight position={[-10, 18, -10]} intensity={rimIntensity} color="#6c80a0" />
         <pointLight

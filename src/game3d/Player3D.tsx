@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { playStepThrottled, unlockAudio } from "../game/audio";
@@ -12,6 +12,7 @@ import { inputController } from "../game/inputController";
 import { gameStore } from "../game/state";
 import type { PlayerAppearance } from "../game/types";
 import { useGameStore } from "../game/useGameStore";
+import { sunDirectionUnit, sunHeight01 } from "../game/worldClock";
 import {
   MAP_H,
   MAP_W,
@@ -29,6 +30,30 @@ const WALK_SPEED_TILES = 140 / TILE;
 const HALF_TILE = 0.5;
 const CAM_OFFSET = new THREE.Vector3(0, 9, 9);
 
+/** Soft foot shadow aligned with sun direction (overworld only). */
+function PlayerGroundSunShadow({ worldTime }: { worldTime: number }) {
+  const { rotY, elong, opacity } = useMemo(() => {
+    const dir = sunDirectionUnit(worldTime);
+    const sx = -dir.x;
+    const sz = -dir.z;
+    const len = Math.hypot(sx, sz);
+    const rotY = len < 1e-5 ? 0 : Math.atan2(sx, sz);
+    const sunH = sunHeight01(worldTime);
+    const elong = 1 + Math.min(2.9, len * 3.15);
+    const opacity = Math.min(0.34, 0.1 + 0.14 * (1 - len * 0.28) + sunH * 0.08);
+    return { rotY, elong, opacity };
+  }, [worldTime]);
+
+  return (
+    <group rotation={[0, rotY, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]} scale={[elong, 1, 1]}>
+        <circleGeometry args={[0.34, 28]} />
+        <meshBasicMaterial color="#000" transparent opacity={opacity} depthWrite={false} />
+      </mesh>
+    </group>
+  );
+}
+
 export function Player3D({
   appearance,
   cameraMotionEnabled = false
@@ -37,6 +62,8 @@ export function Player3D({
   cameraMotionEnabled?: boolean;
 }) {
   const hud = useGameStore();
+  const inDungeon = hud.world.inDungeon;
+  const worldTime = Number.isFinite(hud.world.worldTime) ? hud.world.worldTime : 0;
   const horsesOwned = hud.player.horsesOwned ?? [];
   const riding = stableHorseSpeedBonus(horsesOwned) > 0;
   const bestMount = highestOwnedHorseKey(horsesOwned);
@@ -159,6 +186,7 @@ export function Player3D({
 
   return (
     <group ref={groupRef}>
+      {!inDungeon && <PlayerGroundSunShadow worldTime={worldTime} />}
       {riding && bestMount && !deadRef.current ? (
         <MountHorse3D mountKey={bestMount} movingRef={movingRef} />
       ) : null}
@@ -169,6 +197,7 @@ export function Player3D({
       <group position={[0, riding && !deadRef.current ? 0.06 : 0, 0]}>
         <CharacterModel
           appearance={appearance}
+          omitContactShadow={!inDungeon}
           showFaceMarker
           movingRef={movingRef}
           deadRef={deadRef}

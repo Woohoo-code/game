@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import {
   BATTLE_STANCE_ORDER,
   BATTLE_STANCES,
@@ -18,6 +18,11 @@ import { IconGold } from "./IconGold";
 
 /** Short pause after picking a command so each choice reads clearly before resolving. */
 const BATTLE_ACTION_DELAY_MS = 420;
+
+/** Watch the hero collapse on the field before the screen blacks out and the Guild hauls you to town. */
+const KNOCKOUT_DEATH_WITNESS_MS = 2400;
+/** Full-screen fade to black before revival warp. */
+const KNOCKOUT_FADE_TO_BLACK_MS = 900;
 
 function keyboardTargetIsTyping(el: EventTarget | null): boolean {
   if (!el || !(el instanceof HTMLElement)) return false;
@@ -158,8 +163,8 @@ export function BattleOverlay({ battleLogCollapsed = false, onToggleBattleLogCol
   const snapshot = useGameStore();
   const [actionPending, setActionPending] = useState(false);
   const actionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const knockoutAckRef = useRef<HTMLButtonElement | null>(null);
-  const knockoutFocusDoneRef = useRef(false);
+  /** `witness` = world visible, death pose; `fade` = black overlay before revival. */
+  const [knockoutCinematic, setKnockoutCinematic] = useState<null | "witness" | "fade">(null);
 
   const queueBattleAction = useCallback((run: () => void) => {
     if (actionPending) return;
@@ -188,24 +193,55 @@ export function BattleOverlay({ battleLogCollapsed = false, onToggleBattleLogCol
 
   useEffect(() => {
     if (!snapshot.battle.inBattle) {
-      knockoutFocusDoneRef.current = false;
       if (actionTimerRef.current) {
         clearTimeout(actionTimerRef.current);
         actionTimerRef.current = null;
       }
       setActionPending(false);
+      setKnockoutCinematic(null);
     }
   }, [snapshot.battle.inBattle]);
 
-  useEffect(() => {
-    if (!snapshot.battle.inBattle || snapshot.battle.phase !== "knockoutPending") {
+  const knockoutPending = snapshot.battle.phase === "knockoutPending";
+
+  useLayoutEffect(() => {
+    if (!knockoutPending) {
+      setKnockoutCinematic(null);
       return;
     }
-    if (knockoutFocusDoneRef.current) return;
-    knockoutFocusDoneRef.current = true;
-    const id = window.requestAnimationFrame(() => knockoutAckRef.current?.focus());
-    return () => window.cancelAnimationFrame(id);
-  }, [snapshot.battle.inBattle, snapshot.battle.phase]);
+    const reduced =
+      typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    const witnessMs = reduced ? 600 : KNOCKOUT_DEATH_WITNESS_MS;
+    const fadeMs = reduced ? 200 : KNOCKOUT_FADE_TO_BLACK_MS;
+    let cancelled = false;
+    setKnockoutCinematic("witness");
+    const t1 = window.setTimeout(() => {
+      if (!cancelled) setKnockoutCinematic("fade");
+    }, witnessMs);
+    const t2 = window.setTimeout(() => {
+      if (!cancelled) gameStore.acknowledgeKnockout();
+    }, witnessMs + fadeMs);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [knockoutPending]);
+
+  useEffect(() => {
+    if (!knockoutPending) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      if (keyboardTargetIsTyping(e.target)) return;
+      if (e.code === "Enter" || e.code === "Escape") {
+        e.preventDefault();
+        gameStore.acknowledgeKnockout();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [knockoutPending]);
 
   useEffect(() => {
     if (!snapshot.battle.inBattle) return;
@@ -275,7 +311,6 @@ export function BattleOverlay({ battleLogCollapsed = false, onToggleBattleLogCol
   const unlockedSkills = orderedLearnedSkills(snapshot.player.learnedSkills);
   const xpPercent = Math.max(0, Math.min(100, Math.round((snapshot.player.xp / snapshot.player.xpToNext) * 100)));
   const enemy = snapshot.battle.enemy;
-  const knockoutPending = snapshot.battle.phase === "knockoutPending";
   const victoryPending = snapshot.battle.phase === "victoryPending";
 
   if (!snapshot.battle.inBattle || !enemy) {
@@ -298,8 +333,20 @@ export function BattleOverlay({ battleLogCollapsed = false, onToggleBattleLogCol
   const hasPositional = !!(positional?.highGround || positional?.ambush);
   const lastEnemyHitAt = snapshot.battle.lastEnemyHitAt ?? 0;
 
+  const overlayCinematicClass =
+    knockoutPending && knockoutCinematic === "witness"
+      ? " battle-overlay--knockout-witness"
+      : knockoutPending && knockoutCinematic === "fade"
+        ? " battle-overlay--knockout-fade"
+        : "";
+
   return (
-    <div className="battle-overlay" role="dialog" aria-modal="true" aria-label="Battle">
+    <div
+      className={`battle-overlay${overlayCinematicClass}`}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Battle"
+    >
       <div className="battle-overlay-backdrop" aria-hidden />
       <div className={`battle-overlay-panel${panelModClass}`}>
         <PlayerHitFlash lastEnemyHitAt={lastEnemyHitAt} />
@@ -650,37 +697,20 @@ export function BattleOverlay({ battleLogCollapsed = false, onToggleBattleLogCol
         </div>
       </div>
       <div className="battle-overlay-flashburst" aria-hidden />
-      {knockoutPending && (
-        <div
-          className="battle-death-screen"
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="battle-death-title"
-          aria-describedby="battle-death-desc"
-        >
-          <div className="battle-death-screen__vignette" aria-hidden />
-          <div className="battle-death-screen__content">
-            <p className="battle-death-screen__eyebrow" aria-hidden>
-              Defeat
-            </p>
-            <h2 id="battle-death-title" className="battle-death-screen__title">
-              You have fallen
-            </h2>
-            <p id="battle-death-desc" className="battle-death-screen__subtitle">
-              {enemy.name} struck the final blow. If you continue, the Guild seizes <strong>all your gold</strong> and your{" "}
-              <strong>equipped weapon and armor</strong> (replaced with starter gear) before dragging you to safety.
-            </p>
-            <button
-              ref={knockoutAckRef}
-              type="button"
-              className="battle-death-screen__ack"
-              onClick={() => gameStore.acknowledgeKnockout()}
-            >
-              Acknowledge defeat and continue
-            </button>
-          </div>
+      {knockoutPending && knockoutCinematic === "fade" ? (
+        <div className="battle-knockout-fade-black" aria-hidden />
+      ) : null}
+      {knockoutPending && knockoutCinematic === "witness" ? (
+        <div className="battle-knockout-witness-hint" role="status" aria-live="polite">
+          <p>
+            <strong>You have fallen.</strong> The Guild will haul you to the nearest town — gold and equipped gear are
+            forfeit.
+          </p>
+          <p className="battle-knockout-witness-hint__skip">
+            <kbd>Enter</kbd> or <kbd>Esc</kbd> to skip
+          </p>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

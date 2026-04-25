@@ -5,12 +5,8 @@ import { MobileFullscreenButton } from "./MobileFullscreenButton";
 import { gameStore, defaultAppearance } from "../game/state";
 import { useGameStore } from "../game/useGameStore";
 import {
-  FACIAL_HAIR_LABELS,
-  FACIAL_HAIR_ORDER,
   FIGHTING_CLASS_LABELS,
   FIGHTING_CLASS_ORDER,
-  HAIR_STYLE_LABELS,
-  HAIR_STYLE_ORDER,
   normalizeFacialHair,
   normalizeFightingClass,
   normalizeHairStyle,
@@ -22,10 +18,6 @@ const SKIN_PRESETS = ["#f6dbbf", "#f1c9a5", "#d9a07a", "#b07550", "#8a5a3a", "#5
 const HAIR_PRESETS = ["#141414", "#3b2b21", "#6b4b2a", "#a8743d", "#d5c07a", "#e7e2d6", "#c4453b", "#7a4de6", "#3fa8ff"];
 const OUTFIT_PRESETS = ["#3564c3", "#c3353d", "#2e8c5a", "#6a2fa3", "#d48a1f", "#1d9aa8", "#2c2f37", "#d4d6db"];
 const PANTS_PRESETS = ["#2a3550", "#3c2a1f", "#1c1f25", "#4a3e68", "#2f5030", "#6a5a36"];
-
-const HAIR_STYLES = HAIR_STYLE_ORDER.map((id) => ({ id, label: HAIR_STYLE_LABELS[id] }));
-
-const FACIAL_STYLES = FACIAL_HAIR_ORDER.map((id) => ({ id, label: FACIAL_HAIR_LABELS[id] }));
 
 const CLASS_HINT: Record<FightingClass, string> = {
   knight: "+2 Attack — steady melee pressure.",
@@ -82,15 +74,13 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
 
   const randomize = () => {
     const pick = <T,>(arr: readonly T[]): T => arr[Math.floor(Math.random() * arr.length)]!;
-    setAppearance({
+    setAppearance((prev) => ({
+      ...prev,
       skin: pick(SKIN_PRESETS),
       hair: pick(HAIR_PRESETS),
-      hairStyle: pick(HAIR_STYLES).id,
-      facialHair: pick(FACIAL_HAIR_ORDER),
-      beardColor: pick(HAIR_PRESETS),
       outfit: pick(OUTFIT_PRESETS),
       pants: pick(PANTS_PRESETS)
-    });
+    }));
   };
 
   const submit = () => {
@@ -113,8 +103,8 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
           <p className="character-create-eyebrow">Sign up</p>
           <h1>Create your hero</h1>
           <p>
-            Pick a name, class, and look — the preview shows the full-armor Knight (your colors tune cloth trim and
-            UI where supported). Progress is saved in this browser when you use Save in town.
+            Pick a name, class, and colors — the preview uses the same Knight model as in-game; your choices tint
+            armor, cloth, skin, and helmet areas. Progress is saved in this browser when you use Save in town.
           </p>
         </header>
 
@@ -200,58 +190,6 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
                   type="color"
                   value={appearance.hair}
                   onChange={(e) => update({ hair: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className="form-row">
-              <span>Hair style</span>
-              <div className="pill-row">
-                {HAIR_STYLES.map((style) => (
-                  <button
-                    key={style.id}
-                    type="button"
-                    className={`pill${appearance.hairStyle === style.id ? " active" : ""}`}
-                    onClick={() => update({ hairStyle: style.id })}
-                  >
-                    {style.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="form-row">
-              <span>Facial hair</span>
-              <div className="pill-row">
-                {FACIAL_STYLES.map((style) => (
-                  <button
-                    key={style.id}
-                    type="button"
-                    className={`pill${appearance.facialHair === style.id ? " active" : ""}`}
-                    onClick={() => update({ facialHair: style.id })}
-                  >
-                    {style.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="form-row">
-              <span>Beard color</span>
-              <div className="swatch-row">
-                {HAIR_PRESETS.map((c) => (
-                  <Swatch
-                    key={c}
-                    color={c}
-                    active={appearance.beardColor === c}
-                    ariaLabel={`Beard ${c}`}
-                    onSelect={() => update({ beardColor: c })}
-                  />
-                ))}
-                <input
-                  type="color"
-                  value={appearance.beardColor}
-                  onChange={(e) => update({ beardColor: e.target.value })}
                 />
               </div>
             </div>

@@ -11,8 +11,11 @@ import type { BiomeKind } from "../game/types";
 
 const cache = new Map<string, THREE.CanvasTexture>();
 
+/** Bump when terrain art changes so cached CanvasTextures are regenerated. */
+const TERRAIN_TEX_CACHE_VER = 2;
+
 /** Canvas resolution for terrain + buildings (higher = sharper when zoomed in). */
-const PROCEDURAL_TEX_SIZE = 256;
+const PROCEDURAL_TEX_SIZE = 384;
 
 function makeCanvas(size = PROCEDURAL_TEX_SIZE): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
   const canvas = document.createElement("canvas");
@@ -68,22 +71,149 @@ function seededRng(seed: number) {
   };
 }
 
-function drawGrass(ctx: CanvasRenderingContext2D, s: number): void {
-  const base = ctx.createRadialGradient(s * 0.35, s * 0.25, 0, s * 0.5, s * 0.5, s * 0.85);
-  base.addColorStop(0, "#6aa858");
-  base.addColorStop(0.4, "#528842");
-  base.addColorStop(1, "#345a2c");
-  ctx.fillStyle = base;
+/**
+ * Tile-safe grass / soil base: only periodic functions of (u,v) so UVs that
+ * step by whole tiles (world-space) never show a repeating " spotlight " seam.
+ */
+function fillPeriodicGrassBase(
+  ctx: CanvasRenderingContext2D,
+  s: number,
+  seed: number,
+  mid: { r: number; g: number; b: number },
+  swing: number,
+): void {
+  const img = ctx.createImageData(s, s);
+  const d = img.data;
+  const rf = seededRng(seed);
+  const p0 = rf() * Math.PI * 2;
+  const p1 = rf() * Math.PI * 2;
+  const p2 = rf() * Math.PI * 2;
+  for (let py = 0; py < s; py++) {
+    const v = py / s;
+    for (let px = 0; px < s; px++) {
+      const u = px / s;
+      const w =
+        0.55 * Math.sin(2 * Math.PI * (4 * u + 2.5 * v) + p0) +
+        0.35 * Math.sin(2 * Math.PI * (11 * u - 3.8 * v) + p1) +
+        0.22 * Math.sin(2 * Math.PI * (17 * u + 11 * v) + p2);
+      const k = 1 + (w / 1.12) * swing;
+      const i = (py * s + px) * 4;
+      d[i] = Math.max(0, Math.min(255, (mid.r * k) | 0));
+      d[i + 1] = Math.max(0, Math.min(255, (mid.g * k) | 0));
+      d[i + 2] = Math.max(0, Math.min(255, (mid.b * k) | 0));
+      d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+/** Tile-aligned cobble / flagstones: grid divides `s` evenly so texture wraps cleanly. */
+function drawTileableCobble(
+  ctx: CanvasRenderingContext2D,
+  s: number,
+  seed: number,
+  mortarRgb: string,
+  stoneLift: number,
+): void {
+  ctx.fillStyle = mortarRgb;
   ctx.fillRect(0, 0, s, s);
+  const cols = 8;
+  const cell = s / cols;
+  const mor = Math.max(2.2, cell * 0.085);
+  const r = seededRng(seed);
+  for (let cy = 0; cy < cols; cy++) {
+    for (let cx = 0; cx < cols; cx++) {
+      const gx = cx * cell;
+      const gy = cy * cell;
+      const jx = (r() - 0.5) * mor * 0.55;
+      const jy = (r() - 0.5) * mor * 0.55;
+      const x0 = gx + mor + jx;
+      const y0 = gy + mor + jy;
+      const w = cell - mor * 2 - r() * mor * 0.35;
+      const h = cell - mor * 2 - r() * mor * 0.35;
+      const sr = 108 + Math.floor(r() * 52) + stoneLift;
+      const sg = Math.max(38, sr - 22 - Math.floor(r() * 12));
+      const sb = Math.max(26, sr - 48 - Math.floor(r() * 18));
+      ctx.fillStyle = `rgb(${sr}, ${sg}, ${sb})`;
+      const rad = 2.2 + r() * 2.2;
+      ctx.beginPath();
+      ctx.roundRect(x0, y0, Math.max(2, w), Math.max(2, h), rad);
+      ctx.fill();
+      ctx.strokeStyle = `rgba(255, 248, 230, ${0.07 + r() * 0.08})`;
+      ctx.lineWidth = 0.7;
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(28, 22, 14, ${0.2 + r() * 0.14})`;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+  }
+}
+
+/** Cool grey ashlar + mortar; grid divides `s` evenly for seamless UV tiling. */
+function drawCastleWallAshlar(ctx: CanvasRenderingContext2D, s: number): void {
+  const mortar = "#5f5d5b";
+  ctx.fillStyle = mortar;
+  ctx.fillRect(0, 0, s, s);
+  const n = 8;
+  const cell = s / n;
+  const mor = Math.max(2.2, cell * 0.08);
+  const r = seededRng(78432);
+  for (let cy = 0; cy < n; cy++) {
+    for (let cx = 0; cx < n; cx++) {
+      const gx = cx * cell;
+      const gy = cy * cell;
+      const jx = (r() - 0.5) * mor * 0.42;
+      const jy = (r() - 0.5) * mor * 0.42;
+      const x0 = gx + mor + jx;
+      const y0 = gy + mor + jy;
+      const w = cell - mor * 2 - r() * mor * 0.32;
+      const h = cell - mor * 2 - r() * mor * 0.32;
+      const base = 108 + Math.floor(r() * 52);
+      ctx.fillStyle = `rgb(${base}, ${base - 4}, ${base - 8})`;
+      ctx.beginPath();
+      ctx.roundRect(x0, y0, Math.max(2, w), Math.max(2, h), 2 + r() * 2.5);
+      ctx.fill();
+      ctx.strokeStyle = `rgba(255, 255, 255, ${0.045 + r() * 0.055})`;
+      ctx.lineWidth = 0.62;
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(18, 16, 14, ${0.2 + r() * 0.12})`;
+      ctx.lineWidth = 0.46;
+      ctx.stroke();
+    }
+  }
+  for (let i = 0; i < density(s, 380); i++) {
+    const shade = 68 + Math.floor(r() * 58);
+    ctx.fillStyle = `rgba(${shade}, ${shade - 2}, ${shade - 4}, ${0.035 + r() * 0.07})`;
+    ctx.fillRect(r() * s, r() * s, 1, 1);
+  }
+  addFilmGrain(ctx, s, 88421);
+}
+
+/** Shared curtain-wall diffuse map for Crownkeep castle meshes. */
+export function getCastleWallTexture(): THREE.CanvasTexture {
+  const key = "castle-curtain-ashlar";
+  const cached = cache.get(key);
+  if (cached) return cached;
+  const size = PROCEDURAL_TEX_SIZE;
+  const { canvas, ctx } = makeCanvas(size);
+  drawCastleWallAshlar(ctx, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  applyTextureQuality(tex);
+  cache.set(key, tex);
+  return tex;
+}
+
+function drawGrass(ctx: CanvasRenderingContext2D, s: number): void {
+  fillPeriodicGrassBase(ctx, s, 101, { r: 96, g: 152, b: 68 }, 0.11);
 
   const r = seededRng(101);
 
-  for (let i = 0; i < density(s, 36); i++) {
+  for (let i = 0; i < density(s, 28); i++) {
     const x = r() * s;
     const y = r() * s;
-    ctx.fillStyle = `rgba(28, 44, 22, ${0.08 + r() * 0.14})`;
+    ctx.fillStyle = `rgba(28, 44, 22, ${0.05 + r() * 0.09})`;
     ctx.beginPath();
-    ctx.ellipse(x, y, 5 + r() * 18, 4 + r() * 12, r() * Math.PI, 0, Math.PI * 2);
+    ctx.ellipse(x, y, 3 + r() * 11, 2.5 + r() * 8, r() * Math.PI, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -144,64 +274,14 @@ function drawGrass(ctx: CanvasRenderingContext2D, s: number): void {
 }
 
 function drawRoad(ctx: CanvasRenderingContext2D, s: number): void {
-  const grad = ctx.createLinearGradient(0, 0, s * 0.55, s);
-  grad.addColorStop(0, "#b8a280");
-  grad.addColorStop(0.35, "#958568");
-  grad.addColorStop(0.72, "#7a684e");
-  grad.addColorStop(1, "#5c4a38");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, s, s);
-
-  const r = seededRng(202);
-
-  for (let i = 0; i < density(s, 620); i++) {
-    const shade = 88 + Math.floor(r() * 78);
-    const warm = 6 + Math.floor(r() * 18);
-    ctx.fillStyle = `rgba(${shade + warm}, ${shade - 2}, ${shade - warm - 18}, ${0.1 + r() * 0.18})`;
+  drawTileableCobble(ctx, s, 202, "#5a4f42", 0);
+  const r = seededRng(92021);
+  for (let i = 0; i < density(s, 420); i++) {
+    const shade = 88 + Math.floor(r() * 72);
+    const warm = 5 + Math.floor(r() * 14);
+    ctx.fillStyle = `rgba(${shade + warm}, ${shade - 2}, ${shade - warm - 14}, ${0.06 + r() * 0.1})`;
     ctx.fillRect(r() * s, r() * s, 1, 1);
   }
-
-  ctx.strokeStyle = "rgba(48, 36, 22, 0.22)";
-  ctx.lineWidth = 1.1;
-  for (let a = 0; a < 5; a++) {
-    ctx.beginPath();
-    let px = r() * s;
-    let py = r() * s;
-    ctx.moveTo(px, py);
-    for (let k = 0; k < 8; k++) {
-      px += (r() - 0.5) * 18;
-      py += (r() - 0.5) * 18;
-      ctx.lineTo(px, py);
-    }
-    ctx.stroke();
-  }
-
-  for (let i = 0; i < density(s, 160); i++) {
-    const x = r() * s;
-    const y = r() * s;
-    const size = 0.9 + r() * 2.8;
-    const shade = 132 + Math.floor(r() * 88);
-    ctx.fillStyle = `rgba(${shade}, ${shade - 18}, ${shade - 42}, ${0.45 + r() * 0.38})`;
-    ctx.beginPath();
-    ctx.ellipse(x, y, size, size * 0.62, r() * Math.PI, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  ctx.strokeStyle = "rgba(32, 24, 14, 0.35)";
-  ctx.lineWidth = 0.45;
-  for (let i = 0; i < density(s, 12); i++) {
-    ctx.beginPath();
-    let px = r() * s;
-    let py = r() * s;
-    ctx.moveTo(px, py);
-    for (let k = 0; k < 4; k++) {
-      px += 4 + r() * 10;
-      py += (r() - 0.5) * 3;
-      ctx.lineTo(px, py);
-    }
-    ctx.stroke();
-  }
-
   addFilmGrain(ctx, s, 9202);
 }
 
@@ -433,14 +513,15 @@ const DRAWERS: Record<TerrainKind, (ctx: CanvasRenderingContext2D, size: number)
 };
 
 export function getTerrainTexture(kind: TerrainKind): THREE.CanvasTexture {
-  const cached = cache.get(kind);
+  const key = `${kind}-v${TERRAIN_TEX_CACHE_VER}`;
+  const cached = cache.get(key);
   if (cached) return cached;
   const size = PROCEDURAL_TEX_SIZE;
   const { canvas, ctx } = makeCanvas(size);
   DRAWERS[kind](ctx, size);
   const tex = new THREE.CanvasTexture(canvas);
   applyTextureQuality(tex);
-  cache.set(kind, tex);
+  cache.set(key, tex);
   return tex;
 }
 
@@ -593,17 +674,12 @@ function drawMud(ctx: CanvasRenderingContext2D, s: number): void {
 }
 
 function drawMeadowGrass(ctx: CanvasRenderingContext2D, s: number): void {
-  const grad = ctx.createRadialGradient(s * 0.3, s * 0.25, 0, s * 0.5, s * 0.55, s * 0.95);
-  grad.addColorStop(0, "#7ec868");
-  grad.addColorStop(0.55, "#62a850");
-  grad.addColorStop(1, "#4a823c");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, s, s);
+  fillPeriodicGrassBase(ctx, s, 909, { r: 92, g: 168, b: 76 }, 0.12);
   const r = seededRng(909);
-  for (let i = 0; i < density(s, 26); i++) {
-    ctx.fillStyle = `rgba(36, 62, 30, ${0.09 + r() * 0.12})`;
+  for (let i = 0; i < density(s, 22); i++) {
+    ctx.fillStyle = `rgba(36, 62, 30, ${0.055 + r() * 0.08})`;
     ctx.beginPath();
-    ctx.ellipse(r() * s, r() * s, 6 + r() * 14, 4 + r() * 9, r() * Math.PI, 0, Math.PI * 2);
+    ctx.ellipse(r() * s, r() * s, 3.5 + r() * 10, 3 + r() * 7, r() * Math.PI, 0, Math.PI * 2);
     ctx.fill();
   }
   for (let i = 0; i < density(s, 200); i++) {
@@ -643,12 +719,7 @@ function drawMeadowGrass(ctx: CanvasRenderingContext2D, s: number): void {
 }
 
 function drawForestFloor(ctx: CanvasRenderingContext2D, s: number): void {
-  const grad = ctx.createLinearGradient(0, s * 0.1, s * 0.45, s);
-  grad.addColorStop(0, "#4a663c");
-  grad.addColorStop(0.55, "#344828");
-  grad.addColorStop(1, "#1e2a18");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, s, s);
+  fillPeriodicGrassBase(ctx, s, 1010, { r: 52, g: 78, b: 44 }, 0.14);
   const r = seededRng(1010);
   for (let i = 0; i < density(s, 16); i++) {
     ctx.fillStyle = `rgba(200, 220, 160, ${0.04 + r() * 0.07})`;
@@ -710,7 +781,7 @@ const REALM2_FLOOR_DRAWERS: Record<BiomeFloorKind, (ctx: CanvasRenderingContext2
  */
 export function getBiomeGroundTexture(biome: BiomeKind, realmTier: number = 1): THREE.CanvasTexture {
   const tier = Math.max(1, Math.floor(realmTier));
-  const key = `biome-${tier}-${biome}`;
+  const key = `biome-${tier}-${biome}-v${TERRAIN_TEX_CACHE_VER}`;
   const cached = cache.get(key);
   if (cached) return cached;
   const size = PROCEDURAL_TEX_SIZE;

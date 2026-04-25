@@ -20,6 +20,40 @@ export function sunHeight01(worldTime: number): number {
   return 0.5 + 0.5 * Math.cos((u - 0.25) * Math.PI * 2);
 }
 
+/** Sun direction (unit, Y-up) for a given in-game time — same phase as {@link sunHeight01}. */
+export function sunDirectionUnit(worldTime: number): { x: number; y: number; z: number } {
+  const u = fractDay(worldTime);
+  const sunH = sunHeight01(worldTime);
+  const ang = (u - 0.25) * Math.PI * 2;
+  const minElev = 0.1;
+  const maxElev = Math.PI / 2.08;
+  const elev = minElev + sunH * (maxElev - minElev);
+  const ch = Math.cos(elev);
+  const x = ch * Math.sin(ang);
+  const y = Math.sin(elev);
+  const z = ch * Math.cos(ang);
+  const len = Math.hypot(x, y, z) || 1;
+  return { x: x / len, y: y / len, z: z / len };
+}
+
+/** Positions for a directional light + target so cast shadows match time of day (map XZ, Y-up). */
+export function sunShadowLightForMap(
+  worldTime: number,
+  mapW: number,
+  mapH: number,
+): { pos: [number, number, number]; target: [number, number, number] } {
+  const dir = sunDirectionUnit(worldTime);
+  const dist = Math.max(mapW, mapH) * 2.55;
+  const cx = mapW / 2;
+  const cz = mapH / 2;
+  const pos: [number, number, number] = [
+    cx + dir.x * dist,
+    Math.max(22, dir.y * dist),
+    cz + dir.z * dist,
+  ];
+  return { pos, target: [cx, 0, cz] };
+}
+
 const FRAC_7AM = 7 / 24;
 const FRAC_5PM = 17 / 24;
 const FRAC_7PM = 19 / 24;

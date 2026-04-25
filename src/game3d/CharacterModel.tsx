@@ -1,16 +1,14 @@
-import { useRef, useMemo, type MutableRefObject, useEffect, Suspense } from "react";
+import { useRef, useMemo, type MutableRefObject, useEffect, useLayoutEffect, Suspense } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { useFBX, useGLTF, useAnimations } from "@react-three/drei";
-import type {
-  FacialHairStyle,
-  HairStyle,
-  PlayerAppearance,
-} from "../game/types";
+import { useFBX, useGLTF } from "@react-three/drei";
+import type { FacialHairStyle, HairStyle, PlayerAppearance } from "../game/types";
 import { publicAssetUrl } from "./publicAssetUrl";
 
 interface CharacterModelProps {
   appearance: PlayerAppearance;
+  /** When true, skip the soft foot disc (e.g. overworld uses a sun-aligned shadow instead). */
+  omitContactShadow?: boolean;
   /** When true, the model auto-rotates (preview). */
   turntable?: boolean;
   /** When true, adds a soft forward marker so facing reads clearly in gameplay. */
@@ -35,6 +33,9 @@ interface CharacterModelProps {
    */
   riding?: boolean;
 }
+
+/** Uniform scale vs prior default (~25% smaller). */
+const CHARACTER_MODEL_SCALE = 0.75;
 
 /** Peak swing angle at each shoulder / hip (radians). ~17° reads as a brisk walk without looking cartoony. */
 const LIMB_SWING_AMP = 0.3;
@@ -1049,37 +1050,77 @@ function DeathAnimLoader({
 
 /* ── FBX character (inner, suspending) ─────────────────────────────────── */
 
+/** How strongly hero color choices shift each material from its authored base. */
+const FBX_TINT_BLEND = 0.52;
+
+type FbxTintSlot = "skin" | "hair" | "outfit" | "pants";
+
+function fbxTintKey(meshName: string, matName: string): string {
+  return `${meshName} ${matName}`.toLowerCase();
+}
+
+/** Map meshes/materials to tint slots; returns null for metal/weapons (leave base color). */
+function resolveFbxTintSlot(meshName: string, matName: string): FbxTintSlot | null {
+  const k = fbxTintKey(meshName, matName);
+  if (
+    /\b(sword|blade|dagger|arrow|quiver|weapon|buckler|shield|metal|steel|iron|silver|gold|bronze|gem|crystal|rivet|chainmail_ring)\b/.test(
+      k,
+    )
+  ) {
+    return null;
+  }
+  if (/\b(eye|lash|teeth|mouth|lip|brow)\b/.test(k)) return null;
+  if (/\b(hair|helm|helmet|plume|crest|feather|visor|hood_up)\b/.test(k)) return "hair";
+  if (
+    /\b(boot|shoe|feet|foot|sock|greave|pant|trouser|chausses|legging|thigh|calf|underpant|denim|jean)\b/.test(k) ||
+    /_(leg|boot|foot|shoe|pant)\b/.test(k) ||
+    /\blegs?\b/.test(k)
+  ) {
+    return "pants";
+  }
+  if (
+    /\b(face|skin|neck|palm|knuckle|flesh)\b/.test(k) ||
+    /\b(hand|finger)s?\b/.test(k) ||
+    (/\bhead\b/.test(k) && !/\b(helmet|helm|hood)\b/.test(k))
+  ) {
+    return "skin";
+  }
+  if (
+    /\b(cape|cloak|robe|coat|tunic|cloth|mail|plate|chest|torso|armor|armour|gauntlet|glove|bracer|belt|shoulder|sleeve|tabard|surcoat|gambeson|vest|skirt|robe)\b/.test(
+      k,
+    ) ||
+    /\b(upper|forearm|arm|body|torso)\b/.test(k)
+  ) {
+    return "outfit";
+  }
+  return "outfit";
+}
+
 /** Loads the Knight FBX and drives all its animations.
  *  This component suspends (via useFBX / useGLTF) until both the base model
  *  and idle animation are ready — CharacterModel shows ProceduralBody as the
  *  Suspense fallback in the meantime, so only ONE geometry is ever visible. */
 function FBXCharacterInner({
+  appearance,
   movingRef,
   deadRef,
 }: {
+  appearance: PlayerAppearance;
   movingRef?: MutableRefObject<boolean>;
   deadRef?: MutableRefObject<boolean>;
 }) {
-  const fbx = useFBX(publicAssetUrl("Knight D Pelegrini.fbx"));
+  const fbxTemplate = useFBX(publicAssetUrl("Knight D Pelegrini.fbx")) as THREE.Group;
+  const fbx = useMemo(() => fbxTemplate.clone(true) as THREE.Group, [fbxTemplate]);
   const { animations: idleAnims } = useGLTF(publicAssetUrl("idle.glb"));
 
   /**
-   * @react-three/drei `useAnimations` keys internal state on `clips` by reference. A new
-   * `[...]` every render re-ran its cleanup and **stopped/uncached all actions** — so on
-   * GitHub Pages the hero had no working idle/walk. Memoize; root = loaded FBX scene so
-   * GLB idle clips retarget the Knight skinned mesh.
+   * Own `AnimationMixer` on the Knight scene. Drei's `useAnimations` re-ran clip cleanup
+   * whenever its deps shifted and could stop GLB idle/walk while leaving death (bound
+   * outside its `actions` cache) still working.
    */
-  const fbxClips = useMemo(() => [...fbx.animations, ...idleAnims], [fbx, idleAnims]);
-  const { actions, names, mixer } = useAnimations(fbxClips, fbx);
+  const mixer = useMemo(() => new THREE.AnimationMixer(fbx), [fbx]);
 
-  const lazyActionsRef = useRef<LazyAnimActions>({ walk: null, death: null });
-
-  /**
-   * Idle clip: `idle.glb` ships `Idle_No_Loop`; the Knight mesh FBX may only have a
-   * useless placeholder clip named "mixamo.com" — do not prefer that over the GLB idle.
-   */
-  const idleNameRef = useRef<string>("");
-  useEffect(() => {
+  const idleClip = useMemo(() => {
     const glbIdle = idleAnims.find(
       (a) => /idle|Idl|breathe|standing|neutral/i.test(a.name) && a.name.length > 0,
     );
@@ -1089,15 +1130,62 @@ function FBXCharacterInner({
         !/^mixamo\.com$/i.test(a.name.trim()) &&
         /idle|breathe|standing|neutral/i.test(a.name),
     );
-    idleNameRef.current =
-      glbIdle?.name ?? fbxIdle?.name ?? idleAnims[0]?.name ?? names.find((n) => /idle/i.test(n)) ?? names[0] ?? "";
-  }, [fbx, idleAnims, names]);
+    return glbIdle ?? fbxIdle ?? idleAnims[0] ?? null;
+  }, [fbx, idleAnims]);
 
-  useFrame(() => {
-    if (!actions) return;
+  const idleActionRef = useRef<THREE.AnimationAction | null>(null);
 
-    const idleAnimName = idleNameRef.current;
-    const idleAction = idleAnimName ? actions[idleAnimName] : undefined;
+  useEffect(() => {
+    if (!idleClip) {
+      idleActionRef.current = null;
+      return;
+    }
+    const act = mixer.clipAction(idleClip, fbx);
+    act.loop = THREE.LoopRepeat;
+    idleActionRef.current = act;
+    return () => {
+      act.stop();
+      mixer.uncacheAction(idleClip, fbx);
+      idleActionRef.current = null;
+    };
+  }, [mixer, idleClip, fbx]);
+
+  useLayoutEffect(() => {
+    const skin = new THREE.Color(appearance.skin);
+    const hair = new THREE.Color(appearance.hair);
+    const outfit = new THREE.Color(appearance.outfit);
+    const pants = new THREE.Color(appearance.pants);
+    fbx.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      for (const mat of mats) {
+        if (
+          !(mat instanceof THREE.MeshStandardMaterial) &&
+          !(mat instanceof THREE.MeshPhysicalMaterial)
+        ) {
+          continue;
+        }
+        const ud = mat.userData as { fbxTintBase?: THREE.Color };
+        if (!ud.fbxTintBase) ud.fbxTintBase = mat.color.clone();
+        const base = ud.fbxTintBase;
+        const slot = resolveFbxTintSlot(child.name, mat.name || "");
+        if (slot === null) {
+          mat.color.copy(base);
+          continue;
+        }
+        const target =
+          slot === "skin" ? skin : slot === "hair" ? hair : slot === "pants" ? pants : outfit;
+        mat.color.copy(base).lerp(target, FBX_TINT_BLEND);
+      }
+    });
+  }, [fbx, appearance.skin, appearance.hair, appearance.outfit, appearance.pants]);
+
+  const lazyActionsRef = useRef<LazyAnimActions>({ walk: null, death: null });
+
+  useFrame((_, delta) => {
+    mixer.update(delta);
+
+    const idleAction = idleActionRef.current ?? undefined;
     const walkAction = lazyActionsRef.current.walk;
     const deathAction = lazyActionsRef.current.death;
 
@@ -1159,6 +1247,7 @@ function FBXCharacterInner({
 
 export function CharacterModel({
   appearance,
+  omitContactShadow = false,
   turntable = false,
   showFaceMarker = false,
   movingRef,
@@ -1175,26 +1264,29 @@ export function CharacterModel({
 
   return (
     <group ref={rootRef} dispose={null}>
-      {/* Soft ground contact shadow — always visible */}
-      <mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[0.34, 28]} />
-        <meshBasicMaterial color="#000" transparent opacity={0.28} />
-      </mesh>
+      <group scale={CHARACTER_MODEL_SCALE}>
+        {!omitContactShadow && (
+          <mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <circleGeometry args={[0.34, 28]} />
+            <meshBasicMaterial color="#000" transparent opacity={0.28} />
+          </mesh>
+        )}
 
-      {/* Body — FBX model once loaded (preferred); procedural geometry until
-          then so the character is never invisible during the initial load. */}
-      <Suspense
-        fallback={
-          <ProceduralBody
-            appearance={appearance}
-            movingRef={movingRef}
-            riding={riding}
-            showFaceMarker={showFaceMarker}
-          />
-        }
-      >
-        <FBXCharacterInner movingRef={movingRef} deadRef={deadRef} />
-      </Suspense>
+        {/* Body — FBX model once loaded (preferred); procedural geometry until
+            then so the character is never invisible during the initial load. */}
+        <Suspense
+          fallback={
+            <ProceduralBody
+              appearance={appearance}
+              movingRef={movingRef}
+              riding={riding}
+              showFaceMarker={showFaceMarker}
+            />
+          }
+        >
+          <FBXCharacterInner appearance={appearance} movingRef={movingRef} deadRef={deadRef} />
+        </Suspense>
+      </group>
     </group>
   );
 }

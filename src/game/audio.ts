@@ -344,6 +344,94 @@ function playNoise(opts: {
   src.stop(start + dur + 0.02);
 }
 
+/** Impact + sweeping rise + crystalline peak — RPG-style level-up fanfare. */
+function playLevelUpFanfare(): void {
+  playTone({ freq: 88, endFreq: 52, type: "sine", durationMs: 150, gain: 0.22, attackMs: 2, releaseMs: 110 });
+  playTone({
+    freq: 311.13,
+    endFreq: 369.99,
+    type: "triangle",
+    durationMs: 95,
+    gain: 0.15,
+    delayMs: 32,
+    attackMs: 4,
+  });
+  playTone({
+    freq: 415.3,
+    endFreq: 493.88,
+    type: "triangle",
+    durationMs: 100,
+    gain: 0.16,
+    delayMs: 78,
+    attackMs: 3,
+  });
+  playTone({
+    freq: 554.37,
+    endFreq: 659.25,
+    type: "sine",
+    durationMs: 110,
+    gain: 0.17,
+    delayMs: 125,
+    attackMs: 3,
+  });
+  playTone({
+    freq: 698.46,
+    endFreq: 830.61,
+    type: "sine",
+    durationMs: 115,
+    gain: 0.18,
+    delayMs: 168,
+    attackMs: 2,
+  });
+  playTone({
+    freq: 932.33,
+    endFreq: 1108.73,
+    type: "triangle",
+    durationMs: 125,
+    gain: 0.19,
+    delayMs: 210,
+    attackMs: 2,
+  });
+  playTone({
+    freq: 1244.51,
+    type: "sine",
+    durationMs: 320,
+    gain: 0.2,
+    delayMs: 280,
+    attackMs: 4,
+    releaseMs: 170,
+  });
+  playTone({
+    freq: 1661.22,
+    type: "triangle",
+    durationMs: 240,
+    gain: 0.12,
+    delayMs: 310,
+    attackMs: 2,
+    releaseMs: 130,
+  });
+  playTone({
+    freq: 2093,
+    type: "sine",
+    durationMs: 280,
+    gain: 0.09,
+    delayMs: 340,
+    attackMs: 2,
+    releaseMs: 150,
+  });
+  playTone({
+    freq: 2489.02,
+    type: "triangle",
+    durationMs: 200,
+    gain: 0.065,
+    delayMs: 395,
+    attackMs: 1,
+    releaseMs: 110,
+  });
+  playNoise({ durationMs: 60, gain: 0.11, bandpass: { freq: 7200, q: 2.8 }, delayMs: 400 });
+  playNoise({ durationMs: 85, gain: 0.075, bandpass: { freq: 12_000, q: 1.6 }, delayMs: 415 });
+}
+
 // ── Public API: playSfx ───────────────────────────────────────────────────
 
 export function playSfx(kind: SfxKind): void {
@@ -373,10 +461,7 @@ export function playSfx(kind: SfxKind): void {
       return;
     }
     case "levelUp": {
-      playTone({ freq: 523, type: "triangle", durationMs: 180, gain: 0.22 });
-      playTone({ freq: 659, type: "triangle", durationMs: 180, gain: 0.22, delayMs: 140 });
-      playTone({ freq: 784, type: "triangle", durationMs: 260, gain: 0.22, delayMs: 280 });
-      playTone({ freq: 1046, type: "sine", durationMs: 420, gain: 0.18, delayMs: 420 });
+      playLevelUpFanfare();
       return;
     }
     case "step": {
