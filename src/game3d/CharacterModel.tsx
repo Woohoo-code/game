@@ -1,4 +1,4 @@
-import { useRef, type MutableRefObject, useEffect, Suspense } from "react";
+import { useRef, useMemo, type MutableRefObject, useEffect, Suspense } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { useFBX, useGLTF, useAnimations } from "@react-three/drei";
@@ -1060,14 +1060,17 @@ function FBXCharacterInner({
   movingRef?: MutableRefObject<boolean>;
   deadRef?: MutableRefObject<boolean>;
 }) {
-  const groupRef = useRef<THREE.Group>(null);
   const fbx = useFBX(publicAssetUrl("Knight D Pelegrini.fbx"));
   const { animations: idleAnims } = useGLTF(publicAssetUrl("idle.glb"));
 
-  const { actions, names, mixer } = useAnimations(
-    [...fbx.animations, ...idleAnims],
-    groupRef,
-  );
+  /**
+   * @react-three/drei `useAnimations` keys internal state on `clips` by reference. A new
+   * `[...]` every render re-ran its cleanup and **stopped/uncached all actions** — so on
+   * GitHub Pages the hero had no working idle/walk. Memoize; root = loaded FBX scene so
+   * GLB idle clips retarget the Knight skinned mesh.
+   */
+  const fbxClips = useMemo(() => [...fbx.animations, ...idleAnims], [fbx, idleAnims]);
+  const { actions, names, mixer } = useAnimations(fbxClips, fbx);
 
   const lazyActionsRef = useRef<LazyAnimActions>({ walk: null, death: null });
 
@@ -1133,7 +1136,7 @@ function FBXCharacterInner({
   }, [fbx]);
 
   return (
-    <group ref={groupRef}>
+    <group>
       {/*
         If the hero still looks ~90°/180° off after Player3D facing fixes, add rotation.y on
         this inner group (e.g. Math.PI) — FBX forward axes vary by export. */}
