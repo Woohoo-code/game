@@ -1,7 +1,7 @@
 import { useRef, useMemo, type MutableRefObject, useEffect, useLayoutEffect, Suspense } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { useFBX, useGLTF } from "@react-three/drei";
+import { useAnimations, useFBX, useGLTF } from "@react-three/drei";
 import type { FacialHairStyle, HairStyle, PlayerAppearance } from "../game/types";
 import { publicAssetUrl } from "./publicAssetUrl";
 
@@ -1113,41 +1113,12 @@ function FBXCharacterInner({
   const { animations: idleAnims } = useGLTF(publicAssetUrl("idle.glb"));
 
   /**
-   * Own `AnimationMixer` on the Knight scene. Drei's `useAnimations` re-ran clip cleanup
-   * whenever its deps shifted and could stop GLB idle/walk while leaving death (bound
-   * outside its `actions` cache) still working.
+   * Bind all eager clips through Drei's animation helper. The GLB idle clip
+   * targets the Knight FBX rig by bone names; using a separate manual mixer can
+   * leave the skinned mesh in bind pose on first paint / page deploys.
    */
-  const mixer = useMemo(() => new THREE.AnimationMixer(fbx), [fbx]);
-
-  const idleClip = useMemo(() => {
-    const glbIdle = idleAnims.find(
-      (a) => /idle|Idl|breathe|standing|neutral/i.test(a.name) && a.name.length > 0,
-    );
-    const fbxIdle = fbx.animations.find(
-      (a) =>
-        a.duration > 0.2 &&
-        !/^mixamo\.com$/i.test(a.name.trim()) &&
-        /idle|breathe|standing|neutral/i.test(a.name),
-    );
-    return glbIdle ?? fbxIdle ?? idleAnims[0] ?? null;
-  }, [fbx, idleAnims]);
-
-  const idleActionRef = useRef<THREE.AnimationAction | null>(null);
-
-  useEffect(() => {
-    if (!idleClip) {
-      idleActionRef.current = null;
-      return;
-    }
-    const act = mixer.clipAction(idleClip, fbx);
-    act.loop = THREE.LoopRepeat;
-    idleActionRef.current = act;
-    return () => {
-      act.stop();
-      mixer.uncacheAction(idleClip, fbx);
-      idleActionRef.current = null;
-    };
-  }, [mixer, idleClip, fbx]);
+  const fbxClips = useMemo(() => [...fbx.animations, ...idleAnims], [fbx, idleAnims]);
+  const { actions, names, mixer } = useAnimations(fbxClips, fbx);
 
   useLayoutEffect(() => {
     const skin = new THREE.Color(appearance.skin);
@@ -1181,10 +1152,28 @@ function FBXCharacterInner({
 
   const lazyActionsRef = useRef<LazyAnimActions>({ walk: null, death: null });
 
-  useFrame((_, delta) => {
-    mixer.update(delta);
+  /**
+   * Idle clip: `idle.glb` ships `Idle_No_Loop`; the Knight mesh FBX may only
+   * include a useless "mixamo.com" placeholder, so prefer the GLB idle.
+   */
+  const idleNameRef = useRef<string>("");
+  useEffect(() => {
+    const glbIdle = idleAnims.find(
+      (a) => /idle|Idl|breathe|standing|neutral/i.test(a.name) && a.name.length > 0,
+    );
+    const fbxIdle = fbx.animations.find(
+      (a) =>
+        a.duration > 0.2 &&
+        !/^mixamo\.com$/i.test(a.name.trim()) &&
+        /idle|breathe|standing|neutral/i.test(a.name),
+    );
+    idleNameRef.current =
+      glbIdle?.name ?? fbxIdle?.name ?? idleAnims[0]?.name ?? names.find((n) => /idle/i.test(n)) ?? names[0] ?? "";
+  }, [fbx, idleAnims, names]);
 
-    const idleAction = idleActionRef.current ?? undefined;
+  useFrame(() => {
+    const idleAnimName = idleNameRef.current;
+    const idleAction = idleAnimName ? actions[idleAnimName] : undefined;
     const walkAction = lazyActionsRef.current.walk;
     const deathAction = lazyActionsRef.current.death;
 

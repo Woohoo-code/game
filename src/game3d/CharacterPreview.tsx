@@ -10,10 +10,12 @@ export function CharacterPreview({ appearance }: { appearance: PlayerAppearance 
       <Canvas
         shadows
         dpr={[1, 2]}
-        camera={{ position: [0, 0.52, 2.55], fov: 28 }}
-        onCreated={({ gl }) => {
+        camera={{ position: [0, 1.02, 3.15], fov: 31 }}
+        onCreated={({ gl, camera }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
           gl.outputColorSpace = THREE.SRGBColorSpace;
+          camera.lookAt(0, 0.62, 0);
+          camera.updateProjectionMatrix();
         }}
       >
         <color attach="background" args={["#182334"]} />
@@ -22,7 +24,7 @@ export function CharacterPreview({ appearance }: { appearance: PlayerAppearance 
         <ambientLight intensity={0.45} />
         <directionalLight position={[2.2, 4.2, 2]} intensity={1.15} castShadow />
         <directionalLight position={[-2, 2.2, -1]} intensity={0.38} color="#8aa4c4" />
-        <group position={[0, 0.02, 0]}>
+        <group position={[0, -0.02, 0]}>
           <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
             <circleGeometry args={[1.5, 40]} />
             <meshStandardMaterial color="#1b2a3a" roughness={1} />
