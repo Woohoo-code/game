@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { TerrainKind } from "../game/worldMap";
 import type { BiomeKind } from "../game/types";
+import { publicAssetUrl } from "./publicAssetUrl";
 
 /**
  * Procedural canvas textures for each terrain kind. Each texture is generated once
@@ -9,7 +10,7 @@ import type { BiomeKind } from "../game/types";
  * Textures are designed to tile cleanly (1 unit = 1 world tile) via RepeatWrapping.
  */
 
-const cache = new Map<string, THREE.CanvasTexture>();
+const cache = new Map<string, THREE.Texture>();
 
 /** Bump when terrain art changes so cached CanvasTextures are regenerated. */
 const TERRAIN_TEX_CACHE_VER = 2;
@@ -33,7 +34,7 @@ function density(s: number, countAt128: number): number {
   return Math.max(1, Math.round(countAt128 * f * f));
 }
 
-function applyTextureQuality(tex: THREE.CanvasTexture): void {
+function applyTextureQuality(tex: THREE.Texture): void {
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 12;
@@ -41,6 +42,17 @@ function applyTextureQuality(tex: THREE.CanvasTexture): void {
   tex.minFilter = THREE.LinearMipmapLinearFilter;
   tex.magFilter = THREE.LinearFilter;
   tex.needsUpdate = true;
+}
+
+function getImageTexture(key: string, filename: string): THREE.Texture {
+  const cached = cache.get(key);
+  if (cached) return cached;
+  const tex = new THREE.TextureLoader().load(publicAssetUrl(filename), (loaded) => {
+    applyTextureQuality(loaded);
+  });
+  applyTextureQuality(tex);
+  cache.set(key, tex);
+  return tex;
 }
 
 /** Subtle overlay grain so large color fields feel less flat (cheap vs per-pixel). */
@@ -193,7 +205,7 @@ function drawCastleWallAshlar(ctx: CanvasRenderingContext2D, s: number): void {
 export function getCastleWallTexture(): THREE.CanvasTexture {
   const key = "castle-curtain-ashlar";
   const cached = cache.get(key);
-  if (cached) return cached;
+  if (cached) return cached as THREE.CanvasTexture;
   const size = PROCEDURAL_TEX_SIZE;
   const { canvas, ctx } = makeCanvas(size);
   drawCastleWallAshlar(ctx, size);
@@ -512,7 +524,8 @@ const DRAWERS: Record<TerrainKind, (ctx: CanvasRenderingContext2D, size: number)
   hill: drawHill
 };
 
-export function getTerrainTexture(kind: TerrainKind): THREE.CanvasTexture {
+export function getTerrainTexture(kind: TerrainKind): THREE.Texture {
+  if (kind === "grass") return getImageTexture("terrain-grass-upload-v1", "terrain/grass.png");
   const key = `${kind}-v${TERRAIN_TEX_CACHE_VER}`;
   const cached = cache.get(key);
   if (cached) return cached;
@@ -779,8 +792,11 @@ const REALM2_FLOOR_DRAWERS: Record<BiomeFloorKind, (ctx: CanvasRenderingContext2
  * tiles, this completely replaces the default grass texture. Road/town kinds stay
  * the same everywhere; water and forest can be tinted via {@link BIOME_TINT}.
  */
-export function getBiomeGroundTexture(biome: BiomeKind, realmTier: number = 1): THREE.CanvasTexture {
+export function getBiomeGroundTexture(biome: BiomeKind, realmTier: number = 1): THREE.Texture {
   const tier = Math.max(1, Math.floor(realmTier));
+  if (tier === 1 && biome === "meadow") {
+    return getImageTexture("biome-meadow-grass-upload-v1", "terrain/grass.png");
+  }
   const key = `biome-${tier}-${biome}-v${TERRAIN_TEX_CACHE_VER}`;
   const cached = cache.get(key);
   if (cached) return cached;
@@ -861,7 +877,7 @@ export function biomeTerrainTint(biome: BiomeKind, kind: TerrainKind, realmTier:
 export function getRoofTexture(variant: "red" | "slate" | "thatch" | "gold"): THREE.CanvasTexture {
   const key = `roof-${variant}`;
   const cached = cache.get(key);
-  if (cached) return cached;
+  if (cached) return cached as THREE.CanvasTexture;
   const size = PROCEDURAL_TEX_SIZE;
   const { canvas, ctx } = makeCanvas(size);
   const palette = {
@@ -960,7 +976,7 @@ export function getWallTexture(
 ): THREE.CanvasTexture {
   const key = `wall-${variant}`;
   const cached = cache.get(key);
-  if (cached) return cached;
+  if (cached) return cached as THREE.CanvasTexture;
   const size = PROCEDURAL_TEX_SIZE;
   const { canvas, ctx } = makeCanvas(size);
   const palette = {

@@ -15,7 +15,6 @@ import {
 } from "../game/types";
 
 const SKIN_PRESETS = ["#f6dbbf", "#f1c9a5", "#d9a07a", "#b07550", "#8a5a3a", "#5c3b25", "#3a2418"];
-const HAIR_PRESETS = ["#141414", "#3b2b21", "#6b4b2a", "#a8743d", "#d5c07a", "#e7e2d6", "#c4453b", "#7a4de6", "#3fa8ff"];
 const OUTFIT_PRESETS = ["#3564c3", "#c3353d", "#2e8c5a", "#6a2fa3", "#d48a1f", "#1d9aa8", "#2c2f37", "#d4d6db"];
 const PANTS_PRESETS = ["#2a3550", "#3c2a1f", "#1c1f25", "#4a3e68", "#2f5030", "#6a5a36"];
 
@@ -77,7 +76,6 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
     setAppearance((prev) => ({
       ...prev,
       skin: pick(SKIN_PRESETS),
-      hair: pick(HAIR_PRESETS),
       outfit: pick(OUTFIT_PRESETS),
       pants: pick(PANTS_PRESETS)
     }));
@@ -104,7 +102,7 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
           <h1>Create your hero</h1>
           <p>
             Pick a name, class, and colors — the preview uses the same Knight model as in-game; your choices tint
-            armor, cloth, skin, and helmet areas. Progress is saved in this browser when you use Save in town.
+            visible skin, upper armor/cloth, and lower armor. Progress is saved in this browser when you use Save in town.
           </p>
         </header>
 
@@ -170,26 +168,6 @@ export function CharacterCreation({ onDone, onBack }: { onDone: () => void; onBa
                   type="color"
                   value={appearance.skin}
                   onChange={(e) => update({ skin: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className="form-row">
-              <span>Hair color</span>
-              <div className="swatch-row">
-                {HAIR_PRESETS.map((c) => (
-                  <Swatch
-                    key={c}
-                    color={c}
-                    active={appearance.hair === c}
-                    ariaLabel={`Hair ${c}`}
-                    onSelect={() => update({ hair: c })}
-                  />
-                ))}
-                <input
-                  type="color"
-                  value={appearance.hair}
-                  onChange={(e) => update({ hair: e.target.value })}
                 />
               </div>
             </div>

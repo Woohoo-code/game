@@ -985,6 +985,69 @@ interface LazyAnimActions {
   death: THREE.AnimationAction | null;
 }
 
+const GLB_TO_KNIGHT_BONE: Record<string, string> = {
+  root: "mixamorigHips",
+  pelvis: "mixamorigHips",
+  spine_01: "mixamorigSpine",
+  spine_02: "mixamorigSpine1",
+  spine_03: "mixamorigSpine2",
+  neck_01: "mixamorigNeck",
+  head: "mixamorigHead",
+  head_leaf: "mixamorigHeadTop_End",
+  clavicle_l: "mixamorigLeftShoulder",
+  upperarm_l: "mixamorigLeftArm",
+  lowerarm_l: "mixamorigLeftForeArm",
+  hand_l: "mixamorigLeftHand",
+  thigh_l: "mixamorigLeftUpLeg",
+  calf_l: "mixamorigLeftLeg",
+  foot_l: "mixamorigLeftFoot",
+  ball_l: "mixamorigLeftToeBase",
+  ball_leaf_l: "mixamorigLeftToe_End",
+  clavicle_r: "mixamorigRightShoulder",
+  upperarm_r: "mixamorigRightArm",
+  lowerarm_r: "mixamorigRightForeArm",
+  hand_r: "mixamorigRightHand",
+  thigh_r: "mixamorigRightUpLeg",
+  calf_r: "mixamorigRightLeg",
+  foot_r: "mixamorigRightFoot",
+  ball_r: "mixamorigRightToeBase",
+  ball_leaf_r: "mixamorigRightToe_End"
+};
+
+for (const side of ["l", "r"] as const) {
+  const sideName = side === "l" ? "Left" : "Right";
+  for (const [glbPrefix, fbxPrefix] of [
+    ["index", "Index"],
+    ["middle", "Middle"],
+    ["pinky", "Pinky"],
+    ["ring", "Ring"],
+    ["thumb", "Thumb"]
+  ] as const) {
+    for (let i = 1; i <= 3; i++) {
+      GLB_TO_KNIGHT_BONE[`${glbPrefix}_0${i}_${side}`] = `mixamorig${sideName}Hand${fbxPrefix}${i}`;
+    }
+    GLB_TO_KNIGHT_BONE[`${glbPrefix}_04_leaf_${side}`] = `mixamorig${sideName}Hand${fbxPrefix}4`;
+  }
+}
+
+function retargetGlbClipToKnight(clip: THREE.AnimationClip): THREE.AnimationClip {
+  const tracks = clip.tracks
+    .map((track) => {
+      const dot = track.name.indexOf(".");
+      if (dot <= 0) return null;
+      const node = track.name.slice(0, dot);
+      const prop = track.name.slice(dot + 1);
+      const mapped = GLB_TO_KNIGHT_BONE[node];
+      if (!mapped) return null;
+      const next = track.clone();
+      next.name = `${mapped}.${prop}`;
+      return next;
+    })
+    .filter((track): track is THREE.KeyframeTrack => track !== null);
+
+  return new THREE.AnimationClip(clip.name, clip.duration, tracks);
+}
+
 /**
  * Binds a walk loop on the shared mixer. Prefer a clip on the **same** Knight FBX so bones
  * retarget; `walk.glb` is a fallback and only animates if it matches that rig (otherwise T-pose).
@@ -999,20 +1062,22 @@ function WalkAnimLoader({
   lazyRef: MutableRefObject<LazyAnimActions>;
 }) {
   const { animations: walkGlb } = useGLTF(publicAssetUrl("walk.glb"));
+  const retargetedWalkGlb = useMemo(() => walkGlb.map(retargetGlbClipToKnight), [walkGlb]);
   useEffect(() => {
     const fromFbx = fbx.animations.find((a) =>
       /walk|Walk|WALK|jog|Jog|JOG|run|Run|RUN|march|March|forward|Forward/.test(a.name),
     );
     const fromGlb =
-      walkGlb.find(
+      retargetedWalkGlb.find(
         (a) =>
           /Walk_Loop|walk|Walk|WALK|jog|Jog|run|Run|march|March|forward|Forward/.test(
             a.name,
           ),
-      ) ?? walkGlb[0];
+      ) ?? retargetedWalkGlb[0];
     const clip = fromFbx ?? fromGlb ?? null;
     if (clip) {
       const act = mixer.clipAction(clip);
+      act.loop = THREE.LoopRepeat;
       act.setEffectiveWeight(1);
       lazyRef.current.walk = act;
     } else {
@@ -1022,7 +1087,7 @@ function WalkAnimLoader({
       lazyRef.current.walk?.stop();
       lazyRef.current.walk = null;
     };
-  }, [fbx, walkGlb, mixer, lazyRef]);
+  }, [fbx, retargetedWalkGlb, mixer, lazyRef]);
   return null;
 }
 
@@ -1053,7 +1118,7 @@ function DeathAnimLoader({
 /** How strongly hero color choices shift each material from its authored base. */
 const FBX_TINT_BLEND = 0.52;
 
-type FbxTintSlot = "skin" | "hair" | "outfit" | "pants";
+type FbxTintSlot = "skin" | "outfit" | "pants";
 
 function fbxTintKey(meshName: string, matName: string): string {
   return `${meshName} ${matName}`.toLowerCase();
@@ -1070,9 +1135,9 @@ function resolveFbxTintSlot(meshName: string, matName: string): FbxTintSlot | nu
     return null;
   }
   if (/\b(eye|lash|teeth|mouth|lip|brow)\b/.test(k)) return null;
-  if (/\b(hair|helm|helmet|plume|crest|feather|visor|hood_up)\b/.test(k)) return "hair";
+  if (/\b(head_hands|face|skin|neck|palm|knuckle|flesh)\b/.test(k)) return "skin";
+  if (/\b(lower_armor|boot|shoe|feet|foot|sock|greave|pant|trouser|chausses|legging|thigh|calf|underpant|denim|jean)\b/.test(k)) return "pants";
   if (
-    /\b(boot|shoe|feet|foot|sock|greave|pant|trouser|chausses|legging|thigh|calf|underpant|denim|jean)\b/.test(k) ||
     /_(leg|boot|foot|shoe|pant)\b/.test(k) ||
     /\blegs?\b/.test(k)
   ) {
@@ -1111,30 +1176,32 @@ function FBXCharacterInner({
 }) {
   const fbx = useFBX(publicAssetUrl("Knight D Pelegrini.fbx")) as THREE.Group;
   const { animations: idleAnims } = useGLTF(publicAssetUrl("idle.glb"));
+  const retargetedIdleAnims = useMemo(() => idleAnims.map(retargetGlbClipToKnight), [idleAnims]);
 
   /**
    * Bind all eager clips through Drei's animation helper. The GLB idle clip
    * targets the Knight FBX rig by bone names; using a separate manual mixer can
    * leave the skinned mesh in bind pose on first paint / page deploys.
    */
-  const fbxClips = useMemo(() => [...fbx.animations, ...idleAnims], [fbx, idleAnims]);
+  const fbxClips = useMemo(() => [...fbx.animations, ...retargetedIdleAnims], [fbx, retargetedIdleAnims]);
   const { actions, names, mixer } = useAnimations(fbxClips, fbx);
 
   useLayoutEffect(() => {
     const skin = new THREE.Color(appearance.skin);
-    const hair = new THREE.Color(appearance.hair);
     const outfit = new THREE.Color(appearance.outfit);
     const pants = new THREE.Color(appearance.pants);
     fbx.traverse((child) => {
       if (!(child instanceof THREE.Mesh)) return;
+      const childData = child.userData as { fbxTintMaterialsCloned?: boolean };
+      if (!childData.fbxTintMaterialsCloned) {
+        child.material = Array.isArray(child.material)
+          ? child.material.map((mat) => mat.clone())
+          : child.material.clone();
+        childData.fbxTintMaterialsCloned = true;
+      }
       const mats = Array.isArray(child.material) ? child.material : [child.material];
       for (const mat of mats) {
-        if (
-          !(mat instanceof THREE.MeshStandardMaterial) &&
-          !(mat instanceof THREE.MeshPhysicalMaterial)
-        ) {
-          continue;
-        }
+        if (!("color" in mat) || !(mat.color instanceof THREE.Color)) continue;
         const ud = mat.userData as { fbxTintBase?: THREE.Color };
         if (!ud.fbxTintBase) ud.fbxTintBase = mat.color.clone();
         const base = ud.fbxTintBase;
@@ -1144,11 +1211,11 @@ function FBXCharacterInner({
           continue;
         }
         const target =
-          slot === "skin" ? skin : slot === "hair" ? hair : slot === "pants" ? pants : outfit;
+          slot === "skin" ? skin : slot === "pants" ? pants : outfit;
         mat.color.copy(base).lerp(target, FBX_TINT_BLEND);
       }
     });
-  }, [fbx, appearance.skin, appearance.hair, appearance.outfit, appearance.pants]);
+  }, [fbx, appearance.skin, appearance.outfit, appearance.pants]);
 
   const lazyActionsRef = useRef<LazyAnimActions>({ walk: null, death: null });
 
@@ -1158,7 +1225,7 @@ function FBXCharacterInner({
    */
   const idleNameRef = useRef<string>("");
   useEffect(() => {
-    const glbIdle = idleAnims.find(
+    const glbIdle = retargetedIdleAnims.find(
       (a) => /idle|Idl|breathe|standing|neutral/i.test(a.name) && a.name.length > 0,
     );
     const fbxIdle = fbx.animations.find(
@@ -1168,8 +1235,8 @@ function FBXCharacterInner({
         /idle|breathe|standing|neutral/i.test(a.name),
     );
     idleNameRef.current =
-      glbIdle?.name ?? fbxIdle?.name ?? idleAnims[0]?.name ?? names.find((n) => /idle/i.test(n)) ?? names[0] ?? "";
-  }, [fbx, idleAnims, names]);
+      glbIdle?.name ?? fbxIdle?.name ?? retargetedIdleAnims[0]?.name ?? names.find((n) => /idle/i.test(n)) ?? names[0] ?? "";
+  }, [fbx, retargetedIdleAnims, names]);
 
   useFrame(() => {
     const idleAnimName = idleNameRef.current;

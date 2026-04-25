@@ -700,16 +700,25 @@ export function generateWorld(
     }
   }
 
-  // ── 7b. Restore spring (wilderness — walkable grass/road, away from towns) ─
+  // ── 7b. Restore spring (deep wilderness — away from towns and paths) ─────
   const tileOccupied = new Set(buildings.map((b) => `${b.x},${b.y}`));
-  const minDistFromTown = 6;
+  const minSpringDistanceFromTownOrPath = 5;
+  const nearTownOrPath = (x: number, y: number): boolean => {
+    for (let dy = -minSpringDistanceFromTownOrPath + 1; dy < minSpringDistanceFromTownOrPath; dy++) {
+      for (let dx = -minSpringDistanceFromTownOrPath + 1; dx < minSpringDistanceFromTownOrPath; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) >= minSpringDistanceFromTownOrPath) continue;
+        const t = getT(x + dx, y + dy);
+        if (t === TERRAIN_TOWN || t === TERRAIN_ROAD) return true;
+      }
+    }
+    return false;
+  };
   const springTileOk = (x: number, y: number): boolean => {
     if (!inBounds(x, y)) return false;
     const t = getT(x, y);
-    if (t !== TERRAIN_GRASS && t !== TERRAIN_ROAD) return false;
+    if (t !== TERRAIN_GRASS) return false;
     if (tileOccupied.has(`${x},${y}`)) return false;
-    if (Math.hypot(x - townA.x, y - townA.y) < minDistFromTown) return false;
-    if (Math.hypot(x - townB.x, y - townB.y) < minDistFromTown) return false;
+    if (nearTownOrPath(x, y)) return false;
     if (Math.abs(x - boss.x) <= 1 && Math.abs(y - boss.y) <= 1) return false;
     return true;
   };
@@ -727,11 +736,10 @@ export function generateWorld(
       if (getT(x + dx, y + dy) === TERRAIN_WATER) waterAdj++;
     }
     s += waterAdj * 3;
-    if (getT(x, y) === TERRAIN_ROAD) s += 0.4;
     return s;
   };
   let bestSpring: { x: number; y: number; score: number } | null = null;
-  for (let attempt = 0; attempt < 600; attempt++) {
+  for (let attempt = 0; attempt < 1800; attempt++) {
     const x = ri(2, width - 3);
     const y = ri(2, height - 3);
     if (!springTileOk(x, y)) continue;
