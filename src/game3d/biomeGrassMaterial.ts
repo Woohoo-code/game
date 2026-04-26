@@ -122,6 +122,9 @@ export function createBiomeBlendGrassMaterial(
 
   mat.userData.biomeBlendGrass = true;
 
+  /** Force a dedicated program — otherwise the first compiled MeshStandardMaterial with the same light/map flags can win the cache and our `map_fragment` patch never runs (grass reads the 1×1 white `map` only). */
+  mat.customProgramCacheKey = () => "biomeGrassBlendV2";
+
   const mapSizeVec = new THREE.Vector2(MAP_W, MAP_H);
 
   mat.onBeforeCompile = (shader) => {

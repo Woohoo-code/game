@@ -1077,13 +1077,11 @@ function WalkAnimLoader({
     const fromFbx = fbx.animations.find((a) =>
       /walk|Walk|WALK|jog|Jog|JOG|run|Run|RUN|march|March|forward|Forward/.test(a.name),
     );
-    const fromGlb =
-      retargetedWalkGlb.find(
-        (a) =>
-          /Walk_Loop|walk|Walk|WALK|jog|Jog|run|Run|march|March|forward|Forward/.test(
-            a.name,
-          ),
-      ) ?? retargetedWalkGlb[0];
+    // Never fall back to `walk.glb` animations[0] — that clip is often a swim/prone take and
+    // reads horribly when mislabeled. Only play GLB clips whose names look like locomotion.
+    const fromGlb = retargetedWalkGlb.find((a) =>
+      /Walk_Loop|walk|Walk|WALK|jog|Jog|run|Run|march|March|forward|Forward/.test(a.name),
+    );
     const clip = fromFbx ?? fromGlb ?? null;
     if (clip) {
       const act = mixer.clipAction(clip);
@@ -1244,8 +1242,12 @@ function FBXCharacterInner({
         !/^mixamo\.com$/i.test(a.name.trim()) &&
         /idle|breathe|standing|neutral/i.test(a.name),
     );
+    // Avoid `animations[0]` / `names[0]` fallbacks — first GLB clip may not be a standing idle.
     idleNameRef.current =
-      glbIdle?.name ?? fbxIdle?.name ?? retargetedIdleAnims[0]?.name ?? names.find((n) => /idle/i.test(n)) ?? names[0] ?? "";
+      glbIdle?.name ??
+      fbxIdle?.name ??
+      names.find((n) => /idle/i.test(n) && !/^mixamo\.com$/i.test(n.trim())) ??
+      "";
   }, [fbx, retargetedIdleAnims, names]);
 
   useFrame(() => {
