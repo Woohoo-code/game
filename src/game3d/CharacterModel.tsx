@@ -1037,16 +1037,10 @@ function retargetGlbClipToKnight(clip: THREE.AnimationClip): THREE.AnimationClip
       const node = track.name.slice(0, dot);
       const prop = track.name.slice(dot + 1);
       // GLB `root` is an exporter pivot (often a fixed Y↔Z correction); never drive the Knight root.
-      // Pelvis **translation** is world-space bounce/stride from the source take — skip so our
-      // locomotion root stays authoritative — but **pelvis.quaternion** is required or the legs
-      // animate against a frozen hip and read as a broken gait.
+      // Drop pelvis tracks too: when the root correction is skipped, applying the source pelvis
+      // rotation can tip the entire Knight rig sideways into a "swimming" pose.
       if (node === "root") return null;
-      if (
-        node === "pelvis" &&
-        (prop === "position" || prop === "translation" || prop === "scale")
-      ) {
-        return null;
-      }
+      if (node === "pelvis") return null;
       const mapped = GLB_TO_KNIGHT_BONE[node];
       if (!mapped) return null;
       const next = track.clone();
