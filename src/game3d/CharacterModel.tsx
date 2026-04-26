@@ -1013,6 +1013,20 @@ const GLB_TO_KNIGHT_BONE: Record<string, string> = {
   ball_leaf_r: "mixamorigRightToe_End"
 };
 
+const GLB_LOWER_BODY_NODES = new Set([
+  "pelvis",
+  "thigh_l",
+  "calf_l",
+  "foot_l",
+  "ball_l",
+  "ball_leaf_l",
+  "thigh_r",
+  "calf_r",
+  "foot_r",
+  "ball_r",
+  "ball_leaf_r",
+]);
+
 for (const side of ["l", "r"] as const) {
   const sideName = side === "l" ? "Left" : "Right";
   for (const [glbPrefix, fbxPrefix] of [
@@ -1037,10 +1051,11 @@ function retargetGlbClipToKnight(clip: THREE.AnimationClip): THREE.AnimationClip
       const node = track.name.slice(0, dot);
       const prop = track.name.slice(dot + 1);
       // GLB `root` is an exporter pivot (often a fixed Y↔Z correction); never drive the Knight root.
-      // Drop pelvis tracks too: when the root correction is skipped, applying the source pelvis
-      // rotation can tip the entire Knight rig sideways into a "swimming" pose.
+      // The GLB lower body was authored under a different root/pelvis correction than this FBX.
+      // Retargeting only those descendant bones against the Knight bind pelvis makes legs detach;
+      // keep lower body in the FBX bind pose rather than applying incompatible partial tracks.
       if (node === "root") return null;
-      if (node === "pelvis") return null;
+      if (GLB_LOWER_BODY_NODES.has(node)) return null;
       const mapped = GLB_TO_KNIGHT_BONE[node];
       if (!mapped) return null;
       const next = track.clone();
