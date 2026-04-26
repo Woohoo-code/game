@@ -9,7 +9,15 @@ import {
 import { useGameStore } from "../game/useGameStore";
 import { FIGHTING_CLASS_LABELS, normalizeFightingClass, type WeaponKey } from "../game/types";
 import { CAMPAIGN_PREMISE, hudCampaignGoal } from "../game/story";
-import { TILE, encounterDangerDisplayPercent, townAtTile } from "../game/worldMap";
+import type { TerrainKind } from "../game/worldMap";
+import {
+  TILE,
+  biomeAt,
+  biomeDisplayName,
+  encounterDangerDisplayPercent,
+  terrainAt,
+  townAtTile,
+} from "../game/worldMap";
 import { GAME_VERSION_LABEL } from "../version";
 import { isNightWilds, nightEncounterRateMultiplier, timeOfDayClock24, timeOfDayLabel } from "../game/worldClock";
 import { IconGold } from "./IconGold";
@@ -113,6 +121,16 @@ function IconTimer({ className }: { className?: string }) {
   );
 }
 
+/** Short terrain names for the danger HUD (road reads as “Path”). */
+const TERRAIN_HUD: Record<TerrainKind, string> = {
+  grass: "Grass",
+  road: "Path",
+  water: "Water",
+  forest: "Forest",
+  hill: "Hills",
+  town: "Town",
+};
+
 function HudIconButton({
   className,
   title,
@@ -215,6 +233,12 @@ export function WorldStatusOverlay() {
 
   const tileX = Math.floor(snapshot.player.x / TILE);
   const tileY = Math.floor(snapshot.player.y / TILE);
+  const realmTier = Math.max(1, Math.floor(snapshot.world.realmTier ?? 1));
+  const standingTileLabel = snapshot.world.inDungeon
+    ? snapshot.world.dungeon?.kind === "throneHall"
+      ? "Throne hall"
+      : "Crypt"
+    : `${TERRAIN_HUD[terrainAt(tileX, tileY)]} · ${biomeDisplayName(biomeAt(tileX, tileY), realmTier)}`;
   const visitingTown = snapshot.world.inTown ? townAtTile(tileX, tileY) : null;
 
   return (
@@ -257,16 +281,19 @@ export function WorldStatusOverlay() {
         ) : null}
         <div
           className={`danger-meter${nightWilds && dangerPercent > 0 ? " danger-meter--night" : ""}`}
-          title={
+          title={[
             dangerPercent === 0
               ? "No random encounters on this terrain."
               : nightWilds && dangerPercent > 0
                 ? `Wild encounter chance ×${nightEncounterMult.toFixed(2)} at night (vs day on the same terrain).`
-                : "Per-step chance of a wild battle while moving on open terrain."
-          }
+                : "Per-step chance of a wild battle while moving on open terrain.",
+            `Standing on: ${standingTileLabel}.`,
+          ].join(" ")}
         >
           <div className="danger-meter-head">
-            <strong>Danger: {dangerLabel}</strong>
+            <strong>
+              Danger: {dangerLabel} ({standingTileLabel})
+            </strong>
             <span>{dangerPercent}%</span>
           </div>
           {nightWilds && dangerPercent > 0 ? (

@@ -1,3 +1,8 @@
+/**
+ * Grass-only biome map + `MeshStandardMaterial` patch (still usable standalone).
+ * The game scene wires {@link ./terrainBlendMaterial} for all land tiles (grass + road/forest/hill/town),
+ * which packs terrain and biome in an RG index map and blends neighbors in the fragment shader.
+ */
 import * as THREE from "three";
 import type { BiomeKind } from "../game/types";
 import { MAP_H, MAP_W, biomeAt } from "../game/worldMap";

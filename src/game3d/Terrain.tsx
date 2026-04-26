@@ -11,10 +11,10 @@ import {
 } from "../game/worldMap";
 import { useGameStore } from "../game/useGameStore";
 import {
-  biomeTerrainTint,
-  getBiomeGroundTexture,
-  getTerrainTexture,
-} from "./textures";
+  buildGroundIndexDataTexture,
+  createTerrainBlendGroundMaterial,
+} from "./terrainBlendMaterial";
+import { biomeTerrainTint, getTerrainTexture } from "./textures";
 
 /** Each terrain kind sits at a slightly different height so water dips and road rides slightly above grass. */
 const HEIGHT_BY_TERRAIN: Record<TerrainKind, number> = {
@@ -208,6 +208,31 @@ export function Terrain() {
   const terrainGroups = useMemo(buildTerrainGroups, [worldVersion]);
   const waterMats = useRef<THREE.MeshStandardMaterial[]>([]);
 
+  const landBlend = useMemo(() => {
+    const groundIndexTex = buildGroundIndexDataTexture();
+    const material = createTerrainBlendGroundMaterial(realmTier, groundIndexTex);
+    return { groundIndexTex, material };
+  }, [worldVersion, realmTier]);
+
+  useEffect(() => {
+    return () => {
+      landBlend.groundIndexTex.dispose();
+      landBlend.material.dispose();
+    };
+  }, [landBlend]);
+
+  useEffect(() => {
+    const u = landBlend.material.userData.uDebugGround as
+      | { value: number }
+      | undefined;
+    if (!u) return;
+    const enabled =
+      import.meta.env.DEV &&
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("groundDebug") === "1";
+    u.value = enabled ? 1 : 0;
+  }, [landBlend]);
+
   useFrame((_, delta) => {
     for (const mat of waterMats.current) {
       if (!mat?.map) continue;
@@ -223,10 +248,9 @@ export function Terrain() {
     <>
       {terrainGroups.map(({ kind, biome, geometry }, i) => {
         const key = `${kind}-${biome}-${i}`;
-        // For "grass" (non-blend legacy path should not occur) use biome texture; other kinds shared texture + tint.
-        const tex = kind === "grass" ? getBiomeGroundTexture(biome, realmTier) : getTerrainTexture(kind);
-        const tint = kind === "grass" ? "#ffffff" : biomeTerrainTint(biome, kind, realmTier);
         if (kind === "water") {
+          const tex = getTerrainTexture("water");
+          const tint = biomeTerrainTint(biome, "water", realmTier);
           return (
             <mesh key={key} geometry={geometry} receiveShadow renderOrder={1}>
               <meshStandardMaterial
@@ -246,15 +270,7 @@ export function Terrain() {
           );
         }
         return (
-          <mesh key={key} geometry={geometry} receiveShadow>
-            <meshStandardMaterial
-              map={tex}
-              color={tint}
-              roughness={0.78}
-              metalness={0.02}
-              envMapIntensity={0.35}
-            />
-          </mesh>
+          <mesh key={key} geometry={geometry} receiveShadow material={landBlend.material} />
         );
       })}
     </>
