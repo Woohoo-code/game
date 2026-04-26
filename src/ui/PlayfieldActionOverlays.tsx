@@ -134,6 +134,15 @@ export function PlayfieldActionOverlays({
     snapshot.world.canEnterThroneHall ||
     snapshot.world.canLeaveDungeon;
 
+  /** Dungeon chest/stairs/exit UI lives in this dock; overworld `can*` flags are cleared underground, so this is separate from `hasBuildingContext`. Throne hall only docks when an action is available (avoids an empty bar on the long carpet). */
+  const activeDungeon = snapshot.world.inDungeon ? snapshot.world.dungeon : null;
+  const showDungeonActionDock =
+    activeDungeon != null &&
+    (activeDungeon.kind !== "throneHall" ||
+      snapshot.world.canThrone ||
+      snapshot.world.canLeaveDungeon);
+  const showContextActionDock = hasBuildingContext || showDungeonActionDock;
+
   const weaponDownAfterSell = weaponSellDowngrade(snapshot.player.weapon);
   const armorDownAfterSell = armorSellDowngrade(snapshot.player.armor);
   const weaponSellRefund = weaponDownAfterSell
@@ -263,11 +272,11 @@ export function PlayfieldActionOverlays({
         </div>
       </div>
 
-      {hasBuildingContext && (
+      {showContextActionDock && (
         <div
           className="playfield-context-overlay playfield-context-overlay--dock-bottom"
           role="region"
-          aria-label="Building actions"
+          aria-label={showDungeonActionDock ? "Dungeon and town actions" : "Building actions"}
         >
           <div className="playfield-context-inner">
             {revivalDebtLock && (

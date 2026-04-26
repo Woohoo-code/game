@@ -13,7 +13,7 @@ import { publicAssetUrl } from "./publicAssetUrl";
 const cache = new Map<string, THREE.Texture>();
 
 /** Bump when terrain art changes so cached CanvasTextures are regenerated. */
-const TERRAIN_TEX_CACHE_VER = 2;
+const TERRAIN_TEX_CACHE_VER = 4;
 
 /** Canvas resolution for terrain + buildings (higher = sharper when zoomed in). */
 const PROCEDURAL_TEX_SIZE = 384;
@@ -482,57 +482,27 @@ function drawForest(ctx: CanvasRenderingContext2D, s: number): void {
   addFilmGrain(ctx, s, 9505);
 }
 
-function drawHill(ctx: CanvasRenderingContext2D, s: number): void {
-  const grad = ctx.createRadialGradient(s * 0.5, s * 0.5, s * 0.05, s * 0.5, s * 0.5, s * 0.65);
-  grad.addColorStop(0, "#9f8a5c");
-  grad.addColorStop(0.55, "#7a6a42");
-  grad.addColorStop(1, "#4e4024");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, s, s);
-  const r = seededRng(3771);
-  for (let i = 0; i < density(s, 70); i++) {
-    const x = r() * s;
-    const y = r() * s;
-    ctx.strokeStyle = `rgba(${80 + r() * 30 | 0}, ${64 + r() * 24 | 0}, ${36 + r() * 18 | 0}, ${0.35 + r() * 0.35})`;
-    ctx.lineWidth = 0.8 + r() * 1.1;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + (r() - 0.5) * 8, y + (r() - 0.5) * 6);
-    ctx.stroke();
-  }
-  for (let i = 0; i < density(s, 24); i++) {
-    ctx.fillStyle = `rgba(${60 + r() * 40 | 0}, ${85 + r() * 40 | 0}, ${42 + r() * 24 | 0}, ${0.4 + r() * 0.3})`;
-    ctx.beginPath();
-    ctx.ellipse(r() * s, r() * s, 2 + r() * 3.4, 1.2 + r() * 2.1, r() * Math.PI, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  for (let i = 0; i < density(s, 8); i++) {
-    ctx.fillStyle = `rgba(${120 + r() * 40 | 0}, ${114 + r() * 32 | 0}, ${96 + r() * 28 | 0}, 0.7)`;
-    ctx.beginPath();
-    ctx.ellipse(r() * s, r() * s, 3 + r() * 4, 2 + r() * 2.8, r() * Math.PI, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  addFilmGrain(ctx, s, 7711);
-}
-
-const DRAWERS: Record<TerrainKind, (ctx: CanvasRenderingContext2D, size: number) => void> = {
-  grass: drawGrass,
+/** Road / town / forest still use procedural canvas tiles; grass, water, hill use `public/terrain/*.png`. */
+type ProceduralTerrainKind = Exclude<TerrainKind, "grass" | "water" | "hill">;
+const PROCEDURAL_TERRAIN_DRAWERS: Record<
+  ProceduralTerrainKind,
+  (ctx: CanvasRenderingContext2D, size: number) => void
+> = {
   road: drawRoad,
-  water: drawWater,
   town: drawTown,
   forest: drawForest,
-  hill: drawHill
 };
 
 export function getTerrainTexture(kind: TerrainKind): THREE.Texture {
   if (kind === "grass") return getImageTexture("terrain-grass-upload-v1", "terrain/grass.png");
   if (kind === "water") return getImageTexture("terrain-water-upload-v1", "terrain/water.png");
+  if (kind === "hill") return getImageTexture("terrain-hills-upload-v1", "terrain/hills.png");
   const key = `${kind}-v${TERRAIN_TEX_CACHE_VER}`;
   const cached = cache.get(key);
   if (cached) return cached;
   const size = PROCEDURAL_TEX_SIZE;
   const { canvas, ctx } = makeCanvas(size);
-  DRAWERS[kind](ctx, size);
+  PROCEDURAL_TERRAIN_DRAWERS[kind](ctx, size);
   const tex = new THREE.CanvasTexture(canvas);
   applyTextureQuality(tex);
   cache.set(key, tex);
@@ -804,6 +774,13 @@ export function getBiomeGroundTexture(biome: BiomeKind, realmTier: number = 1): 
   if (tier === 1 && biome === "swamp") {
     return getImageTexture("biome-swamp-bog-upload-v1", "terrain/bog.png");
   }
+  /** Seamless snow albedo (`public/terrain/snow.png`) — realm 1 tundra + realm 2+ forest floor. */
+  if (tier === 1 && biome === "tundra") {
+    return getImageTexture("biome-tundra-snow-v1", "terrain/snow.png");
+  }
+  if (tier >= 2 && biome === "forest") {
+    return getImageTexture("biome-realm2-forest-snow-v1", "terrain/snow.png");
+  }
   const key = `biome-${tier}-${biome}-v${TERRAIN_TEX_CACHE_VER}`;
   const cached = cache.get(key);
   if (cached) return cached;
@@ -837,7 +814,7 @@ export const BIOME_TINT: Record<BiomeKind, Record<TerrainKind, string>> = {
     water: "#e5f1f7",
     town: "#f3ecd6",
     forest: "#ffffff",
-    hill: "#e6d6b0"
+    hill: "#ffffff"
   },
   desert: {
     grass: "#ffffff",
@@ -845,7 +822,7 @@ export const BIOME_TINT: Record<BiomeKind, Record<TerrainKind, string>> = {
     water: "#c0dce6",
     town: "#f5e3bc",
     forest: "#d4c690",
-    hill: "#ffd996"
+    hill: "#ffffff"
   },
   swamp: {
     grass: "#ffffff",
@@ -853,7 +830,7 @@ export const BIOME_TINT: Record<BiomeKind, Record<TerrainKind, string>> = {
     water: "#a8c485",
     town: "#bcb094",
     forest: "#a0b07c",
-    hill: "#a8a078"
+    hill: "#ffffff"
   },
   tundra: {
     grass: "#ffffff",
@@ -861,16 +838,16 @@ export const BIOME_TINT: Record<BiomeKind, Record<TerrainKind, string>> = {
     water: "#d6e8ee",
     town: "#e3e7ec",
     forest: "#cdd8dc",
-    hill: "#d4d8de"
+    hill: "#ffffff"
   }
 };
 
 const BIOME_TINT_REALM2: Record<BiomeKind, Record<TerrainKind, string>> = {
-  meadow: { grass: "#ffffff", road: "#d7cab0", water: "#6ea2ba", town: "#e7d9c2", forest: "#c4b79a", hill: "#c8b088" },
-  forest: { grass: "#ffffff", road: "#c9d3e2", water: "#d9e8ff", town: "#dfe7f6", forest: "#dde8f4", hill: "#b6b3c4" },
-  desert: { grass: "#ffffff", road: "#ffcf8c", water: "#f0b97e", town: "#ffdcb2", forest: "#e8bb77", hill: "#f0a86a" },
-  swamp: { grass: "#ffffff", road: "#9ba8b8", water: "#6a86a4", town: "#b1becf", forest: "#8897ab", hill: "#8d8a78" },
-  tundra: { grass: "#ffffff", road: "#b9d5c1", water: "#8eb8a3", town: "#c6decf", forest: "#9ebba9", hill: "#b8c2cc" }
+  meadow: { grass: "#ffffff", road: "#d7cab0", water: "#6ea2ba", town: "#e7d9c2", forest: "#c4b79a", hill: "#ffffff" },
+  forest: { grass: "#ffffff", road: "#c9d3e2", water: "#d9e8ff", town: "#dfe7f6", forest: "#dde8f4", hill: "#ffffff" },
+  desert: { grass: "#ffffff", road: "#ffcf8c", water: "#f0b97e", town: "#ffdcb2", forest: "#e8bb77", hill: "#ffffff" },
+  swamp: { grass: "#ffffff", road: "#9ba8b8", water: "#6a86a4", town: "#b1becf", forest: "#8897ab", hill: "#ffffff" },
+  tundra: { grass: "#ffffff", road: "#b9d5c1", water: "#8eb8a3", town: "#c6decf", forest: "#9ebba9", hill: "#ffffff" }
 };
 
 /** Realm-aware biome tint for non-grass terrain kinds. */

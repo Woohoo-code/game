@@ -28,11 +28,12 @@ import { MountHorse3D } from "./MountHorse3D";
 /** Match legacy Phaser walk: 140 px/s ÷ 32 px per tile. */
 const WALK_SPEED_TILES = 140 / TILE;
 const HALF_TILE = 0.5;
-const CAM_OFFSET = new THREE.Vector3(0, 9, 9);
+/** Default follow offset from player (world units); scaled by `cameraDistanceScale`. */
+const BASE_CAM_OFFSET = new THREE.Vector3(0, 9, 9);
 
 /** Soft foot shadow aligned with sun direction (overworld only). */
 function PlayerGroundSunShadow({ worldTime }: { worldTime: number }) {
-  const { rotY, elong, opacity } = useMemo(() => {
+  const { rotY, elong, opacity, offsetX, offsetZ } = useMemo(() => {
     const dir = sunDirectionUnit(worldTime);
     const sx = -dir.x;
     const sz = -dir.z;
@@ -41,13 +42,20 @@ function PlayerGroundSunShadow({ worldTime }: { worldTime: number }) {
     const sunH = sunHeight01(worldTime);
     const elong = 1 + Math.min(2.9, len * 3.15);
     const opacity = Math.min(0.34, 0.1 + 0.14 * (1 - len * 0.28) + sunH * 0.08);
-    return { rotY, elong, opacity };
+    // Nudge the decal center slightly opposite the sun on XZ so the darkest part sits closer
+    // to the contact area when the sun is low (pure centered circles read “floating”).
+    const flatLen = Math.hypot(dir.x, dir.z) || 1;
+    const lowSun = 1 - sunH;
+    const shift = 0.055 * lowSun * Math.min(1.35, elong * 0.42);
+    const offsetX = (-dir.x / flatLen) * shift;
+    const offsetZ = (-dir.z / flatLen) * shift;
+    return { rotY, elong, opacity, offsetX, offsetZ };
   }, [worldTime]);
 
   return (
-    <group rotation={[0, rotY, 0]}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]} scale={[elong, 1, 1]}>
-        <circleGeometry args={[0.34, 28]} />
+    <group position={[offsetX, 0, offsetZ]} rotation={[0, rotY, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.004, 0]} scale={[elong, 1, 1]}>
+        <circleGeometry args={[0.4, 32]} />
         <meshBasicMaterial color="#000" transparent opacity={opacity} depthWrite={false} />
       </mesh>
     </group>
@@ -56,10 +64,13 @@ function PlayerGroundSunShadow({ worldTime }: { worldTime: number }) {
 
 export function Player3D({
   appearance,
-  cameraMotionEnabled = false
+  cameraMotionEnabled = false,
+  cameraDistanceScale = 1,
 }: {
   appearance: PlayerAppearance;
   cameraMotionEnabled?: boolean;
+  /** 1 = default follow distance; lower pulls the camera closer, higher pushes it back. */
+  cameraDistanceScale?: number;
 }) {
   const hud = useGameStore();
   const inDungeon = hud.world.inDungeon;
@@ -77,19 +88,24 @@ export function Player3D({
   const deadRef = useRef(false);
   const { camera } = useThree();
 
+  const camOffset = useMemo(
+    () => BASE_CAM_OFFSET.clone().multiplyScalar(cameraDistanceScale),
+    [cameraDistanceScale],
+  );
+
   useEffect(() => {
     if (!groupRef.current) return;
     const p = gameStore.getSnapshot().player;
     groupRef.current.position.set(p.x / TILE, 0, p.y / TILE);
     camTargetLerp.current.set(p.x / TILE, 0, p.y / TILE);
     camPosLerp.current.set(
-      p.x / TILE + CAM_OFFSET.x,
-      CAM_OFFSET.y,
-      p.y / TILE + CAM_OFFSET.z,
+      p.x / TILE + camOffset.x,
+      camOffset.y,
+      p.y / TILE + camOffset.z,
     );
     camera.position.copy(camPosLerp.current);
     camera.lookAt(camTargetLerp.current);
-  }, [camera]);
+  }, [camera, camOffset]);
 
   useFrame((_, delta) => {
     const group = groupRef.current;
@@ -171,9 +187,9 @@ export function Player3D({
     const lookLag = cameraMotionEnabled ? 0.14 : 1;
     const tiltY = cameraMotionEnabled ? 0.3 : 0.15;
     desiredCam.current.set(
-      group.position.x + CAM_OFFSET.x,
-      CAM_OFFSET.y,
-      group.position.z + CAM_OFFSET.z,
+      group.position.x + camOffset.x,
+      camOffset.y,
+      group.position.z + camOffset.z,
     );
     camPosLerp.current.lerp(desiredCam.current, movementLag);
     camTargetLerp.current.lerp(
@@ -200,7 +216,6 @@ export function Player3D({
           omitContactShadow={!inDungeon}
           showFaceMarker
           movingRef={movingRef}
-          deadRef={deadRef}
           riding={riding && !deadRef.current}
         />
       </group>

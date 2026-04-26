@@ -10,6 +10,7 @@ import {
   terrainAt,
 } from "../game/worldMap";
 import { useGameStore } from "../game/useGameStore";
+import { buildBiomeIndexDataTexture, createBiomeBlendGrassMaterial } from "./biomeGrassMaterial";
 import {
   biomeTerrainTint,
   getBiomeGroundTexture,
@@ -46,6 +47,8 @@ interface TerrainGroup {
   kind: TerrainKind;
   biome: BiomeKind;
   geometry: THREE.BufferGeometry;
+  /** When true, `geometry` is merged grass across biomes and uses the biome blend shader material. */
+  biomeBlendGrass?: boolean;
 }
 
 type Accumulator = {
@@ -122,6 +125,7 @@ function buildTerrainGroups(): TerrainGroup[] {
 
   const seen = new Uint8Array(n);
   const idx = (x: number, y: number) => y * tw + x;
+  const grassBlend = emptyAcc();
 
   for (let y = 0; y < th; y++) {
     for (let x = 0; x < tw; x++) {
@@ -130,13 +134,14 @@ function buildTerrainGroups(): TerrainGroup[] {
 
       const kind = tGrid[i];
       const biome = bGrid[i];
-      const g = groups[kind][biome];
+      const isGrass = kind === "grass";
+      const g = isGrass ? grassBlend : groups[kind][biome];
       const elev = HEIGHT_BY_TERRAIN[kind];
 
       let w = 1;
       while (x + w < tw) {
         const ii = idx(x + w, y);
-        if (seen[ii] || tGrid[ii] !== kind || bGrid[ii] !== biome) break;
+        if (seen[ii] || tGrid[ii] !== kind || (!isGrass && bGrid[ii] !== biome)) break;
         w++;
       }
 
@@ -145,7 +150,7 @@ function buildTerrainGroups(): TerrainGroup[] {
         let rowOk = true;
         for (let dx = 0; dx < w; dx++) {
           const ii = idx(x + dx, y + rectH);
-          if (seen[ii] || tGrid[ii] !== kind || bGrid[ii] !== biome) {
+          if (seen[ii] || tGrid[ii] !== kind || (!isGrass && bGrid[ii] !== biome)) {
             rowOk = false;
             break;
           }
@@ -183,6 +188,24 @@ function buildTerrainGroups(): TerrainGroup[] {
 
   const result: TerrainGroup[] = [];
   for (const kind of TERRAIN_RENDER_ORDER) {
+    if (kind === "grass") {
+      if (grassBlend.positions.length === 0) continue;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(grassBlend.positions, 3),
+      );
+      geo.setAttribute("uv", new THREE.Float32BufferAttribute(grassBlend.uvs, 2));
+      geo.setIndex(grassBlend.indices);
+      geo.computeVertexNormals();
+      result.push({
+        kind: "grass",
+        biome: "meadow",
+        geometry: geo,
+        biomeBlendGrass: true,
+      });
+      continue;
+    }
     for (const biome of BIOME_ORDER) {
       const g = groups[kind][biome];
       if (g.positions.length === 0) continue;
@@ -208,6 +231,19 @@ export function Terrain() {
   const terrainGroups = useMemo(buildTerrainGroups, [worldVersion]);
   const waterMats = useRef<THREE.MeshStandardMaterial[]>([]);
 
+  const biomeIndexTex = useMemo(() => buildBiomeIndexDataTexture(), [worldVersion]);
+  const grassBlendMat = useMemo(
+    () => createBiomeBlendGrassMaterial(realmTier, biomeIndexTex),
+    [realmTier, biomeIndexTex, worldVersion],
+  );
+
+  useEffect(() => {
+    return () => {
+      biomeIndexTex.dispose();
+      grassBlendMat.dispose();
+    };
+  }, [biomeIndexTex, grassBlendMat]);
+
   useFrame((_, delta) => {
     for (const mat of waterMats.current) {
       if (!mat?.map) continue;
@@ -221,12 +257,14 @@ export function Terrain() {
 
   return (
     <>
-      {terrainGroups.map(({ kind, biome, geometry }, i) => {
-        // For "grass" kind we use a biome-specific texture (sand/snow/mud/meadow/forest-floor).
-        // For other kinds we use the shared texture and tint it per biome.
+      {terrainGroups.map(({ kind, biome, geometry, biomeBlendGrass }, i) => {
+        const key = `${kind}-${biome}-${i}-${biomeBlendGrass ? "blend" : "std"}`;
+        if (biomeBlendGrass && kind === "grass") {
+          return <mesh key={key} geometry={geometry} material={grassBlendMat} receiveShadow />;
+        }
+        // For "grass" (non-blend legacy path should not occur) use biome texture; other kinds shared texture + tint.
         const tex = kind === "grass" ? getBiomeGroundTexture(biome, realmTier) : getTerrainTexture(kind);
         const tint = kind === "grass" ? "#ffffff" : biomeTerrainTint(biome, kind, realmTier);
-        const key = `${kind}-${biome}-${i}`;
         if (kind === "water") {
           return (
             <mesh key={key} geometry={geometry} receiveShadow renderOrder={1}>

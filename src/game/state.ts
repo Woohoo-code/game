@@ -949,6 +949,14 @@ class GameStore {
     if (!floor) return;
     const chest = floor.chests.find((c) => c.id === chestId);
     if (!chest || chest.opened) return;
+    const ptx = Math.floor(this.state.player.x / TILE);
+    const pty = Math.floor(this.state.player.y / TILE);
+    const adjacent = Math.abs(chest.tx - ptx) <= 1 && Math.abs(chest.ty - pty) <= 1;
+    if (!adjacent) {
+      this.logEvent("Move next to the chest to open it.");
+      this.emit();
+      return;
+    }
     chest.opened = true;
     // Add loot.
     const curr = this.state.player.items[chest.lootItem] ?? 0;

@@ -46,9 +46,22 @@ function keyboardTargetIsTyping(event: KeyboardEvent): boolean {
 }
 
 /** Remount when the realm/world mesh changes so GL readiness resets per overworld. */
-export function Overworld3D({ cameraMotionEnabled = false }: { cameraMotionEnabled?: boolean }) {
+export function Overworld3D({
+  cameraMotionEnabled = false,
+  cameraDistanceScale = 1,
+}: {
+  cameraMotionEnabled?: boolean;
+  /** Follow-camera distance multiplier (1 = default). */
+  cameraDistanceScale?: number;
+}) {
   const worldVersion = useGameStore().world.worldVersion;
-  return <Overworld3DScene key={worldVersion} cameraMotionEnabled={cameraMotionEnabled} />;
+  return (
+    <Overworld3DScene
+      key={worldVersion}
+      cameraMotionEnabled={cameraMotionEnabled}
+      cameraDistanceScale={cameraDistanceScale}
+    />
+  );
 }
 
 function SunDirectionalLightWithTarget({
@@ -110,7 +123,13 @@ function SunDirectionalLightWithTarget({
   );
 }
 
-function Overworld3DScene({ cameraMotionEnabled }: { cameraMotionEnabled: boolean }) {
+function Overworld3DScene({
+  cameraMotionEnabled,
+  cameraDistanceScale,
+}: {
+  cameraMotionEnabled: boolean;
+  cameraDistanceScale: number;
+}) {
   const snapshot = useGameStore();
   const worldVersion = snapshot.world.worldVersion;
   const [glReady, setGlReady] = useState(false);
@@ -308,7 +327,11 @@ function Overworld3DScene({ cameraMotionEnabled }: { cameraMotionEnabled: boolea
             <RoamingMonsters3D />
           </>
         )}
-        <Player3D appearance={snapshot.player.appearance} cameraMotionEnabled={cameraMotionEnabled} />
+        <Player3D
+          appearance={snapshot.player.appearance}
+          cameraMotionEnabled={cameraMotionEnabled}
+          cameraDistanceScale={cameraDistanceScale}
+        />
         {!snapshot.world.inDungeon && <Pet3D />}
       </Canvas>
     </div>

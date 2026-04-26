@@ -72,6 +72,11 @@ const WORLD_ZOOM_STORAGE_KEY = "msty-world-zoom";
 const WORLD_ZOOM_MIN = 0.75;
 const WORLD_ZOOM_MAX = 1.25;
 const WORLD_ZOOM_STEP = 0.05;
+/** Follow-camera distance in 3D (separate from CSS window scale). */
+const WORLD_CAMERA_DISTANCE_STORAGE_KEY = "msty-world-camera-distance";
+const WORLD_CAMERA_DISTANCE_MIN = 0.6;
+const WORLD_CAMERA_DISTANCE_MAX = 1.4;
+const WORLD_CAMERA_DISTANCE_STEP = 0.05;
 
 function useDesktopInventoryBar(): boolean {
   const [wide, setWide] = useState(() =>
@@ -131,6 +136,23 @@ function loadWorldZoomPreference(): number {
     const parsed = Number(raw);
     if (!Number.isFinite(parsed)) return 1;
     return clamp(Math.round(parsed * 100) / 100, WORLD_ZOOM_MIN, WORLD_ZOOM_MAX);
+  } catch {
+    return 1;
+  }
+}
+
+function loadWorldCameraDistancePreference(): number {
+  if (typeof window === "undefined") return 1;
+  try {
+    const raw = window.localStorage.getItem(WORLD_CAMERA_DISTANCE_STORAGE_KEY);
+    if (raw == null) return 1;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return 1;
+    return clamp(
+      Math.round(parsed * 100) / 100,
+      WORLD_CAMERA_DISTANCE_MIN,
+      WORLD_CAMERA_DISTANCE_MAX,
+    );
   } catch {
     return 1;
   }
@@ -344,6 +366,9 @@ export default function App() {
   const [uiScale, setUiScale] = useState<number>(() => loadUiScalePreference(uiScaleMin, uiScaleDefault));
   const [cameraMotionEnabled, setCameraMotionEnabled] = useState<boolean>(() => loadCameraMotionPreference());
   const [worldZoom, setWorldZoom] = useState<number>(() => loadWorldZoomPreference());
+  const [worldCameraDistance, setWorldCameraDistance] = useState<number>(() =>
+    loadWorldCameraDistancePreference(),
+  );
   const [selectedShopItem, setSelectedShopItem] = useState<ItemKey | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
@@ -377,6 +402,14 @@ export default function App() {
       // Ignore storage failures (privacy mode / blocked storage).
     }
   }, [worldZoom]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(WORLD_CAMERA_DISTANCE_STORAGE_KEY, String(worldCameraDistance));
+    } catch {
+      // Ignore storage failures (privacy mode / blocked storage).
+    }
+  }, [worldCameraDistance]);
 
   if (path === DOWNLOAD_ROUTE) {
     return (
@@ -805,8 +838,10 @@ export default function App() {
               </div>
               <div className="settings-ui-scale-row">
                 <div>
-                  <strong>World zoom</strong>
-                  <p className="settings-ui-scale-hint">Zooms the 3D world window from 75% to 125%.</p>
+                  <strong>Window size</strong>
+                  <p className="settings-ui-scale-hint">
+                    Resizes the 3D world panel (not the camera). Range 75% to 125%.
+                  </p>
                 </div>
                 <div className="settings-ui-scale-controls">
                   <button
@@ -817,7 +852,7 @@ export default function App() {
                       )
                     }
                     disabled={worldZoom <= WORLD_ZOOM_MIN}
-                    aria-label="Decrease world zoom"
+                    aria-label="Decrease world window size"
                   >
                     −
                   </button>
@@ -830,7 +865,7 @@ export default function App() {
                       )
                     }
                     disabled={worldZoom >= WORLD_ZOOM_MAX}
-                    aria-label="Increase world zoom"
+                    aria-label="Increase world window size"
                   >
                     +
                   </button>
@@ -841,8 +876,58 @@ export default function App() {
               </div>
               <div className="settings-ui-scale-row">
                 <div>
-                  <strong>Camera motion effects</strong>
-                  <p className="settings-ui-scale-hint">Adds movement tilt/sway while walking in 3D mode.</p>
+                  <strong>Camera zoom</strong>
+                  <p className="settings-ui-scale-hint">
+                    Moves the 3D follow camera closer or farther. 100% is default; lower is closer,
+                    higher is farther.
+                  </p>
+                </div>
+                <div className="settings-ui-scale-controls">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setWorldCameraDistance((prev) =>
+                        clamp(
+                          Math.round((prev - WORLD_CAMERA_DISTANCE_STEP) * 100) / 100,
+                          WORLD_CAMERA_DISTANCE_MIN,
+                          WORLD_CAMERA_DISTANCE_MAX,
+                        ),
+                      )
+                    }
+                    disabled={worldCameraDistance <= WORLD_CAMERA_DISTANCE_MIN}
+                    aria-label="Move camera closer"
+                  >
+                    −
+                  </button>
+                  <span className="settings-ui-scale-value">{Math.round(worldCameraDistance * 100)}%</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setWorldCameraDistance((prev) =>
+                        clamp(
+                          Math.round((prev + WORLD_CAMERA_DISTANCE_STEP) * 100) / 100,
+                          WORLD_CAMERA_DISTANCE_MIN,
+                          WORLD_CAMERA_DISTANCE_MAX,
+                        ),
+                      )
+                    }
+                    disabled={worldCameraDistance >= WORLD_CAMERA_DISTANCE_MAX}
+                    aria-label="Move camera farther"
+                  >
+                    +
+                  </button>
+                  <button type="button" className="secondary" onClick={() => setWorldCameraDistance(1)}>
+                    Reset
+                  </button>
+                </div>
+              </div>
+              <div className="settings-modal-divider" role="separator" aria-hidden="true" />
+              <div className="settings-ui-scale-row">
+                <div>
+                  <strong>Save & transfer</strong>
+                  <p className="settings-ui-scale-hint">
+                    Reload from this browser or copy a one-line code to move your save to another device.
+                  </p>
                 </div>
                 <div className="settings-ui-scale-controls">
                   <button type="button" onClick={() => void handleLoad()} aria-label="Load save from browser storage">
@@ -856,6 +941,15 @@ export default function App() {
                   >
                     Copy transfer line
                   </button>
+                </div>
+              </div>
+              <div className="settings-modal-divider" role="separator" aria-hidden="true" />
+              <div className="settings-ui-scale-row">
+                <div>
+                  <strong>Camera motion effects</strong>
+                  <p className="settings-ui-scale-hint">Adds movement tilt/sway while walking in 3D mode.</p>
+                </div>
+                <div className="settings-ui-scale-controls">
                   <button
                     type="button"
                     className={cameraMotionEnabled ? "secondary" : ""}
@@ -889,7 +983,10 @@ export default function App() {
         <div className="game-wrap">
           <div className="game-viewport">
             {USE_3D_OVERWORLD ? (
-              <Overworld3D cameraMotionEnabled={cameraMotionEnabled} />
+              <Overworld3D
+                cameraMotionEnabled={cameraMotionEnabled}
+                cameraDistanceScale={worldCameraDistance}
+              />
             ) : (
               <div ref={mountRef} className="phaser-mount" />
             )}

@@ -3,6 +3,7 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { useAnimations, useFBX, useGLTF } from "@react-three/drei";
 import type { FacialHairStyle, HairStyle, PlayerAppearance } from "../game/types";
+import { gameStore } from "../game/state";
 import { publicAssetUrl } from "./publicAssetUrl";
 
 interface CharacterModelProps {
@@ -23,10 +24,6 @@ interface CharacterModelProps {
    * ref of this exact shape.
    */
   movingRef?: MutableRefObject<boolean>;
-  /**
-   * Optional per-frame flag for "the character is dead".
-   */
-  deadRef?: MutableRefObject<boolean>;
   /**
    * When true the character adopts a seated riding pose: legs splay outward
    * at the hips to straddle the mount, arms tilt forward as if holding reins,
@@ -1039,10 +1036,17 @@ function retargetGlbClipToKnight(clip: THREE.AnimationClip): THREE.AnimationClip
       if (dot <= 0) return null;
       const node = track.name.slice(0, dot);
       const prop = track.name.slice(dot + 1);
-      // The source GLB root/pelvis channels are authored for a different rig
-      // orientation and scale. Keep the Knight's FBX hips upright/in-place,
-      // and retarget only child bone rotations.
-      if (node === "root" || node === "pelvis" || prop === "position" || prop === "translation") return null;
+      // GLB `root` is an exporter pivot (often a fixed Y↔Z correction); never drive the Knight root.
+      // Pelvis **translation** is world-space bounce/stride from the source take — skip so our
+      // locomotion root stays authoritative — but **pelvis.quaternion** is required or the legs
+      // animate against a frozen hip and read as a broken gait.
+      if (node === "root") return null;
+      if (
+        node === "pelvis" &&
+        (prop === "position" || prop === "translation" || prop === "scale")
+      ) {
+        return null;
+      }
       const mapped = GLB_TO_KNIGHT_BONE[node];
       if (!mapped) return null;
       const next = track.clone();
@@ -1174,11 +1178,9 @@ function resolveFbxTintSlot(meshName: string, matName: string): FbxTintSlot | nu
 function FBXCharacterInner({
   appearance,
   movingRef,
-  deadRef,
 }: {
   appearance: PlayerAppearance;
   movingRef?: MutableRefObject<boolean>;
-  deadRef?: MutableRefObject<boolean>;
 }) {
   const fbx = useFBX(publicAssetUrl("Knight D Pelegrini.fbx")) as THREE.Group;
   const { animations: idleAnims } = useGLTF(publicAssetUrl("idle.glb"));
@@ -1224,6 +1226,8 @@ function FBXCharacterInner({
   }, [fbx, appearance.skin, appearance.outfit, appearance.pants]);
 
   const lazyActionsRef = useRef<LazyAnimActions>({ walk: null, death: null });
+  /** Once per HP≤0 spell — avoids restarting death every frame after the clip finishes, and avoids parent/child `useFrame` ordering issues with a ref. */
+  const deathStartedThisKnockoutRef = useRef(false);
 
   /**
    * Idle clip: `idle.glb` ships `Idle_No_Loop`; the Knight mesh FBX may only
@@ -1249,17 +1253,25 @@ function FBXCharacterInner({
     const idleAction = idleAnimName ? actions[idleAnimName] : undefined;
     const walkAction = lazyActionsRef.current.walk;
     const deathAction = lazyActionsRef.current.death;
+    const playerDead = gameStore.getSnapshot().player.hp <= 0;
 
-    if (deadRef?.current) {
+    if (!playerDead) {
+      deathStartedThisKnockoutRef.current = false;
+    }
+
+    if (playerDead) {
       if (idleAction?.isRunning()) idleAction.fadeOut(0.2);
       if (walkAction?.isRunning()) walkAction.fadeOut(0.2);
-      if (deathAction && !deathAction.isRunning()) {
+      if (deathAction && !deathStartedThisKnockoutRef.current) {
+        deathStartedThisKnockoutRef.current = true;
         deathAction.reset().fadeIn(0.2).play();
         deathAction.clampWhenFinished = true;
         deathAction.loop = THREE.LoopOnce;
       }
     } else if (movingRef?.current) {
-      if (deathAction?.isRunning()) deathAction.fadeOut(0.2);
+      if (deathAction && (deathAction.isRunning() || deathAction.getEffectiveWeight() > 0.001)) {
+        deathAction.fadeOut(0.2);
+      }
       if (idleAction?.isRunning()) idleAction.fadeOut(0.2);
       if (walkAction && !walkAction.isRunning()) {
         walkAction.reset().fadeIn(0.2).play();
@@ -1267,7 +1279,9 @@ function FBXCharacterInner({
         idleAction.reset().fadeIn(0.1).play();
       }
     } else {
-      if (deathAction?.isRunning()) deathAction.fadeOut(0.2);
+      if (deathAction && (deathAction.isRunning() || deathAction.getEffectiveWeight() > 0.001)) {
+        deathAction.fadeOut(0.2);
+      }
       if (walkAction?.isRunning()) walkAction.fadeOut(0.2);
       if (idleAction && !idleAction.isRunning()) {
         idleAction.reset().fadeIn(0.2).play();
@@ -1313,7 +1327,6 @@ export function CharacterModel({
   turntable = false,
   showFaceMarker = false,
   movingRef,
-  deadRef,
   riding = false,
 }: CharacterModelProps) {
   const rootRef = useRef<THREE.Group>(null);
@@ -1348,7 +1361,7 @@ export function CharacterModel({
             )
           }
         >
-          <FBXCharacterInner appearance={appearance} movingRef={movingRef} deadRef={deadRef} />
+          <FBXCharacterInner appearance={appearance} movingRef={movingRef} />
         </Suspense>
       </group>
     </group>

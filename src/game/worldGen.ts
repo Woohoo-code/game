@@ -713,6 +713,22 @@ export function generateWorld(
     }
     return false;
   };
+  /** At least one in-bounds cardinal neighbor must be walkable (not water) so the spring is never ringed by water. */
+  const springHasCardinalLandAccess = (x: number, y: number): boolean => {
+    for (const [dx, dy] of [
+      [0, 1],
+      [0, -1],
+      [1, 0],
+      [-1, 0],
+    ] as const) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (!inBounds(nx, ny)) continue;
+      if (getT(nx, ny) !== TERRAIN_WATER) return true;
+    }
+    return false;
+  };
+
   const springTileOk = (x: number, y: number): boolean => {
     if (!inBounds(x, y)) return false;
     const t = getT(x, y);
@@ -720,6 +736,7 @@ export function generateWorld(
     if (tileOccupied.has(`${x},${y}`)) return false;
     if (nearTownOrPath(x, y)) return false;
     if (Math.abs(x - boss.x) <= 1 && Math.abs(y - boss.y) <= 1) return false;
+    if (!springHasCardinalLandAccess(x, y)) return false;
     return true;
   };
   const springScore = (x: number, y: number): number => {
@@ -731,11 +748,14 @@ export function generateWorld(
       [0, 1],
       [0, -1],
       [1, 0],
-      [-1, 0]
+      [-1, 0],
     ] as const) {
       if (getT(x + dx, y + dy) === TERRAIN_WATER) waterAdj++;
     }
-    s += waterAdj * 3;
+    // Light water nearby reads nice, but never reward being boxed in (old `waterAdj * 3` did that).
+    if (waterAdj === 1) s += 0.7;
+    else if (waterAdj === 2) s += 1.1;
+    else if (waterAdj === 3) s += 0.35;
     return s;
   };
   let bestSpring: { x: number; y: number; score: number } | null = null;
