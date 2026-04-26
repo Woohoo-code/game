@@ -1235,6 +1235,32 @@ function FBXCharacterInner({
   const lazyActionsRef = useRef<LazyAnimActions>({ walk: null, death: null });
   /** Once per HP≤0 spell — avoids restarting death every frame after the clip finishes, and avoids parent/child `useFrame` ordering issues with a ref. */
   const deathStartedThisKnockoutRef = useRef(false);
+  const lowerBodyPoseRef = useRef<
+    Partial<Record<"lThigh" | "lCalf" | "lFoot" | "rThigh" | "rCalf" | "rFoot", { bone: THREE.Object3D; base: THREE.Quaternion }>>
+  >({});
+  const manualWalkPhaseRef = useRef(0);
+  const manualWalkQuatRef = useRef(new THREE.Quaternion());
+  const manualWalkEulerRef = useRef(new THREE.Euler(0, 0, 0, "XYZ"));
+
+  useEffect(() => {
+    const byKey: Array<[
+      keyof typeof lowerBodyPoseRef.current,
+      string,
+    ]> = [
+      ["lThigh", "mixamorigLeftUpLeg"],
+      ["lCalf", "mixamorigLeftLeg"],
+      ["lFoot", "mixamorigLeftFoot"],
+      ["rThigh", "mixamorigRightUpLeg"],
+      ["rCalf", "mixamorigRightLeg"],
+      ["rFoot", "mixamorigRightFoot"],
+    ];
+    const next: typeof lowerBodyPoseRef.current = {};
+    for (const [key, boneName] of byKey) {
+      const bone = fbx.getObjectByName(boneName);
+      if (bone) next[key] = { bone, base: bone.quaternion.clone() };
+    }
+    lowerBodyPoseRef.current = next;
+  }, [fbx]);
 
   /**
    * Idle clip: `idle.glb` ships `Idle_No_Loop`; the Knight mesh FBX may only
@@ -1259,12 +1285,13 @@ function FBXCharacterInner({
       "";
   }, [fbx, retargetedIdleAnims, names]);
 
-  useFrame(() => {
+  useFrame((_, delta) => {
     const idleAnimName = idleNameRef.current;
     const idleAction = idleAnimName ? actions[idleAnimName] : undefined;
     const walkAction = lazyActionsRef.current.walk;
     const deathAction = lazyActionsRef.current.death;
     const playerDead = gameStore.getSnapshot().player.hp <= 0;
+    const moving = Boolean(movingRef?.current);
 
     if (!playerDead) {
       deathStartedThisKnockoutRef.current = false;
@@ -1279,7 +1306,7 @@ function FBXCharacterInner({
         deathAction.clampWhenFinished = true;
         deathAction.loop = THREE.LoopOnce;
       }
-    } else if (movingRef?.current) {
+    } else if (moving) {
       if (deathAction && (deathAction.isRunning() || deathAction.getEffectiveWeight() > 0.001)) {
         deathAction.fadeOut(0.2);
       }
@@ -1296,6 +1323,34 @@ function FBXCharacterInner({
       if (walkAction?.isRunning()) walkAction.fadeOut(0.2);
       if (idleAction && !idleAction.isRunning()) {
         idleAction.reset().fadeIn(0.2).play();
+      }
+    }
+
+    const lowerBody = lowerBodyPoseRef.current;
+    const setLowerBone = (key: keyof typeof lowerBody, x: number) => {
+      const part = lowerBody[key];
+      if (!part) return;
+      manualWalkEulerRef.current.set(x, 0, 0);
+      manualWalkQuatRef.current.setFromEuler(manualWalkEulerRef.current);
+      part.bone.quaternion.copy(part.base).multiply(manualWalkQuatRef.current);
+    };
+
+    if (!playerDead && moving) {
+      manualWalkPhaseRef.current += delta * LIMB_SWING_FREQ;
+      const swing = Math.sin(manualWalkPhaseRef.current);
+      const l = swing * 0.46;
+      const r = -swing * 0.46;
+      setLowerBone("lThigh", l);
+      setLowerBone("rThigh", r);
+      setLowerBone("lCalf", Math.max(0, -l) * 0.72);
+      setLowerBone("rCalf", Math.max(0, -r) * 0.72);
+      setLowerBone("lFoot", -l * 0.22);
+      setLowerBone("rFoot", -r * 0.22);
+    } else {
+      const settle = 1 - Math.exp(-delta * LIMB_SWING_ATTACK);
+      for (const part of Object.values(lowerBody)) {
+        if (!part) continue;
+        part.bone.quaternion.slerp(part.base, settle);
       }
     }
   });
