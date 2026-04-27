@@ -45,6 +45,7 @@ import { DOWNLOAD_ROUTE } from "./routes";
 import { ShopItemDetailPanel } from "./ui/ShopItemDetailPanel";
 import { DevCheatConsole } from "./ui/DevCheatConsole";
 import { SkillTreeModal } from "./ui/SkillTreeModal";
+import { CharacterSummaryModal } from "./ui/CharacterSummaryModal";
 import type { ItemKey } from "./game/types";
 
 // Lazy-load the download page so it gets its own small JS chunk (~15 KB instead of
@@ -77,6 +78,10 @@ const WORLD_CAMERA_DISTANCE_STORAGE_KEY = "msty-world-camera-distance";
 const WORLD_CAMERA_DISTANCE_MIN = 0.6;
 const WORLD_CAMERA_DISTANCE_MAX = 1.4;
 const WORLD_CAMERA_DISTANCE_STEP = 0.05;
+const HUD_TRANSPARENCY_STORAGE_KEY = "msty-hud-transparency";
+const HUD_TRANSPARENCY_MIN = 0;
+const HUD_TRANSPARENCY_MAX = 75;
+const HUD_TRANSPARENCY_DEFAULT = 25;
 
 function useDesktopInventoryBar(): boolean {
   const [wide, setWide] = useState(() =>
@@ -155,6 +160,19 @@ function loadWorldCameraDistancePreference(): number {
     );
   } catch {
     return 1;
+  }
+}
+
+function loadHudTransparencyPreference(): number {
+  if (typeof window === "undefined") return HUD_TRANSPARENCY_DEFAULT;
+  try {
+    const raw = window.localStorage.getItem(HUD_TRANSPARENCY_STORAGE_KEY);
+    if (raw == null) return HUD_TRANSPARENCY_DEFAULT;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return HUD_TRANSPARENCY_DEFAULT;
+    return clamp(Math.round(parsed), HUD_TRANSPARENCY_MIN, HUD_TRANSPARENCY_MAX);
+  } catch {
+    return HUD_TRANSPARENCY_DEFAULT;
   }
 }
 
@@ -359,6 +377,7 @@ export default function App() {
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [petsOpen, setPetsOpen] = useState(false);
+  const [characterOpen, setCharacterOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [eventLogCollapsed, setEventLogCollapsed] = useState(() => mobileBrowser);
   const [battleLogCollapsed, setBattleLogCollapsed] = useState(() => mobileBrowser);
@@ -369,6 +388,7 @@ export default function App() {
   const [worldCameraDistance, setWorldCameraDistance] = useState<number>(() =>
     loadWorldCameraDistancePreference(),
   );
+  const [hudTransparency, setHudTransparency] = useState<number>(() => loadHudTransparencyPreference());
   const [selectedShopItem, setSelectedShopItem] = useState<ItemKey | null>(null);
   const gameRef = useRef<Phaser.Game | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
@@ -410,6 +430,16 @@ export default function App() {
       // Ignore storage failures (privacy mode / blocked storage).
     }
   }, [worldCameraDistance]);
+
+  useEffect(() => {
+    const hudOpacity = 1 - hudTransparency / 100;
+    document.documentElement.style.setProperty("--hud-opacity", hudOpacity.toFixed(2));
+    try {
+      window.localStorage.setItem(HUD_TRANSPARENCY_STORAGE_KEY, String(hudTransparency));
+    } catch {
+      // Ignore storage failures (privacy mode / blocked storage).
+    }
+  }, [hudTransparency]);
 
   if (path === DOWNLOAD_ROUTE) {
     return (
@@ -478,6 +508,12 @@ export default function App() {
     }
   }, [snapshot.battle.inBattle, skillsOpen]);
 
+  useEffect(() => {
+    if (snapshot.battle.inBattle && characterOpen) {
+      setCharacterOpen(false);
+    }
+  }, [snapshot.battle.inBattle, characterOpen]);
+
   // Ctrl/⌘+S → save game. Overrides the browser's "Save Page As…" and the WASD
   // "S" movement binding. Active on the play screen only.
   useEffect(() => {
@@ -512,7 +548,7 @@ export default function App() {
       if (e.key !== "i" && e.key !== "I") return;
       const s = gameStore.getSnapshot();
       if (s.battle.inBattle) return;
-      if (journalOpen || petsOpen || ugcOpen || skillsOpen) return;
+      if (journalOpen || petsOpen || ugcOpen || skillsOpen || characterOpen) return;
       if (overlays.showPrologue || overlays.showEpilogue || overlays.toastStage) return;
       e.preventDefault();
       setInventoryOpen(true);
@@ -528,7 +564,8 @@ export default function App() {
     overlays.showPrologue,
     overlays.showEpilogue,
     overlays.toastStage,
-    skillsOpen
+    skillsOpen,
+    characterOpen
   ]);
 
   useEffect(() => {
@@ -542,7 +579,7 @@ export default function App() {
       if (e.key !== "t" && e.key !== "T") return;
       const s = gameStore.getSnapshot();
       if (s.battle.inBattle) return;
-      if (journalOpen || petsOpen || ugcOpen || inventoryOpen) return;
+      if (journalOpen || petsOpen || ugcOpen || inventoryOpen || characterOpen) return;
       if (overlays.showPrologue || overlays.showEpilogue || overlays.toastStage) return;
       if (s.pendingLevelUpCelebration) return;
       e.preventDefault();
@@ -560,7 +597,8 @@ export default function App() {
     overlays.showPrologue,
     overlays.showEpilogue,
     overlays.toastStage,
-    snapshot.pendingLevelUpCelebration
+    snapshot.pendingLevelUpCelebration,
+    characterOpen
   ]);
 
   const openUgc = useCallback(() => navigate("/ugc"), [navigate]);
@@ -779,6 +817,7 @@ export default function App() {
       />
       {petsOpen && <PetsPanel onClose={() => setPetsOpen(false)} />}
       {skillsOpen && <SkillTreeModal onClose={() => setSkillsOpen(false)} />}
+      {characterOpen && <CharacterSummaryModal onClose={() => setCharacterOpen(false)} />}
       {settingsOpen && (
         <div className="story-modal-backdrop" role="presentation" onClick={() => setSettingsOpen(false)}>
           <div
@@ -870,6 +909,37 @@ export default function App() {
                     +
                   </button>
                   <button type="button" className="secondary" onClick={() => setWorldZoom(1)}>
+                    Reset
+                  </button>
+                </div>
+              </div>
+              <div className="settings-ui-scale-row">
+                <div>
+                  <strong>HUD transparency</strong>
+                  <p className="settings-ui-scale-hint">
+                    Applies to the in-game HUD overlays. 0% is opaque, 75% is most transparent.
+                  </p>
+                </div>
+                <div className="settings-ui-scale-controls settings-slider-controls">
+                  <input
+                    type="range"
+                    min={HUD_TRANSPARENCY_MIN}
+                    max={HUD_TRANSPARENCY_MAX}
+                    step={1}
+                    value={hudTransparency}
+                    onChange={(event) =>
+                      setHudTransparency(
+                        clamp(Number(event.target.value), HUD_TRANSPARENCY_MIN, HUD_TRANSPARENCY_MAX),
+                      )
+                    }
+                    aria-label="Adjust HUD transparency"
+                  />
+                  <span className="settings-ui-scale-value">{hudTransparency}%</span>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => setHudTransparency(HUD_TRANSPARENCY_DEFAULT)}
+                  >
                     Reset
                   </button>
                 </div>
@@ -993,6 +1063,15 @@ export default function App() {
           </div>
           <div className="playfield-right-stack" aria-label="Map overlays">
             <TownCompass />
+            {!snapshot.battle.inBattle && (
+              <button
+                type="button"
+                className="character-open-btn"
+                onClick={() => setCharacterOpen(true)}
+              >
+                Character
+              </button>
+            )}
             {!snapshot.battle.inBattle && <WorldStatusOverlay />}
             <div className="touch-overlay">
               <TouchJoystick />
@@ -1029,6 +1108,7 @@ export default function App() {
                 journalOpen ||
                 inventoryOpen ||
                 skillsOpen ||
+                characterOpen ||
                 petsOpen ||
                 ugcOpen ||
                 overlays.showPrologue ||

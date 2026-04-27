@@ -39,6 +39,7 @@
   /* Play layout height (prefer dynamic viewport on mobile Safari / iOS) */
   --app-viewport-h: 100dvh;
   --ui-scale: 1;
+  --hud-opacity: 0.75;
 }
 
 @supports not (height: 100dvh) {
@@ -144,6 +145,22 @@ html[data-app-screen="create"] .viewport-scaler-inner > .character-create {
 .battle-overlay-panel,
 .playfield-help-modal {
   zoom: var(--ui-scale);
+}
+
+/* Shared alpha multiplier for gameplay HUD/chrome surfaces (0.25..1 from Settings). */
+.right-column,
+.world-status-overlay-inner,
+.town-compass-dial,
+.town-compass-label,
+.inventory-bar,
+.playfield-dock-inner,
+.playfield-context-inner,
+.battle-overlay-panel,
+.playfield-help-modal,
+.character-open-btn,
+.audio-mute-btn,
+.mobile-fullscreen-btn {
+  opacity: var(--hud-opacity);
 }
 
 /* Fullscreen toggle — bottom-right over the map (see App `playfield-fullscreen-corner`). */
@@ -3123,6 +3140,19 @@ button.reset-game-btn:not(:disabled):hover {
   pointer-events: auto;
 }
 
+.character-open-btn {
+  pointer-events: auto;
+  min-height: 30px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(135, 175, 225, 0.45);
+  background: rgba(18, 28, 44, 0.88);
+  color: #e2edff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
 /* Full-height left rail: compact strip for Save / Journal / etc. (shop lives in bottom dock). */
 .playfield-left-rail {
   position: absolute;
@@ -5329,6 +5359,15 @@ button.reset-game-btn:not(:disabled):hover {
   justify-content: flex-end;
 }
 
+.settings-slider-controls {
+  min-width: min(230px, 100%);
+}
+
+.settings-slider-controls input[type="range"] {
+  width: clamp(130px, 24vw, 220px);
+  accent-color: #7ea8e8;
+}
+
 .settings-ui-scale-controls > button {
   min-width: 34px;
   min-height: 30px;
@@ -5964,6 +6003,46 @@ button.reset-game-btn:not(:disabled):hover {
   border-color: rgba(125, 208, 160, 0.45);
 }
 
+.character-summary-modal {
+  width: min(560px, 96vw);
+}
+
+.character-summary-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.character-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.character-summary-card {
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(120, 160, 220, 0.24);
+  background: rgba(12, 18, 28, 0.55);
+}
+
+.character-summary-card h3 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+  color: #e6f0ff;
+}
+
+.character-summary-card p {
+  margin: 0;
+  line-height: 1.35;
+}
+
+.character-summary-sub {
+  margin: 2px 0 8px !important;
+  font-size: 12px;
+  color: #afbdd3;
+}
+
 @media (max-width: 980px) {
   .town-compass-dial {
     width: 60px;
@@ -5976,6 +6055,10 @@ button.reset-game-btn:not(:disabled):hover {
   .town-compass-needle {
     width: 34px;
     height: 50px;
+  }
+
+  .character-summary-grid {
+    grid-template-columns: 1fr;
   }
 }
 

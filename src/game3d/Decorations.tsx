@@ -2,7 +2,7 @@ import { Instance, Instances } from "@react-three/drei";
 import { useMemo } from "react";
 import * as THREE from "three";
 import type { BiomeKind } from "../game/types";
-import { MAP_H, MAP_W, biomeAt, terrainAt } from "../game/worldMap";
+import { MAP_H, MAP_W, biomeAt, terrainAt, townAtTile } from "../game/worldMap";
 import { useGameStore } from "../game/useGameStore";
 
 interface Placement {
@@ -539,16 +539,27 @@ function Reeds({ items }: { items: Placement[] }) {
   );
 }
 
-/** Decorative fence rail around town plaza tiles. */
+/** Semi-transparent wooden walls around non-castle towns (visual only; walk-through). */
 export function TownFencing() {
   const snapshot = useGameStore();
   const worldVersion = snapshot.world.worldVersion;
 
-  const posts = useMemo(() => {
+  const { walls, posts } = useMemo(() => {
     const list: { x: number; z: number; rot: number }[] = [];
+    const postKey = (x: number, z: number) => `${x.toFixed(3)},${z.toFixed(3)}`;
+    const postSet = new Set<string>();
+    const postList: { x: number; z: number }[] = [];
+    const pushPost = (x: number, z: number) => {
+      const key = postKey(x, z);
+      if (postSet.has(key)) return;
+      postSet.add(key);
+      postList.push({ x, z });
+    };
     for (let y = 0; y < MAP_H; y++) {
       for (let x = 0; x < MAP_W; x++) {
         if (terrainAt(x, y) !== "town") continue;
+        const town = townAtTile(x, y);
+        if (town?.name === "Crownkeep") continue;
         const edges: [number, number, number, number, number][] = [
           [x - 1, y, x, y + 0.5, Math.PI / 2],
           [x + 1, y, x + 1, y + 0.5, Math.PI / 2],
@@ -559,22 +570,50 @@ export function TownFencing() {
           const nk = terrainAt(nx, ny);
           if (nk === "town" || nk === "road") continue;
           list.push({ x: ox, z: oz, rot });
+          if (Math.abs(rot) < 0.001) {
+            pushPost(ox - 0.5, oz);
+            pushPost(ox + 0.5, oz);
+          } else {
+            pushPost(ox, oz - 0.5);
+            pushPost(ox, oz + 0.5);
+          }
         }
       }
     }
-    return list;
+    return { walls: list, posts: postList };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [worldVersion]);
 
-  if (posts.length === 0) return null;
+  if (walls.length === 0) return null;
   return (
-    <Instances limit={Math.max(posts.length, 1)} castShadow>
-      <boxGeometry args={[0.06, 0.35, 0.06]} />
-      <meshStandardMaterial color="#5a3a1c" roughness={0.95} />
-      {posts.map((p, i) => (
-        <Instance key={i} position={[p.x, 0.2, p.z]} rotation={[0, p.rot, 0]} />
-      ))}
-    </Instances>
+    <>
+      <Instances limit={Math.max(walls.length, 1)} castShadow={false}>
+        <boxGeometry args={[1, 0.62, 0.1]} />
+        <meshStandardMaterial
+          color="#8a5c2c"
+          roughness={0.82}
+          metalness={0.05}
+          transparent
+          opacity={0.4}
+        />
+        {walls.map((p, i) => (
+          <Instance key={i} position={[p.x, 0.33, p.z]} rotation={[0, p.rot, 0]} />
+        ))}
+      </Instances>
+      <Instances limit={Math.max(posts.length, 1)} castShadow={false}>
+        <boxGeometry args={[0.13, 0.88, 0.13]} />
+        <meshStandardMaterial
+          color="#6f461f"
+          roughness={0.9}
+          metalness={0.04}
+          transparent
+          opacity={0.4}
+        />
+        {posts.map((p, i) => (
+          <Instance key={i} position={[p.x, 0.44, p.z]} />
+        ))}
+      </Instances>
+    </>
   );
 }
 
