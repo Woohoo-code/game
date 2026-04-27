@@ -10,10 +10,7 @@ import {
   terrainAt,
 } from "../game/worldMap";
 import { useGameStore } from "../game/useGameStore";
-import {
-  buildGroundIndexDataTexture,
-  createTerrainBlendGroundMaterial,
-} from "./terrainBlendMaterial";
+import { buildBiomeIndexDataTexture, createBiomeBlendGrassMaterial } from "./biomeGrassMaterial";
 import { biomeTerrainTint, getTerrainTexture } from "./textures";
 
 /** Each terrain kind sits at a slightly different height so water dips and road rides slightly above grass. */
@@ -208,30 +205,19 @@ export function Terrain() {
   const terrainGroups = useMemo(buildTerrainGroups, [worldVersion]);
   const waterMats = useRef<THREE.MeshStandardMaterial[]>([]);
 
-  const landBlend = useMemo(() => {
-    const groundIndexTex = buildGroundIndexDataTexture();
-    const material = createTerrainBlendGroundMaterial(realmTier, groundIndexTex);
-    return { groundIndexTex, material };
+  /** Shared grass material only — biome blend uses fewer samplers than the all-terrain shader (avoids white ground from texture-unit exhaustion). */
+  const grassBlend = useMemo(() => {
+    const biomeIndexTex = buildBiomeIndexDataTexture();
+    const material = createBiomeBlendGrassMaterial(realmTier, biomeIndexTex);
+    return { biomeIndexTex, material };
   }, [worldVersion, realmTier]);
 
   useEffect(() => {
     return () => {
-      landBlend.groundIndexTex.dispose();
-      landBlend.material.dispose();
+      grassBlend.biomeIndexTex.dispose();
+      grassBlend.material.dispose();
     };
-  }, [landBlend]);
-
-  useEffect(() => {
-    const u = landBlend.material.userData.uDebugGround as
-      | { value: number }
-      | undefined;
-    if (!u) return;
-    const enabled =
-      import.meta.env.DEV &&
-      typeof window !== "undefined" &&
-      new URLSearchParams(window.location.search).get("groundDebug") === "1";
-    u.value = enabled ? 1 : 0;
-  }, [landBlend]);
+  }, [grassBlend]);
 
   useFrame((_, delta) => {
     for (const mat of waterMats.current) {
@@ -269,8 +255,23 @@ export function Terrain() {
             </mesh>
           );
         }
+        if (kind === "grass") {
+          return (
+            <mesh key={key} geometry={geometry} receiveShadow material={grassBlend.material} />
+          );
+        }
+        const tex = getTerrainTexture(kind);
+        const tint = biomeTerrainTint(biome, kind, realmTier);
         return (
-          <mesh key={key} geometry={geometry} receiveShadow material={landBlend.material} />
+          <mesh key={key} geometry={geometry} receiveShadow>
+            <meshStandardMaterial
+              map={tex}
+              color={tint}
+              roughness={0.78}
+              metalness={0.02}
+              envMapIntensity={0.35}
+            />
+          </mesh>
         );
       })}
     </>
