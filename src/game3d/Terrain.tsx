@@ -10,8 +10,7 @@ import {
   terrainAt,
 } from "../game/worldMap";
 import { useGameStore } from "../game/useGameStore";
-import { buildBiomeIndexDataTexture, createBiomeBlendGrassMaterial } from "./biomeGrassMaterial";
-import { biomeTerrainTint, getTerrainTexture } from "./textures";
+import { biomeTerrainTint, getBiomeGroundTexture, getTerrainTexture } from "./textures";
 
 /** Each terrain kind sits at a slightly different height so water dips and road rides slightly above grass. */
 const HEIGHT_BY_TERRAIN: Record<TerrainKind, number> = {
@@ -205,20 +204,6 @@ export function Terrain() {
   const terrainGroups = useMemo(buildTerrainGroups, [worldVersion]);
   const waterMats = useRef<THREE.MeshStandardMaterial[]>([]);
 
-  /** Shared grass material only — biome blend uses fewer samplers than the all-terrain shader (avoids white ground from texture-unit exhaustion). */
-  const grassBlend = useMemo(() => {
-    const biomeIndexTex = buildBiomeIndexDataTexture();
-    const material = createBiomeBlendGrassMaterial(realmTier, biomeIndexTex);
-    return { biomeIndexTex, material };
-  }, [worldVersion, realmTier]);
-
-  useEffect(() => {
-    return () => {
-      grassBlend.biomeIndexTex.dispose();
-      grassBlend.material.dispose();
-    };
-  }, [grassBlend]);
-
   useFrame((_, delta) => {
     for (const mat of waterMats.current) {
       if (!mat?.map) continue;
@@ -234,9 +219,9 @@ export function Terrain() {
     <>
       {terrainGroups.map(({ kind, biome, geometry }, i) => {
         const key = `${kind}-${biome}-${i}`;
+        const tex = kind === "grass" ? getBiomeGroundTexture(biome, realmTier) : getTerrainTexture(kind);
+        const tint = kind === "grass" ? "#ffffff" : biomeTerrainTint(biome, kind, realmTier);
         if (kind === "water") {
-          const tex = getTerrainTexture("water");
-          const tint = biomeTerrainTint(biome, "water", realmTier);
           return (
             <mesh key={key} geometry={geometry} receiveShadow renderOrder={1}>
               <meshStandardMaterial
@@ -255,13 +240,6 @@ export function Terrain() {
             </mesh>
           );
         }
-        if (kind === "grass") {
-          return (
-            <mesh key={key} geometry={geometry} receiveShadow material={grassBlend.material} />
-          );
-        }
-        const tex = getTerrainTexture(kind);
-        const tint = biomeTerrainTint(biome, kind, realmTier);
         return (
           <mesh key={key} geometry={geometry} receiveShadow>
             <meshStandardMaterial
