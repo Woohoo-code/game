@@ -11,7 +11,7 @@ import { currentDungeonFloor } from "../game/dungeon";
 import { inputController } from "../game/inputController";
 import { gameStore } from "../game/state";
 import type { PlayerAppearance } from "../game/types";
-import { useGameStore } from "../game/useGameStore";
+import { useGameStoreSelector } from "../game/useGameStore";
 import { sunDirectionUnit, sunHeight01 } from "../game/worldClock";
 import {
   MAP_H,
@@ -72,10 +72,12 @@ export function Player3D({
   /** 1 = default follow distance; lower pulls the camera closer, higher pushes it back. */
   cameraDistanceScale?: number;
 }) {
-  const hud = useGameStore();
-  const inDungeon = hud.world.inDungeon;
-  const worldTime = Number.isFinite(hud.world.worldTime) ? hud.world.worldTime : 0;
-  const horsesOwned = hud.player.horsesOwned ?? [];
+  const { inDungeon, worldTimeRaw, horsesOwned } = useGameStoreSelector((s) => ({
+    inDungeon: s.world.inDungeon,
+    worldTimeRaw: s.world.worldTime ?? 0,
+    horsesOwned: s.player.horsesOwned ?? [],
+  }));
+  const worldTime = Number.isFinite(worldTimeRaw) ? worldTimeRaw : 0;
   const riding = stableHorseSpeedBonus(horsesOwned) > 0;
   const bestMount = highestOwnedHorseKey(horsesOwned);
   const groupRef = useRef<THREE.Group>(null);

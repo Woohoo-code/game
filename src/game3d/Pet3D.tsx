@@ -3,7 +3,7 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { gameStore } from "../game/state";
 import { TILE } from "../game/worldMap";
-import { useGameStore } from "../game/useGameStore";
+import { useGameStoreSelector } from "../game/useGameStore";
 import { MonsterByShape } from "./MonsterModels";
 
 /**
@@ -18,12 +18,11 @@ const FOLLOW_LERP = 0.18;
 const PET_SCALE = 0.55;
 
 export function Pet3D() {
-  const snapshot = useGameStore();
+  const activePet = useGameStoreSelector(
+    (s) => (s.player.pets ?? []).find((p) => p.id === s.player.activePetId) ?? null
+  );
   const groupRef = useRef<THREE.Group>(null);
   const targetRef = useRef(new THREE.Vector3());
-
-  const pets = snapshot.player.pets ?? [];
-  const activePet = pets.find((p) => p.id === snapshot.player.activePetId) ?? null;
 
   useEffect(() => {
     if (!groupRef.current) return;

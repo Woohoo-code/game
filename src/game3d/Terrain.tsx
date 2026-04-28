@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { BiomeKind } from "../game/types";
@@ -30,6 +30,7 @@ const TERRAIN_RENDER_ORDER: TerrainKind[] = [
   "road",
   "town",
 ];
+const WATER_EMISSIVE = new THREE.Color("#0a1a2e");
 const BIOME_ORDER: BiomeKind[] = [
   "meadow",
   "forest",
@@ -215,7 +216,7 @@ export function Terrain() {
   });
 
   // Reset refs each render — we rebuild them in the map below.
-  waterMats.current = [];
+  waterMats.current.length = 0;
 
   return (
     <>
@@ -236,7 +237,7 @@ export function Terrain() {
                 metalness={0.15}
                 transparent
                 opacity={0.94}
-                emissive={new THREE.Color("#0a1a2e")}
+                emissive={WATER_EMISSIVE}
                 emissiveIntensity={0.25}
               />
             </mesh>
@@ -347,7 +348,7 @@ interface BiomeTreesProps {
   };
 }
 
-function BiomeTrees({ biomeTrees, palette, treeGeometries }: BiomeTreesProps) {
+const BiomeTrees = memo(function BiomeTrees({ biomeTrees, palette, treeGeometries }: BiomeTreesProps) {
   const trunkRef = useRef<THREE.InstancedMesh>(null);
   const cone1Ref = useRef<THREE.InstancedMesh>(null);
   const cone2Ref = useRef<THREE.InstancedMesh>(null);
@@ -418,7 +419,7 @@ function BiomeTrees({ biomeTrees, palette, treeGeometries }: BiomeTreesProps) {
       />
     </group>
   );
-}
+});
 
 /** Decorative tree clusters rendered on forest tiles with slight variation + biome palette. */
 export function Forests() {

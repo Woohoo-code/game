@@ -66,6 +66,8 @@ function savePrefs(prefs: AudioPrefs): void {
 let prefs: AudioPrefs = loadPrefs();
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
+let noiseBuffer: AudioBuffer | null = null;
+let noiseBufferSampleRate = 0;
 const listeners = new Set<() => void>();
 let lastStepAt = 0;
 
@@ -321,12 +323,8 @@ function playNoise(opts: {
   if (prefs.muted) return;
   const start = c.currentTime + (opts.delayMs ?? 0) / 1000;
   const dur = opts.durationMs / 1000;
-  const frames = Math.max(1, Math.floor(c.sampleRate * dur));
-  const buf = c.createBuffer(1, frames, c.sampleRate);
-  const data = buf.getChannelData(0);
-  for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
   const src = c.createBufferSource();
-  src.buffer = buf;
+  src.buffer = getNoiseBuffer(c);
   const g = c.createGain();
   const peak = opts.gain ?? 0.18;
   g.gain.setValueAtTime(peak, start);
@@ -342,6 +340,17 @@ function playNoise(opts: {
   }
   src.start(start);
   src.stop(start + dur + 0.02);
+}
+
+function getNoiseBuffer(c: AudioContext): AudioBuffer {
+  if (noiseBuffer && noiseBufferSampleRate === c.sampleRate) return noiseBuffer;
+  const frames = c.sampleRate;
+  const buf = c.createBuffer(1, frames, c.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
+  noiseBuffer = buf;
+  noiseBufferSampleRate = c.sampleRate;
+  return buf;
 }
 
 /** Impact + sweeping rise + crystalline peak — RPG-style level-up fanfare. */

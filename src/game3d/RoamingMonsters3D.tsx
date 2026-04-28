@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { ENEMIES } from "../game/data";
+import { ENEMY_BY_ID } from "../game/enemyLookup";
 import { gameStore } from "../game/state";
 import type { EnemyState, RoamingMonster } from "../game/types";
 import { useGameStoreSelector } from "../game/useGameStore";
@@ -15,9 +15,14 @@ const ROAMER_CHASE_TILES_PER_SEC = 2.6;
 const ROAMER_WANDER_TILES_PER_SEC = 0.4;
 const ROAMER_WANDER_AMP = 0.52;
 const ROAMER_TOUCH_DIST_TILES = 0.44;
+const sharedSnap = { current: gameStore.getSnapshot() };
+
+gameStore.subscribe(() => {
+  sharedSnap.current = gameStore.getSnapshot();
+});
 
 function enemyStateForRoamer(row: RoamingMonster): EnemyState | null {
-  const def = ENEMIES.find((e) => e.id === row.enemyId);
+  const def = ENEMY_BY_ID.get(row.enemyId);
   if (!def) return null;
   return {
     ...def,
@@ -73,16 +78,19 @@ function trySlideMove(pos: THREE.Vector2, nx: number, nz: number): void {
   }
 }
 
-function RoamerMob3D({ row, worldVersion }: { row: RoamingMonster; worldVersion: number }) {
+const RoamerMob3D = memo(function RoamerMob3D({
+  row,
+  worldVersion,
+}: {
+  row: RoamingMonster;
+  worldVersion: number;
+}) {
   const groupRef = useRef<THREE.Group>(null);
   /** x,z in tile space (Vector2.y holds z). */
   const pos = useRef(new THREE.Vector2(row.tx + 0.5, row.ty + 0.5));
   const wanderPhase = useRef(0);
   const ph0 = useMemo(() => phaseSeed(row.id, 1), [row.id]);
   const ph1 = useMemo(() => phaseSeed(row.id, 2), [row.id]);
-  /** Cached snapshot ref — updated via subscription, never read inside useFrame via function call. */
-  const snapRef = useRef(gameStore.getSnapshot());
-  useEffect(() => gameStore.subscribe(() => { snapRef.current = gameStore.getSnapshot(); }), []);
 
   useEffect(() => {
     resetRoamerPos(row.id, row.tx, row.ty, pos.current, wanderPhase, ph0);
@@ -90,7 +98,7 @@ function RoamerMob3D({ row, worldVersion }: { row: RoamingMonster; worldVersion:
   }, [row.id, row.tx, row.ty, worldVersion, ph0]);
 
   useFrame((_, delta) => {
-    const snap = snapRef.current;
+    const snap = sharedSnap.current;
     if (snap.battle.inBattle) return;
 
     const pTx = snap.player.x / TILE;
@@ -152,7 +160,7 @@ function RoamerMob3D({ row, worldVersion }: { row: RoamingMonster; worldVersion:
       <MonsterModel enemy={enemy} />
     </group>
   );
-}
+});
 
 /** Visible overworld foes (random-encounter species stay hidden until a fight rolls). */
 export function RoamingMonsters3D() {

@@ -482,7 +482,7 @@ function drawForest(ctx: CanvasRenderingContext2D, s: number): void {
   addFilmGrain(ctx, s, 9505);
 }
 
-/** Road / town / forest still use procedural canvas tiles; grass, water, hill use `public/terrain/*.png`. */
+/** Road / town / forest still use procedural canvas tiles; grass, water, hill use `public/terrain/*.webp`. */
 type ProceduralTerrainKind = Exclude<TerrainKind, "grass" | "water" | "hill">;
 const PROCEDURAL_TERRAIN_DRAWERS: Record<
   ProceduralTerrainKind,
@@ -494,9 +494,9 @@ const PROCEDURAL_TERRAIN_DRAWERS: Record<
 };
 
 export function getTerrainTexture(kind: TerrainKind): THREE.Texture {
-  if (kind === "grass") return getImageTexture("terrain-grass-upload-v1", "terrain/grass.png");
-  if (kind === "water") return getImageTexture("terrain-water-upload-v1", "terrain/water.png");
-  if (kind === "hill") return getImageTexture("terrain-hills-upload-v1", "terrain/hills.png");
+  if (kind === "grass") return getImageTexture("terrain-grass-upload-v1", "terrain/grass.webp");
+  if (kind === "water") return getImageTexture("terrain-water-upload-v1", "terrain/water.webp");
+  if (kind === "hill") return getImageTexture("terrain-hills-upload-v1", "terrain/hills.webp");
   const key = `${kind}-v${TERRAIN_TEX_CACHE_VER}`;
   const cached = cache.get(key);
   if (cached) return cached;
@@ -766,20 +766,20 @@ const REALM2_FLOOR_DRAWERS: Record<BiomeFloorKind, (ctx: CanvasRenderingContext2
 export function getBiomeGroundTexture(biome: BiomeKind, realmTier: number = 1): THREE.Texture {
   const tier = Math.max(1, Math.floor(realmTier));
   if (tier === 1 && biome === "meadow") {
-    return getImageTexture("biome-meadow-grass-upload-v1", "terrain/grass.png");
+    return getImageTexture("biome-meadow-grass-upload-v1", "terrain/grass.webp");
   }
   if (tier === 1 && biome === "desert") {
-    return getImageTexture("biome-desert-sand-upload-v1", "terrain/sand.png");
+    return getImageTexture("biome-desert-sand-upload-v1", "terrain/sand.webp");
   }
   if (tier === 1 && biome === "swamp") {
-    return getImageTexture("biome-swamp-bog-upload-v1", "terrain/bog.png");
+    return getImageTexture("biome-swamp-bog-upload-v1", "terrain/bog.webp");
   }
-  /** Seamless snow albedo (`public/terrain/snow.png`) — realm 1 tundra + realm 2+ forest floor. */
+  /** Seamless snow albedo (`public/terrain/snow.webp`) — realm 1 tundra + realm 2+ forest floor. */
   if (tier === 1 && biome === "tundra") {
-    return getImageTexture("biome-tundra-snow-v1", "terrain/snow.png");
+    return getImageTexture("biome-tundra-snow-v1", "terrain/snow.webp");
   }
   if (tier >= 2 && biome === "forest") {
-    return getImageTexture("biome-realm2-forest-snow-v1", "terrain/snow.png");
+    return getImageTexture("biome-realm2-forest-snow-v1", "terrain/snow.webp");
   }
   const key = `biome-${tier}-${biome}-v${TERRAIN_TEX_CACHE_VER}`;
   const cached = cache.get(key);

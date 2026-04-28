@@ -666,6 +666,7 @@ export interface GameSnapshot {
   eventLog: string[];
   ugc: UgcState;
   story: StoryState;
+  _version?: number;
   /**
    * When false, persisted slot matches this snapshot (excluding the optional
    * trailing "Game saved." line that is written on the next save).

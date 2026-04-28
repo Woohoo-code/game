@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useGameStore } from "../game/useGameStore";
+import { useGameStoreSelector } from "../game/useGameStore";
 import { TILE, nearestTown } from "../game/worldMap";
 
 /**
@@ -15,19 +15,25 @@ import { TILE, nearestTown } from "../game/worldMap";
  * readout under the dial tells the player how many tiles away home is.
  */
 export function TownCompass() {
-  const snapshot = useGameStore();
+  const { hasTownMap, townMapEquipped, inTown, inBattle, x, y } = useGameStoreSelector((s) => ({
+    hasTownMap: s.player.hasTownMap,
+    townMapEquipped: s.player.townMapEquipped ?? false,
+    inTown: s.world.inTown,
+    inBattle: s.battle.inBattle,
+    x: s.player.x,
+    y: s.player.y,
+  }));
 
   // Early-out BEFORE computing angle when we don't need to render anything.
-  const mapOut =
-    snapshot.player.hasTownMap && (snapshot.player.townMapEquipped ?? false);
-  const shouldRender = mapOut && !snapshot.world.inTown && !snapshot.battle.inBattle;
+  const mapOut = hasTownMap && townMapEquipped;
+  const shouldRender = mapOut && !inTown && !inBattle;
 
   // Recompute angle on every render (cheap). `useGameStore` re-renders on every
   // emit, which includes every tile-step of movement, so the needle stays live.
   const compass = useMemo(() => {
     if (!shouldRender) return null;
-    const tileX = snapshot.player.x / TILE;
-    const tileY = snapshot.player.y / TILE;
+    const tileX = x / TILE;
+    const tileY = y / TILE;
     const target = nearestTown(tileX, tileY);
     if (!target) return null;
     const toward = target.name;
@@ -43,7 +49,7 @@ export function TownCompass() {
     const rad = Math.atan2(dy, dx); // east=0, south=+π/2, west=±π, north=-π/2
     const deg = (rad * 180) / Math.PI + 90; // shift so north = 0°
     return { angle: deg, distance: Math.round(target.distance), toward };
-  }, [shouldRender, snapshot.player.x, snapshot.player.y]);
+  }, [shouldRender, x, y]);
 
   if (!compass) return null;
 

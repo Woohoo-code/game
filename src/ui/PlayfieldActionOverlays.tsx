@@ -1,4 +1,4 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import {
   ARMOR_STATS,
   GEAR_SELLBACK_FRACTION,
@@ -26,7 +26,7 @@ import {
 import { gameStore } from "../game/state";
 import { STORY_CHAPTERS } from "../game/story";
 import { innPatronRotationBucket, innPatronsForTown, type InnPatronAction } from "../game/townNpcs";
-import { useGameStore } from "../game/useGameStore";
+import { useGameStoreSelector } from "../game/useGameStore";
 import { TILE, getTowns, townAtTile } from "../game/worldMap";
 import { currentDungeonFloor } from "../game/dungeon";
 import type { ItemKey, ResourceKey } from "../game/types";
@@ -78,7 +78,128 @@ export function PlayfieldActionOverlays({
   selectedShopItem,
   onSelectShopItem
 }: Props) {
-  const snapshot = useGameStore();
+  const selected = useGameStoreSelector((s) => ({
+    battleInBattle: s.battle.inBattle,
+    hasUnsavedChanges: s.hasUnsavedChanges,
+    storyStage: s.story.stage,
+    ugcTotalSales: s.ugc.totalSales,
+    worldRealmTier: s.world.realmTier ?? 1,
+    worldCanShop: s.world.canShop,
+    worldCanPetShop: s.world.canPetShop,
+    worldCanHeal: s.world.canHeal,
+    worldCanTrain: s.world.canTrain,
+    worldCanGuild: s.world.canGuild,
+    worldCanThrone: s.world.canThrone,
+    worldCanBoss: s.world.canBoss,
+    worldCanLibrary: s.world.canLibrary,
+    worldCanForge: s.world.canForge,
+    worldCanChapel: s.world.canChapel,
+    worldCanStables: s.world.canStables,
+    worldCanMarket: s.world.canMarket,
+    worldCanVoidPortal: s.world.canVoidPortal,
+    worldCanRestoreSpring: s.world.canRestoreSpring,
+    worldCanReturnPortal: s.world.canReturnPortal,
+    worldCanDungeon: s.world.canDungeon,
+    worldCanEnterThroneHall: s.world.canEnterThroneHall,
+    worldCanLeaveDungeon: s.world.canLeaveDungeon,
+    worldCanDescendStairs: s.world.canDescendStairs,
+    worldCanAscendStairs: s.world.canAscendStairs,
+    worldInTown: s.world.inTown,
+    worldInDungeon: s.world.inDungeon,
+    worldDungeon: s.world.dungeon,
+    worldWorldTime: s.world.worldTime ?? 0,
+    worldWorldSeed: s.world.worldSeed ?? 0,
+    playerGold: s.player.gold,
+    playerPets: s.player.pets ?? [],
+    playerLevel: s.player.level,
+    playerRevivalDebtMonstersRemaining: s.player.revivalDebtMonstersRemaining ?? 0,
+    playerHorsesOwned: s.player.horsesOwned ?? [],
+    playerWeapon: s.player.weapon,
+    playerArmor: s.player.armor,
+    playerSkillPoints: s.player.skillPoints ?? 0,
+    playerActivePetId: s.player.activePetId,
+    playerVoidTitansDefeated: s.player.voidTitansDefeated,
+    playerHasTownMap: s.player.hasTownMap,
+    playerTownMapEquipped: s.player.townMapEquipped ?? false,
+    playerHp: s.player.hp,
+    playerMaxHp: s.player.maxHp,
+    playerX: s.player.x,
+    playerY: s.player.y,
+    playerNpcPatronsUsed: s.player.npcPatronsUsed ?? [],
+    playerNpcMercenaryBattlesLeft: s.player.npcMercenaryBattlesLeft ?? 0,
+    playerMonstersDefeated: s.player.monstersDefeated,
+    playerBountyTier: s.player.bountyTier,
+    playerKingAudienceTally: s.player.kingAudienceTally ?? 0,
+    playerKingAudienceTallyLastClaim: s.player.kingAudienceTallyLastClaim ?? 0,
+    playerBossDefeated: s.player.bossDefeated,
+    playerPetStableTraining: s.player.petStableTraining,
+  }));
+  const snapshot = useMemo(() => ({
+    battle: {
+      inBattle: selected.battleInBattle,
+    },
+    hasUnsavedChanges: selected.hasUnsavedChanges,
+    story: {
+      stage: selected.storyStage,
+    },
+    ugc: {
+      totalSales: selected.ugcTotalSales,
+    },
+    world: {
+      realmTier: selected.worldRealmTier,
+      canShop: selected.worldCanShop,
+      canPetShop: selected.worldCanPetShop,
+      canHeal: selected.worldCanHeal,
+      canTrain: selected.worldCanTrain,
+      canGuild: selected.worldCanGuild,
+      canThrone: selected.worldCanThrone,
+      canBoss: selected.worldCanBoss,
+      canLibrary: selected.worldCanLibrary,
+      canForge: selected.worldCanForge,
+      canChapel: selected.worldCanChapel,
+      canStables: selected.worldCanStables,
+      canMarket: selected.worldCanMarket,
+      canVoidPortal: selected.worldCanVoidPortal,
+      canRestoreSpring: selected.worldCanRestoreSpring,
+      canReturnPortal: selected.worldCanReturnPortal,
+      canDungeon: selected.worldCanDungeon,
+      canEnterThroneHall: selected.worldCanEnterThroneHall,
+      canLeaveDungeon: selected.worldCanLeaveDungeon,
+      canDescendStairs: selected.worldCanDescendStairs,
+      canAscendStairs: selected.worldCanAscendStairs,
+      inTown: selected.worldInTown,
+      inDungeon: selected.worldInDungeon,
+      dungeon: selected.worldDungeon,
+      worldTime: selected.worldWorldTime,
+      worldSeed: selected.worldWorldSeed,
+    },
+    player: {
+      gold: selected.playerGold,
+      pets: selected.playerPets,
+      level: selected.playerLevel,
+      revivalDebtMonstersRemaining: selected.playerRevivalDebtMonstersRemaining,
+      horsesOwned: selected.playerHorsesOwned,
+      weapon: selected.playerWeapon,
+      armor: selected.playerArmor,
+      skillPoints: selected.playerSkillPoints,
+      activePetId: selected.playerActivePetId,
+      voidTitansDefeated: selected.playerVoidTitansDefeated,
+      hasTownMap: selected.playerHasTownMap,
+      townMapEquipped: selected.playerTownMapEquipped,
+      hp: selected.playerHp,
+      maxHp: selected.playerMaxHp,
+      x: selected.playerX,
+      y: selected.playerY,
+      npcPatronsUsed: selected.playerNpcPatronsUsed,
+      npcMercenaryBattlesLeft: selected.playerNpcMercenaryBattlesLeft,
+      monstersDefeated: selected.playerMonstersDefeated,
+      bountyTier: selected.playerBountyTier,
+      kingAudienceTally: selected.playerKingAudienceTally,
+      kingAudienceTallyLastClaim: selected.playerKingAudienceTallyLastClaim,
+      bossDefeated: selected.playerBossDefeated,
+      petStableTraining: selected.playerPetStableTraining,
+    }
+  }), [selected]);
   const coopGuest = false;
   const [playfieldHelpOpen, setPlayfieldHelpOpen] = useState(false);
   const [merchantHintOpen, setMerchantHintOpen] = useState(false);
@@ -1099,8 +1220,7 @@ export function PlayfieldActionOverlays({
  * Market panel stays compact for brand-new saves.
  */
 function MarketResourceSell({ revivalDebtLock }: { revivalDebtLock: boolean }) {
-  const snapshot = useGameStore();
-  const bag = snapshot.player.resources ?? {};
+  const bag = useGameStoreSelector((s) => s.player.resources ?? {});
   const rows = RESOURCE_KEYS.map((key) => ({ key, count: bag[key] ?? 0 }))
     .filter((r) => r.count > 0)
     .map((r) => ({ ...r, def: RESOURCES[r.key] }));

@@ -4,7 +4,7 @@ import * as THREE from "three";
 import type { TerrainKind } from "../game/worldMap";
 import { MAP_H, MAP_W, biomeAt, terrainAt } from "../game/worldMap";
 import { nightVisualBlend } from "../game/worldClock";
-import { useGameStore } from "../game/useGameStore";
+import { useGameStoreSelector } from "../game/useGameStore";
 
 /** Matches {@link HEIGHT_BY_TERRAIN} in Terrain.tsx for torch bases. */
 const HEIGHT_BY_TERRAIN: Record<TerrainKind, number> = {
@@ -130,9 +130,10 @@ function Torch({
  * so mud and paths fall into pockets of light between darker stretches.
  */
 export function DungeonTorches() {
-  const snapshot = useGameStore();
-  const worldVersion = snapshot.world.worldVersion;
-  const worldTimeRaw = snapshot.world.worldTime ?? 0;
+  const { worldVersion, worldTimeRaw } = useGameStoreSelector((s) => ({
+    worldVersion: s.world.worldVersion,
+    worldTimeRaw: s.world.worldTime ?? 0,
+  }));
   const worldTime = Number.isFinite(worldTimeRaw) ? worldTimeRaw : 0;
   const nightBlend = useMemo(() => nightVisualBlend(worldTime), [worldTime]);
   const placements = useMemo(() => gatherSwampTorchCandidates(), [worldVersion]);

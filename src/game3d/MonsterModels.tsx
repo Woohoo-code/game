@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { EnemyState, MonsterBodyShape } from "../game/types";
@@ -79,7 +79,10 @@ function Bat({ primary = "#554a68", accent = "#3f3651" }: ShapeProps) {
     if (rightWing.current) rightWing.current.rotation.z = -0.2 - flap;
     if (body.current) body.current.position.y = 0.55 + Math.sin(t * 2) * 0.06;
   });
-  const wingColor = new THREE.Color(accent).lerp(new THREE.Color(primary), 0.4).getStyle();
+  const wingColor = useMemo(
+    () => new THREE.Color(accent).lerp(new THREE.Color(primary), 0.4).getStyle(),
+    [accent, primary],
+  );
   return (
     <group ref={group}>
       <group ref={body} position={[0, 0.55, 0]}>
@@ -141,8 +144,10 @@ function MangoMan({ primary = "#f4a020", accent = "#1e6b32" }: ShapeProps) {
     fruit.current.position.y = 0.42 + Math.sin(t * 3.1) * 0.035;
     fruit.current.rotation.z = Math.sin(t * 2.4) * 0.07;
   });
-  const skin = new THREE.Color(primary);
-  const blush = skin.clone().lerp(new THREE.Color("#ff6b4a"), 0.35).getStyle();
+  const blush = useMemo(
+    () => new THREE.Color(primary).lerp(new THREE.Color("#ff6b4a"), 0.35).getStyle(),
+    [primary],
+  );
   return (
     <group ref={group}>
       <group ref={fruit} position={[0, 0.42, 0]}>
@@ -402,8 +407,11 @@ function YoungDrake({ primary = "#a5342a", accent = "#d9a85a" }: ShapeProps) {
     if (leftWing.current) leftWing.current.rotation.z = 0.3 + flap;
     if (rightWing.current) rightWing.current.rotation.z = -0.3 - flap;
   });
-  const darker = new THREE.Color(primary).multiplyScalar(0.8).getStyle();
-  const wingColor = new THREE.Color(primary).multiplyScalar(0.6).getStyle();
+  const darker = useMemo(() => new THREE.Color(primary).multiplyScalar(0.8).getStyle(), [primary]);
+  const wingColor = useMemo(
+    () => new THREE.Color(primary).multiplyScalar(0.6).getStyle(),
+    [primary]
+  );
   return (
     <group ref={group}>
       <mesh position={[0, 0.42, 0]} castShadow>

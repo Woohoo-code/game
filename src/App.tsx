@@ -83,6 +83,54 @@ const HUD_TRANSPARENCY_MIN = 0;
 const HUD_TRANSPARENCY_MAX = 75;
 const HUD_TRANSPARENCY_DEFAULT = 25;
 
+function WorldLoadingFallback() {
+  return (
+    <div
+      style={{
+        background: "#0c1018",
+        color: "#ffffff",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100dvh",
+        width: "100%",
+      }}
+      aria-busy="true"
+      aria-label="Loading world"
+    >
+      <style>
+        {`@keyframes world-loading-spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }`}
+      </style>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "16px",
+          textAlign: "center",
+          padding: "24px",
+        }}
+      >
+        <div
+          style={{
+            width: "44px",
+            height: "44px",
+            borderRadius: "999px",
+            border: "4px solid rgba(255, 255, 255, 0.22)",
+            borderTopColor: "#ffffff",
+            animation: "world-loading-spin 0.9s linear infinite",
+          }}
+        />
+        <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>Loading world...</div>
+      </div>
+    </div>
+  );
+}
+
 function useDesktopInventoryBar(): boolean {
   const [wide, setWide] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia(DESKTOP_INVENTORY_MQ).matches : false
@@ -1053,10 +1101,12 @@ export default function App() {
         <div className="game-wrap">
           <div className="game-viewport">
             {USE_3D_OVERWORLD ? (
-              <Overworld3D
-                cameraMotionEnabled={cameraMotionEnabled}
-                cameraDistanceScale={worldCameraDistance}
-              />
+              <Suspense fallback={<WorldLoadingFallback />}>
+                <Overworld3D
+                  cameraMotionEnabled={cameraMotionEnabled}
+                  cameraDistanceScale={worldCameraDistance}
+                />
+              </Suspense>
             ) : (
               <div ref={mountRef} className="phaser-mount" />
             )}

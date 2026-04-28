@@ -1,16 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Canvas, useThree } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Cloud, Clouds, Sky, Stars } from "@react-three/drei";
 import * as THREE from "three";
 import { inputController, type MoveDirection } from "../game/inputController";
 import { gameStore } from "../game/state";
-import { useGameStore } from "../game/useGameStore";
+import { useGameStoreSelector } from "../game/useGameStore";
 import { MAP_H, MAP_W } from "../game/worldMap";
 import {
   WORLD_CLOCK_TICK_FRACTION,
   nightVisualBlend,
   sunHeight01,
-  sunShadowLightForMap,
 } from "../game/worldClock";
 import { Buildings } from "./Buildings";
 import { CrownkeepCastleWalls3D, CrownkeepSouthGate3D } from "./CastleWalls3D";
@@ -54,7 +53,7 @@ export function Overworld3D({
   /** Follow-camera distance multiplier (1 = default). */
   cameraDistanceScale?: number;
 }) {
-  const worldVersion = useGameStore().world.worldVersion;
+  const worldVersion = useGameStoreSelector((s) => s.world.worldVersion);
   return (
     <Overworld3DScene
       key={worldVersion}
@@ -65,19 +64,15 @@ export function Overworld3D({
 }
 
 function SunDirectionalLightWithTarget({
-  worldTime,
   inDungeon,
   sunIntensity,
   sunColor,
   shadowCamFar,
-  shadowHalf,
 }: {
-  worldTime: number;
   inDungeon: boolean;
   sunIntensity: number;
   sunColor: string;
   shadowCamFar: number;
-  shadowHalf: number;
 }) {
   const lightRef = useRef<THREE.DirectionalLight>(null);
   const { scene } = useThree();
@@ -95,14 +90,21 @@ function SunDirectionalLightWithTarget({
     };
   }, [scene, inDungeon]);
 
-  useLayoutEffect(() => {
-    const L = lightRef.current;
-    if (!L || inDungeon) return;
-    const { pos, target } = sunShadowLightForMap(worldTime, MAP_W, MAP_H);
-    L.position.set(pos[0], pos[1], pos[2]);
-    L.target.position.set(target[0], target[1], target[2]);
-    L.target.updateMatrixWorld();
-  }, [inDungeon, worldTime]);
+  useFrame(() => {
+    const light = lightRef.current;
+    if (!light || inDungeon) return;
+    const player = gameStore.getSnapshot().player;
+    const playerX = player.x ?? 0;
+    const playerZ = player.y ?? 0;
+    light.position.set(playerX + 10, 15, playerZ + 10);
+    light.target.position.set(playerX, 0, playerZ);
+    light.shadow.camera.left = -25;
+    light.shadow.camera.right = 25;
+    light.shadow.camera.top = 25;
+    light.shadow.camera.bottom = -25;
+    light.shadow.camera.updateProjectionMatrix();
+    light.target.updateMatrixWorld();
+  });
 
   return (
     <directionalLight
@@ -110,14 +112,14 @@ function SunDirectionalLightWithTarget({
       intensity={inDungeon ? 0 : sunIntensity}
       color={sunColor}
       castShadow={!inDungeon}
-      shadow-mapSize-width={2048}
-      shadow-mapSize-height={2048}
+      shadow-mapSize-width={1024}
+      shadow-mapSize-height={1024}
       shadow-camera-near={1}
       shadow-camera-far={shadowCamFar}
-      shadow-camera-left={-shadowHalf}
-      shadow-camera-right={shadowHalf}
-      shadow-camera-top={shadowHalf}
-      shadow-camera-bottom={-shadowHalf}
+      shadow-camera-left={-25}
+      shadow-camera-right={25}
+      shadow-camera-top={25}
+      shadow-camera-bottom={-25}
       shadow-bias={-0.0008}
     />
   );
@@ -130,10 +132,18 @@ function Overworld3DScene({
   cameraMotionEnabled: boolean;
   cameraDistanceScale: number;
 }) {
-  const snapshot = useGameStore();
-  const worldVersion = snapshot.world.worldVersion;
+  const {
+    worldVersion,
+    inDungeon,
+    appearance,
+    worldTimeRaw,
+  } = useGameStoreSelector((s) => ({
+    worldVersion: s.world.worldVersion,
+    worldTimeRaw: s.world.worldTime ?? 0,
+    inDungeon: s.world.inDungeon,
+    appearance: s.player.appearance,
+  }));
   const [glReady, setGlReady] = useState(false);
-  const worldTimeRaw = snapshot.world.worldTime ?? 0;
   const worldTime = Number.isFinite(worldTimeRaw) ? worldTimeRaw : 0;
 
   const view = useMemo(() => {
@@ -158,12 +168,14 @@ function Overworld3DScene({
     [sunH]
   );
 
+  // Intentionally memoized on `nb` to avoid recreating color objects every render.
   const bgHex = useMemo(() => {
     const a = new THREE.Color("#1b2330");
     const b = new THREE.Color("#05070c");
     return "#" + a.lerp(b, nb).getHexString();
   }, [nb]);
 
+  // Intentionally memoized on `nb` to avoid recreating color objects every render.
   const fogHex = useMemo(() => {
     const a = new THREE.Color("#2a3648");
     const b = new THREE.Color("#0d121c");
@@ -175,6 +187,7 @@ function Overworld3DScene({
   const hemiIntensity = THREE.MathUtils.lerp(0.55, 0.2, nb);
   const ambIntensity = THREE.MathUtils.lerp(0.25, 0.07, nb);
   const sunIntensity = THREE.MathUtils.lerp(1.15, 0.22, nb);
+  // Intentionally memoized on `nb` to avoid recreating color objects every render.
   const sunColor = useMemo(() => {
     const a = new THREE.Color("#fff2dc");
     const b = new THREE.Color("#8fb0e8");
@@ -231,7 +244,7 @@ function Overworld3DScene({
       {/* Parent `key={worldVersion}` remounts this subtree whenever the realm changes — only one overworld GL context at a time. */}
       <Canvas
         shadows
-        dpr={[1, 2]}
+        dpr={[1, 1.5]}
         camera={{ position: [MAP_W / 2, 14, MAP_H + 6], fov: 50, near: 0.1, far: view.camFar }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -242,10 +255,10 @@ function Overworld3DScene({
           });
         }}
       >
-        <color attach="background" args={[snapshot.world.inDungeon ? "#060406" : bgHex]} />
-        <fog attach="fog" args={snapshot.world.inDungeon ? ["#07040a", 8, 28] : [fogHex, fogNearEff, fogFarEff]} />
+        <color attach="background" args={[inDungeon ? "#060406" : bgHex]} />
+        <fog attach="fog" args={inDungeon ? ["#07040a", 8, 28] : [fogHex, fogNearEff, fogFarEff]} />
 
-        {!snapshot.world.inDungeon && (
+        {!inDungeon && (
           <>
             <Sky
               distance={450000}
@@ -292,15 +305,13 @@ function Overworld3DScene({
           </>
         )}
 
-        <hemisphereLight args={["#cde3f2", "#2b2a36", snapshot.world.inDungeon ? 0 : hemiIntensity]} />
-        <ambientLight intensity={snapshot.world.inDungeon ? 0 : ambIntensity} />
+        <hemisphereLight args={["#cde3f2", "#2b2a36", inDungeon ? 0 : hemiIntensity]} />
+        <ambientLight intensity={inDungeon ? 0 : ambIntensity} />
         <SunDirectionalLightWithTarget
-          worldTime={worldTime}
-          inDungeon={snapshot.world.inDungeon}
+          inDungeon={inDungeon}
           sunIntensity={sunIntensity}
           sunColor={sunColor}
           shadowCamFar={view.shadowCamFar}
-          shadowHalf={view.shadowHalf}
         />
         <directionalLight position={[-10, 18, -10]} intensity={rimIntensity} color="#6c80a0" />
         <pointLight
@@ -310,7 +321,7 @@ function Overworld3DScene({
           color="#b8d4ff"
         />
 
-        {snapshot.world.inDungeon ? (
+        {inDungeon ? (
           <Dungeon3D />
         ) : (
           <>
@@ -328,11 +339,11 @@ function Overworld3DScene({
           </>
         )}
         <Player3D
-          appearance={snapshot.player.appearance}
+          appearance={appearance}
           cameraMotionEnabled={cameraMotionEnabled}
           cameraDistanceScale={cameraDistanceScale}
         />
-        {!snapshot.world.inDungeon && <Pet3D />}
+        {!inDungeon && <Pet3D />}
       </Canvas>
     </div>
   );

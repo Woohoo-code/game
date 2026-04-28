@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { RESOURCES, type ResourceDefinition, type ResourceShape } from "../game/data";
 import type { ResourceNode } from "../game/types";
 import { MAP_H, MAP_W } from "../game/worldMap";
-import { useGameStore } from "../game/useGameStore";
+import { useGameStoreSelector } from "../game/useGameStore";
 
 interface ResolvedNode {
   id: string;
@@ -16,8 +16,10 @@ interface ResolvedNode {
  * A small bob + rotation keeps them readable without being distracting.
  */
 export function ResourceNodes3D() {
-  const snapshot = useGameStore();
-  const nodes = snapshot.world.resourceNodes ?? [];
+  const { nodes, inBattle } = useGameStoreSelector((s) => ({
+    nodes: s.world.resourceNodes ?? [],
+    inBattle: s.battle.inBattle,
+  }));
 
   const resolved = useMemo<ResolvedNode[]>(() => {
     const out: ResolvedNode[] = [];
@@ -30,7 +32,7 @@ export function ResourceNodes3D() {
     return out;
   }, [nodes]);
 
-  if (snapshot.battle.inBattle || resolved.length === 0) return null;
+  if (inBattle || resolved.length === 0) return null;
 
   return (
     <group name="resource-nodes">

@@ -4,8 +4,8 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { mergeBufferGeometries } from "three-stdlib";
 import { currentDungeonFloor } from "../game/dungeon";
-import { ENEMIES } from "../game/data";
-import type { DungeonFloorState, EnemyState } from "../game/types";
+import { ENEMY_BY_ID } from "../game/enemyLookup";
+import type { DungeonFloorState, EnemyState, GameSnapshot } from "../game/types";
 import {
   DUNGEON_TILE_EXIT,
   DUNGEON_TILE_FLOOR,
@@ -14,7 +14,7 @@ import {
   DUNGEON_TILE_STAIRS_UP,
   DUNGEON_TILE_WALL
 } from "../game/types";
-import { useGameStore } from "../game/useGameStore";
+import { useGameStoreSelector } from "../game/useGameStore";
 import { MonsterModel } from "./MonsterModels";
 
 /**
@@ -22,9 +22,8 @@ import { MonsterModel } from "./MonsterModels";
  * floors, wall lamps, chests, roamers.
  */
 export function Dungeon3D() {
-  const snapshot = useGameStore();
-  const dungeon = snapshot.world.dungeon;
-  if (!snapshot.world.inDungeon || !dungeon) return null;
+  const dungeon = useGameStoreSelector((s) => (s.world.inDungeon ? s.world.dungeon : null));
+  if (!dungeon) return null;
 
   const floor = currentDungeonFloor(dungeon);
   if (!floor) return null;
@@ -465,7 +464,7 @@ function DungeonExit({ x, y }: { x: number; y: number }) {
 function DungeonChests({
   chests
 }: {
-  chests: NonNullable<ReturnType<typeof useGameStore>["world"]["dungeon"]>["floors"][number]["chests"];
+  chests: NonNullable<GameSnapshot["world"]["dungeon"]>["floors"][number]["chests"];
 }) {
   return (
     <group>
@@ -514,7 +513,7 @@ function DungeonRoamers({
   widthCap,
   heightCap
 }: {
-  roamers: NonNullable<ReturnType<typeof useGameStore>["world"]["dungeon"]>["floors"][number]["roamers"];
+  roamers: NonNullable<GameSnapshot["world"]["dungeon"]>["floors"][number]["roamers"];
   widthCap: number;
   heightCap: number;
 }) {
@@ -523,7 +522,7 @@ function DungeonRoamers({
       roamers
         .filter((r) => r.tx >= 0 && r.ty >= 0 && r.tx < widthCap && r.ty < heightCap)
         .map((r) => {
-          const def = ENEMIES.find((e) => e.id === r.enemyId);
+          const def = ENEMY_BY_ID.get(r.enemyId);
           const enemy: EnemyState | null = def ? { ...def, hp: def.maxHp } : null;
           return { r, enemy };
         })

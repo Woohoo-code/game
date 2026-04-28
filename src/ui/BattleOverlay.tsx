@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   BATTLE_STANCE_ORDER,
   BATTLE_STANCES,
@@ -12,7 +12,7 @@ import { HOTBAR_KEY_LABELS, HOTBAR_SIZE, itemHotbarAbbr, normalizeItemHotbar } f
 import { ELEMENT_LABEL, ELEMENT_SYMBOL } from "../game/elements";
 import { gameStore } from "../game/state";
 import type { BattleVictorySummary, EnemyState, SkillKey } from "../game/types";
-import { useGameStore } from "../game/useGameStore";
+import { useGameStoreSelector } from "../game/useGameStore";
 import { MonsterPortrait3D } from "../game3d/MonsterPortrait3D";
 import { IconGold } from "./IconGold";
 
@@ -160,7 +160,60 @@ type Props = {
 };
 
 export function BattleOverlay({ battleLogCollapsed = false, onToggleBattleLogCollapse }: Props) {
-  const snapshot = useGameStore();
+  const selected = useGameStoreSelector((s) => ({
+    battleInBattle: s.battle.inBattle,
+    battlePhase: s.battle.phase,
+    battleEnemy: s.battle.enemy,
+    battlePositional: s.battle.positional,
+    battleLastEnemyHitAt: s.battle.lastEnemyHitAt ?? 0,
+    battleItemAttackBonus: s.battle.itemAttackBonus ?? 0,
+    battleItemDefenseBonus: s.battle.itemDefenseBonus ?? 0,
+    battleVictorySummary: s.battle.victorySummary,
+    battleStance: s.battle.stance,
+    battleGuardEnergy: s.battle.guardEnergy ?? 0,
+    battleSkillCooldown: s.battle.skillCooldown ?? 0,
+    battleLog: s.battle.log,
+    playerLearnedSkills: s.player.learnedSkills,
+    playerXp: s.player.xp,
+    playerXpToNext: s.player.xpToNext,
+    playerName: s.player.name,
+    playerLevel: s.player.level,
+    playerHp: s.player.hp,
+    playerMaxHp: s.player.maxHp,
+    playerGold: s.player.gold,
+    playerWeapon: s.player.weapon,
+    playerItemHotbar: s.player.itemHotbar,
+    playerItems: s.player.items,
+  }));
+  const snapshot = useMemo(() => ({
+    battle: {
+      inBattle: selected.battleInBattle,
+      phase: selected.battlePhase,
+      enemy: selected.battleEnemy,
+      positional: selected.battlePositional,
+      lastEnemyHitAt: selected.battleLastEnemyHitAt,
+      itemAttackBonus: selected.battleItemAttackBonus,
+      itemDefenseBonus: selected.battleItemDefenseBonus,
+      victorySummary: selected.battleVictorySummary,
+      stance: selected.battleStance,
+      guardEnergy: selected.battleGuardEnergy,
+      skillCooldown: selected.battleSkillCooldown,
+      log: selected.battleLog,
+    },
+    player: {
+      learnedSkills: selected.playerLearnedSkills,
+      xp: selected.playerXp,
+      xpToNext: selected.playerXpToNext,
+      name: selected.playerName,
+      level: selected.playerLevel,
+      hp: selected.playerHp,
+      maxHp: selected.playerMaxHp,
+      gold: selected.playerGold,
+      weapon: selected.playerWeapon,
+      itemHotbar: selected.playerItemHotbar,
+      items: selected.playerItems,
+    }
+  }), [selected]);
   const [actionPending, setActionPending] = useState(false);
   const actionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** `witness` = world visible, death pose; `fade` = black overlay before revival. */

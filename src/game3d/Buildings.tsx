@@ -1,10 +1,10 @@
 import { Html } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
-import { useRef } from "react";
+import { memo, useRef } from "react";
 import * as THREE from "three";
 import type { JSX } from "react";
 import { BUILDINGS, type BuildingKind } from "../game/worldMap";
-import { useGameStore } from "../game/useGameStore";
+import { useGameStoreSelector } from "../game/useGameStore";
 import { getRoofTexture, getWallTexture } from "./textures";
 
 interface KindStyle {
@@ -48,8 +48,8 @@ const W = 0.9;
 type BoxBuildingKind = Exclude<BuildingKind, "voidPortal" | "returnPortal" | "dungeon" | "restoreSpring">;
 
 export function Buildings() {
-  const snapshot = useGameStore();
-  const showLabel = !snapshot.battle.inBattle;
+  const inBattle = useGameStoreSelector((s) => s.battle.inBattle);
+  const showLabel = !inBattle;
   return (
     <>
       {BUILDINGS.map((b, i) =>
@@ -133,11 +133,11 @@ function RestoreSpringBuilding({ x, y, label }: { x: number; y: number; label: s
           roughness={0.25}
         />
       </mesh>
-      <mesh position={[-0.28, 0.12, 0.22]} castShadow>
+      <mesh position={[-0.28, 0.12, 0.22]}>
         <dodecahedronGeometry args={[0.1, 0]} />
         <meshStandardMaterial color="#6a6862" roughness={0.9} />
       </mesh>
-      <mesh position={[0.26, 0.1, -0.2]} castShadow>
+      <mesh position={[0.26, 0.1, -0.2]}>
         <dodecahedronGeometry args={[0.08, 0]} />
         <meshStandardMaterial color="#5a5854" roughness={0.92} />
       </mesh>
@@ -345,7 +345,7 @@ function DungeonEntranceBuilding({
   );
 }
 
-function Building({
+const Building = memo(function Building({
   kind,
   x,
   y,
@@ -386,7 +386,7 @@ function Building({
         <meshStandardMaterial map={roofTex} roughness={0.8} />
       </mesh>
       {/* Ridge cap */}
-      <mesh position={[0, h + 0.6, 0]} castShadow>
+      <mesh position={[0, h + 0.6, 0]}>
         <sphereGeometry args={[isRoyalHall ? 0.13 : 0.08, 10, 10]} />
         <meshStandardMaterial color={style.accent} roughness={0.5} metalness={0.3} />
       </mesh>
@@ -471,7 +471,7 @@ function Building({
       )}
     </group>
   );
-}
+});
 
 function Window({
   side,

@@ -45,3 +45,5 @@ Browser-first 2D top-down RPG proof of concept with:
 ## Notes for Phase 2
 
 - Keep `SaveRepository` interface and replace `LocalSaveRepository` with cloud-backed implementation (Supabase/Firebase) after authentication is added.
+- Run `npm run compress-assets` after updating `public/map.glb`, `public/idle.glb`, or `public/walk.glb`.
+- Convert `public/death.fbx` and `public/Knight D Pelegrini.fbx` to GLB with Blender or `FBX2glTF` before running the compression pipeline, since the script only processes GLB assets.

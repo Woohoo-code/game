@@ -3,7 +3,6 @@ import {
   armorSellDowngrade,
   bossEnemyForRealm,
   isRealmBossEnemyId,
-  ENEMIES,
   enemiesForRealm,
   ITEM_DATA,
   ITEM_PRIORITY,
@@ -43,6 +42,7 @@ import {
   RESOURCE_KEYS,
   emptyResourceBag
 } from "./data";
+import { ENEMY_BY_ID } from "./enemyLookup";
 import { elementBattleLogSuffix, elementDamageMultiplier, normalizeElementKind } from "./elements";
 import { LocalSaveRepository, type SaveRepository } from "./save";
 import {
@@ -309,6 +309,7 @@ class GameStore {
     pendingLevelUpCelebration: null,
     sleeping: false
   };
+  private snapshot: GameSnapshot = { ...this.state, _version: 0 };
 
   /** Bumps once per {@link emit}; aligned with {@link lastPersistedVersion} after save/load. */
   private contentVersion = 0;
@@ -338,7 +339,7 @@ class GameStore {
   }
 
   getSnapshot(): GameSnapshot {
-    return this.state;
+    return this.snapshot;
   }
 
   dismissLevelUpCelebration(): void {
@@ -926,7 +927,7 @@ class GameStore {
     const roamerIdx = floor.roamers.findIndex((r) => r.tx === tx && r.ty === ty);
     if (roamerIdx !== -1) {
       const roamer = floor.roamers[roamerIdx]!;
-      const def = ENEMIES.find((e) => e.id === roamer.enemyId);
+      const def = ENEMY_BY_ID.get(roamer.enemyId);
       // Always remove the roamer — even if the def lookup fails we don't want
       // the ghost tile blocking movement forever.
       floor.roamers = floor.roamers.filter((_, i) => i !== roamerIdx);
@@ -1065,28 +1066,26 @@ class GameStore {
       this.emit();
       return;
     }
+    regenerateWorld(randomSeed());
+    this.lastPersistedVersion = -1;
+    this.clearVictoryExitTimer();
+    this.state = {
+      player: initialPlayer(),
+      battle: initialBattle(),
+      world: initialWorld(),
+      eventLog: ["World reset complete. A new land has risen. Saved games cleared."],
+      ugc: initialUgc(),
+      story: initialStory(),
+      hasUnsavedChanges: true,
+      pendingLevelUpCelebration: null,
+      sleeping: false
+    };
+    this.refreshRoamingMonsters();
+    this.emit();
     void (async () => {
       try {
         await this.saveRepository.clearAll();
-      } catch {
-        this.logEvent("Could not clear saved games.");
-      }
-      regenerateWorld(randomSeed());
-      this.lastPersistedVersion = -1;
-      this.clearVictoryExitTimer();
-      this.state = {
-        player: initialPlayer(),
-        battle: initialBattle(),
-        world: initialWorld(),
-        eventLog: ["World reset complete. A new land has risen. Saved games cleared."],
-        ugc: initialUgc(),
-        story: initialStory(),
-        hasUnsavedChanges: true,
-        pendingLevelUpCelebration: null,
-        sleeping: false
-      };
-      this.refreshRoamingMonsters();
-      this.emit();
+      } catch {}
     })();
   }
 
@@ -1543,7 +1542,7 @@ class GameStore {
     const list = this.state.world.roamingMonsters ?? [];
     const row = list[idx];
     if (!row) return false;
-    const def = ENEMIES.find((e) => e.id === row.enemyId);
+    const def = ENEMY_BY_ID.get(row.enemyId);
     this.state.world.roamingMonsters = list.filter((_, i) => i !== idx);
     if (!def) {
       this.emit();
@@ -1653,7 +1652,7 @@ class GameStore {
     const encounterTerrain = terrainAt(playerTileX, playerTileY);
     const positional: { highGround?: boolean; ambush?: boolean } = {};
     if (encounterTerrain === "hill") positional.highGround = true;
-    if (encounterTerrain === "forest" || opts?.roamerEngage) positional.ambush = true;
+    if (opts?.roamerEngage) positional.ambush = true;
     this.state.battle = {
       inBattle: true,
       phase: this.playerSpeed() >= enemy.speed ? "playerTurn" : "enemyTurn",
@@ -2875,6 +2874,14 @@ class GameStore {
     } else {
       battleLoaded.nextHitMitigation = Math.min(0.55, Math.max(0, mit));
     }
+    const rawStun = (battleLoaded as any).stunTurns;
+    battleLoaded.stunTurns =
+      typeof rawStun === "number" && Number.isFinite(rawStun) ? Math.min(5, Math.max(0, Math.floor(rawStun))) : 0;
+    const rawGuard = (battleLoaded as any).guardEnergy;
+    battleLoaded.guardEnergy =
+      typeof rawGuard === "number" && Number.isFinite(rawGuard)
+        ? Math.min(100, Math.max(0, Math.floor(rawGuard)))
+        : 0;
     const vsUnknown = battleLoaded.victorySummary;
     if (
       vsUnknown &&
@@ -3336,10 +3343,10 @@ class GameStore {
     const enemy = this.state.battle.enemy;
     if (!enemy) return;
     if (enemy.hp <= 0) {
-      this.state.battle.phase = "won";
-      this.logBattle(`${enemy.name} defeated!`);
+      this.state.battle.phase = "victoryPending";
       this.applyRewards(enemy);
-      this.endBattle();
+      this.scheduleVictoryBattleExit();
+      this.emit();
       return;
     }
     this.state.battle.phase = "enemyTurn";
@@ -3743,6 +3750,7 @@ class GameStore {
     this.state.battle.enemy = null;
     this.state.battle.itemAttackBonus = 0;
     this.state.battle.itemDefenseBonus = 0;
+    this.state.battle.skillCooldown = 0;
     // Intentionally do NOT reset stance — the player's chosen fighting style
     // carries over to the next encounter. {@link startEncounter} reads this value.
     this.state.battle.dodgeReady = false;
@@ -4011,40 +4019,15 @@ class GameStore {
       this.lastPersistedVersion = this.contentVersion;
     }
     const hasUnsavedChanges = this.contentVersion !== this.lastPersistedVersion;
-    const pets = Array.isArray(this.state.player.pets) ? this.state.player.pets : [];
-    this.state = {
-      player: {
-        ...this.state.player,
-        items: mergeItemInventory(this.state.player.items),
-        itemHotbar: [...normalizeItemHotbar(this.state.player.itemHotbar ?? defaultItemHotbar())],
-        learnedSkills: [...(this.state.player.learnedSkills ?? ["spark"])],
-        npcPatronsUsed: [...(this.state.player.npcPatronsUsed ?? [])],
-        appearance: { ...this.state.player.appearance },
-        pets: pets.map((p) => ({ ...p }))
-      },
-      battle: {
-        ...this.state.battle,
-        skillCooldown: this.state.battle.skillCooldown,
-        log: [...this.state.battle.log],
-        enemy: this.state.battle.enemy ? { ...this.state.battle.enemy } : null
-      },
+    this.state.hasUnsavedChanges = hasUnsavedChanges;
+    this.snapshot = {
+      ...this.state,
+      player: { ...this.state.player },
+      battle: { ...this.state.battle },
       world: { ...this.state.world },
-      eventLog: [...this.state.eventLog],
-      ugc: {
-        ...this.state.ugc,
-        monsters: this.state.ugc.monsters.map((m) => ({ ...m })),
-        weapons: this.state.ugc.weapons.map((w) => ({ ...w })),
-        armor: this.state.ugc.armor.map((a) => ({ ...a }))
-      },
-      story: {
-        ...this.state.story,
-        biomesVisited: [...this.state.story.biomesVisited],
-        uniqueSpeciesDefeated: [...this.state.story.uniqueSpeciesDefeated],
-        completed: this.state.story.completed.map((c) => ({ ...c }))
-      },
-      hasUnsavedChanges,
-      pendingLevelUpCelebration: this.state.pendingLevelUpCelebration ?? null,
-      sleeping: this.state.sleeping ?? false
+      ugc: { ...this.state.ugc },
+      story: { ...this.state.story },
+      _version: this.contentVersion
     };
     this.events.dispatchEvent(new Event("change"));
   }

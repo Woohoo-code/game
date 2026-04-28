@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import * as THREE from "three";
 import type { BiomeKind } from "../game/types";
 import { MAP_H, MAP_W, biomeAt, terrainAt, townAtTile } from "../game/worldMap";
-import { useGameStore } from "../game/useGameStore";
+import { useGameStoreSelector } from "../game/useGameStore";
 
 interface Placement {
   x: number;
@@ -11,6 +11,12 @@ interface Placement {
   scale: number;
   rot: number;
   variant: number;
+}
+
+interface PlacementColorGroup {
+  color: string;
+  items: Placement[];
+  avgScale: number;
 }
 
 function tileHash(x: number, y: number, salt = 0): { r1: number; r2: number; r3: number; r4: number } {
@@ -30,11 +36,13 @@ function tileHash(x: number, y: number, salt = 0): { r1: number; r2: number; r3:
 interface GatheredDecorations {
   grass: Placement[];
   flowers: Placement[];
+  flowerHeadGroups: PlacementColorGroup[];
   rocks: Placement[];
   lilyPads: Placement[];
   cacti: Placement[];
   iceCrystals: Placement[];
   mushrooms: Placement[];
+  mushroomCapGroups: PlacementColorGroup[];
   snowMounds: Placement[];
   reeds: Placement[];
 }
@@ -43,11 +51,13 @@ function emptyDecorations(): GatheredDecorations {
   return {
     grass: [],
     flowers: [],
+    flowerHeadGroups: [],
     rocks: [],
     lilyPads: [],
     cacti: [],
     iceCrystals: [],
     mushrooms: [],
+    mushroomCapGroups: [],
     snowMounds: [],
     reeds: []
   };
@@ -60,8 +70,7 @@ function emptyDecorations(): GatheredDecorations {
  * meadows and forests.
  */
 export function GroundDecorations() {
-  const snapshot = useGameStore();
-  const worldVersion = snapshot.world.worldVersion;
+  const worldVersion = useGameStoreSelector((s) => s.world.worldVersion);
 
   const dec = useMemo(() => {
     const out = emptyDecorations();
@@ -117,6 +126,8 @@ export function GroundDecorations() {
         }
       }
     }
+    out.flowerHeadGroups = groupPlacementsByColor(out.flowers, flowerColor);
+    out.mushroomCapGroups = groupPlacementsByColor(out.mushrooms, mushroomCapColor);
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [worldVersion]);
@@ -124,12 +135,12 @@ export function GroundDecorations() {
   return (
     <>
       <GrassTufts items={dec.grass} />
-      <Flowers items={dec.flowers} />
+      <Flowers items={dec.flowers} headGroups={dec.flowerHeadGroups} />
       <Rocks items={dec.rocks} />
       <LilyPads items={dec.lilyPads} />
       <Cacti items={dec.cacti} />
       <IceCrystals items={dec.iceCrystals} />
-      <Mushrooms items={dec.mushrooms} />
+      <Mushrooms items={dec.mushrooms} capGroups={dec.mushroomCapGroups} />
       <SnowMounds items={dec.snowMounds} />
       <Reeds items={dec.reeds} />
     </>
@@ -313,7 +324,36 @@ function GrassTufts({ items }: { items: Placement[] }) {
 
 const FLOWER_PALETTE = ["#f4a9c7", "#f2d76a", "#c88df0", "#ff9466"];
 
-function Flowers({ items }: { items: Placement[] }) {
+function flowerColor(variant: number) {
+  return FLOWER_PALETTE[variant % FLOWER_PALETTE.length];
+}
+
+function mushroomCapColor(variant: number) {
+  return variant === 1 ? "#c0704f" : "#c24c3c";
+}
+
+function groupPlacementsByColor(
+  items: Placement[],
+  colorForVariant: (variant: number) => string
+): PlacementColorGroup[] {
+  const groups = new Map<string, Placement[]>();
+  for (const item of items) {
+    const color = colorForVariant(item.variant);
+    const colorItems = groups.get(color);
+    if (colorItems) {
+      colorItems.push(item);
+    } else {
+      groups.set(color, [item]);
+    }
+  }
+  return Array.from(groups, ([color, colorItems]) => ({
+    color,
+    items: colorItems,
+    avgScale: colorItems.reduce((sum, item) => sum + item.scale, 0) / colorItems.length
+  }));
+}
+
+function Flowers({ items, headGroups }: { items: Placement[]; headGroups: PlacementColorGroup[] }) {
   if (items.length === 0) return null;
   return (
     <>
@@ -324,16 +364,14 @@ function Flowers({ items }: { items: Placement[] }) {
           <Instance key={i} position={[p.x, 0.11, p.z]} />
         ))}
       </Instances>
-      {items.map((p, i) => (
-        <mesh key={i} position={[p.x, 0.25, p.z]} castShadow>
-          <sphereGeometry args={[0.06 * p.scale, 8, 6]} />
-          <meshStandardMaterial
-            color={FLOWER_PALETTE[p.variant % FLOWER_PALETTE.length]}
-            emissive={FLOWER_PALETTE[p.variant % FLOWER_PALETTE.length]}
-            emissiveIntensity={0.15}
-            roughness={0.7}
-          />
-        </mesh>
+      {headGroups.map((group) => (
+        <Instances key={group.color} limit={group.items.length}>
+          <sphereGeometry args={[0.06, 6, 6]} />
+          <meshStandardMaterial color={group.color} emissive={group.color} emissiveIntensity={0.15} roughness={0.7} />
+          {group.items.map((p, i) => (
+            <Instance key={i} position={[p.x, 0.25, p.z]} scale={p.scale} />
+          ))}
+        </Instances>
       ))}
     </>
   );
@@ -376,7 +414,7 @@ function LilyPads({ items }: { items: Placement[] }) {
       {items
         .filter((_, i) => i % 4 === 0)
         .map((p, i) => (
-          <mesh key={i} position={[p.x, -0.12, p.z]} rotation={[0, p.rot, 0]} castShadow>
+          <mesh key={i} position={[p.x, -0.12, p.z]} rotation={[0, p.rot, 0]}>
             <sphereGeometry args={[0.08 * p.scale, 8, 6]} />
             <meshStandardMaterial color="#f6e6ef" emissive="#e6b7cf" emissiveIntensity={0.2} roughness={0.6} />
           </mesh>
@@ -391,7 +429,7 @@ function Cacti({ items }: { items: Placement[] }) {
   return (
     <>
       {/* Tall body */}
-      <Instances limit={Math.max(items.length, 1)} castShadow>
+      <Instances limit={Math.max(items.length, 1)}>
         <cylinderGeometry args={[0.08, 0.1, 0.7, 8]} />
         <meshStandardMaterial color={green} roughness={0.85} />
         {items.map((p, i) => (
@@ -399,7 +437,7 @@ function Cacti({ items }: { items: Placement[] }) {
         ))}
       </Instances>
       {/* Side arm (only some variants) */}
-      <Instances limit={Math.max(items.length, 1)} castShadow>
+      <Instances limit={Math.max(items.length, 1)}>
         <capsuleGeometry args={[0.05, 0.25, 4, 8]} />
         <meshStandardMaterial color={green} roughness={0.85} />
         {items.map((p, i) => {
@@ -469,13 +507,12 @@ function IceCrystals({ items }: { items: Placement[] }) {
   );
 }
 
-function Mushrooms({ items }: { items: Placement[] }) {
+function Mushrooms({ items, capGroups }: { items: Placement[]; capGroups: PlacementColorGroup[] }) {
   if (items.length === 0) return null;
-  const capColor = (variant: number) => (variant === 1 ? "#c0704f" : "#c24c3c");
   return (
     <>
       {/* Stems */}
-      <Instances limit={Math.max(items.length, 1)} castShadow>
+      <Instances limit={Math.max(items.length, 1)}>
         <cylinderGeometry args={[0.03, 0.04, 0.14, 6]} />
         <meshStandardMaterial color="#f0e5c6" roughness={0.9} />
         {items.map((p, i) => (
@@ -483,11 +520,14 @@ function Mushrooms({ items }: { items: Placement[] }) {
         ))}
       </Instances>
       {/* Caps */}
-      {items.map((p, i) => (
-        <mesh key={i} position={[p.x, 0.16 * p.scale, p.z]} castShadow>
-          <sphereGeometry args={[0.08 * p.scale, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2]} />
-          <meshStandardMaterial color={capColor(p.variant)} roughness={0.7} />
-        </mesh>
+      {capGroups.map((group) => (
+        <Instances key={group.color} limit={group.items.length}>
+          <sphereGeometry args={[0.08 * group.avgScale, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <meshStandardMaterial color={group.color} roughness={0.7} />
+          {group.items.map((p, i) => (
+            <Instance key={i} position={[p.x, 0.16 * p.scale, p.z]} scale={p.scale / group.avgScale} />
+          ))}
+        </Instances>
       ))}
     </>
   );
@@ -541,8 +581,7 @@ function Reeds({ items }: { items: Placement[] }) {
 
 /** Semi-transparent wooden walls around non-castle towns (visual only; walk-through). */
 export function TownFencing() {
-  const snapshot = useGameStore();
-  const worldVersion = snapshot.world.worldVersion;
+  const worldVersion = useGameStoreSelector((s) => s.world.worldVersion);
 
   const { walls, posts } = useMemo(() => {
     const list: { x: number; z: number; rot: number }[] = [];
@@ -619,8 +658,7 @@ export function TownFencing() {
 
 /** Ambient floating particles above water/forest for atmosphere — biome-tinted. */
 export function AmbientSparkles() {
-  const snapshot = useGameStore();
-  const worldVersion = snapshot.world.worldVersion;
+  const worldVersion = useGameStoreSelector((s) => s.world.worldVersion);
 
   const sparkles = useMemo(() => {
     const list: { x: number; y: number; z: number; color: string }[] = [];

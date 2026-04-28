@@ -13,6 +13,8 @@ import type {
   WeaponKey
 } from "./types";
 
+const ENEMY_BY_ID_LOCAL = new Map<string, EnemyDefinition>();
+
 /** Max attack the active pet adds to your strike power (basic attack + skills). */
 export const PET_ATTACK_BUFF_CAP = 10;
 
@@ -1695,7 +1697,11 @@ export function getUnlockedSkills(level: number): SkillKey[] {
 
 /** Resolve element for saves / legacy encounters that omit {@link EnemyDefinition.element}. */
 export function defaultElementForEnemyId(id: string): ElementKind {
-  const row = ENEMIES.find((e) => e.id === id);
+  let row = ENEMY_BY_ID_LOCAL.get(id);
+  if (!row) {
+    row = ENEMIES.find((e) => e.id === id);
+    if (row) ENEMY_BY_ID_LOCAL.set(id, row);
+  }
   if (row) return row.element;
   if (id === BOSS_ENEMY.id) return BOSS_ENEMY.element;
   if (id === REALM_TWO_BOSS_ENEMY.id) return REALM_TWO_BOSS_ENEMY.element;

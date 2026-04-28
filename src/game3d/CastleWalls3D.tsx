@@ -8,12 +8,27 @@ const WALL_H = 1.62;
 const THICK = 0.17;
 const MERLON_H = 0.22;
 const MERLON_W = 0.26;
+const TINT_CACHE_LIMIT = 512;
+const tintCache = new Map<string, string>();
 
 /** Slight per-tile warmth so long runs of wall are not perfectly identical. */
 function stoneTintHex(tx: number, ty: number): string {
+  const key = `${tx},${ty}`;
+  const cached = tintCache.get(key);
+  if (cached) {
+    tintCache.delete(key);
+    tintCache.set(key, cached);
+    return cached;
+  }
   const h = ((tx * 31 + ty * 17) & 0xff) / 255;
   const c = new THREE.Color(0.94 + h * 0.04, 0.93 + (1 - h) * 0.04, 0.92 + h * 0.03);
-  return `#${c.getHexString()}`;
+  const tint = `#${c.getHexString()}`;
+  tintCache.set(key, tint);
+  if (tintCache.size > TINT_CACHE_LIMIT) {
+    const oldestKey = tintCache.keys().next().value;
+    if (oldestKey) tintCache.delete(oldestKey);
+  }
+  return tint;
 }
 
 function WallSegmentMesh({

@@ -975,7 +975,31 @@ function ProceduralBody({
 
 // Start fetching the idle animation as soon as this module is imported so it
 // arrives before the component mounts (critical-path asset).
-useGLTF.preload(publicAssetUrl("idle.glb"));
+useGLTF.preload(publicAssetUrl("idle.glb"), undefined, true);
+useFBX.preload(publicAssetUrl("Knight D Pelegrini.fbx"));
+
+let deferredNonCriticalPreloadsScheduled = false;
+
+export function deferNonCriticalPreloads() {
+  if (deferredNonCriticalPreloadsScheduled) return;
+  deferredNonCriticalPreloadsScheduled = true;
+
+  const load = () => {
+    useGLTF.preload(publicAssetUrl("walk.glb"), undefined, true);
+    useFBX.preload(publicAssetUrl("death.fbx"));
+  };
+
+  const globalScope = globalThis as {
+    requestIdleCallback?: (callback: () => void) => number;
+  };
+
+  if (typeof globalScope.requestIdleCallback === "function") {
+    globalScope.requestIdleCallback(load);
+    return;
+  }
+
+  window.setTimeout(load, 2000);
+}
 
 /* ── Shared type for lazily-loaded animation actions ──────────────────── */
 
@@ -1072,18 +1096,18 @@ function retargetGlbClipToKnight(clip: THREE.AnimationClip): THREE.AnimationClip
  * retarget; `walk.glb` is a fallback and only animates if it matches that rig (otherwise T-pose).
  */
 function WalkAnimLoader({
-  fbx,
+  embeddedAnimations,
   mixer,
   lazyRef,
 }: {
-  fbx: THREE.Object3D;
+  embeddedAnimations: THREE.AnimationClip[];
   mixer: THREE.AnimationMixer;
   lazyRef: MutableRefObject<LazyAnimActions>;
 }) {
-  const { animations: walkGlb } = useGLTF(publicAssetUrl("walk.glb"));
+  const { animations: walkGlb } = useGLTF(publicAssetUrl("walk.glb"), undefined, true);
   const retargetedWalkGlb = useMemo(() => walkGlb.map(retargetGlbClipToKnight), [walkGlb]);
   useEffect(() => {
-    const fromFbx = fbx.animations.find((a) =>
+    const fromEmbedded = embeddedAnimations.find((a) =>
       /walk|Walk|WALK|jog|Jog|JOG|run|Run|RUN|march|March|forward|Forward/.test(a.name),
     );
     // Never fall back to `walk.glb` animations[0] — that clip is often a swim/prone take and
@@ -1091,7 +1115,7 @@ function WalkAnimLoader({
     const fromGlb = retargetedWalkGlb.find((a) =>
       /Walk_Loop|walk|Walk|WALK|jog|Jog|run|Run|march|March|forward|Forward/.test(a.name),
     );
-    const clip = fromFbx ?? fromGlb ?? null;
+    const clip = fromEmbedded ?? fromGlb ?? null;
     if (clip) {
       const act = mixer.clipAction(clip);
       act.loop = THREE.LoopRepeat;
@@ -1104,7 +1128,7 @@ function WalkAnimLoader({
       lazyRef.current.walk?.stop();
       lazyRef.current.walk = null;
     };
-  }, [fbx, retargetedWalkGlb, mixer, lazyRef]);
+  }, [embeddedAnimations, retargetedWalkGlb, mixer, lazyRef]);
   return null;
 }
 
@@ -1117,20 +1141,21 @@ function DeathAnimLoader({
   mixer: THREE.AnimationMixer;
   lazyRef: MutableRefObject<LazyAnimActions>;
 }) {
-  const deathFbx = useFBX(publicAssetUrl("death.fbx"));
+  const deathFbx = useFBX(publicAssetUrl("death.fbx")) as THREE.Group;
+  const deathAnimations = deathFbx.animations;
   useEffect(() => {
-    if (deathFbx.animations.length > 0) {
-      lazyRef.current.death = mixer.clipAction(deathFbx.animations[0]);
+    if (deathAnimations.length > 0) {
+      lazyRef.current.death = mixer.clipAction(deathAnimations[0]);
     }
     return () => {
       lazyRef.current.death?.stop();
       lazyRef.current.death = null;
     };
-  }, [deathFbx, mixer, lazyRef]);
+  }, [deathAnimations, mixer, lazyRef]);
   return null;
 }
 
-/* ── FBX character (inner, suspending) ─────────────────────────────────── */
+/* ── Character rig (inner, suspending) ─────────────────────────────────── */
 
 /** How strongly hero color choices shift each material from its authored base. */
 const FBX_TINT_BLEND = 0.52;
@@ -1179,7 +1204,7 @@ function resolveFbxTintSlot(meshName: string, matName: string): FbxTintSlot | nu
 }
 
 /** Loads the Knight FBX and drives all its animations.
- *  This component suspends (via useFBX / useGLTF) until both the base model
+ *  This component suspends (via useFBX/useGLTF) until both the base model
  *  and idle animation are ready — CharacterModel shows ProceduralBody as the
  *  Suspense fallback in the meantime, so only ONE geometry is ever visible. */
 function FBXCharacterInner({
@@ -1190,22 +1215,28 @@ function FBXCharacterInner({
   movingRef?: MutableRefObject<boolean>;
 }) {
   const fbx = useFBX(publicAssetUrl("Knight D Pelegrini.fbx")) as THREE.Group;
-  const { animations: idleAnims } = useGLTF(publicAssetUrl("idle.glb"));
+  const knightScene = fbx;
+  const knightAnimations = fbx.animations;
+  const { animations: idleAnims } = useGLTF(publicAssetUrl("idle.glb"), undefined, true);
   const retargetedIdleAnims = useMemo(() => idleAnims.map(retargetGlbClipToKnight), [idleAnims]);
+
+  useEffect(() => {
+    deferNonCriticalPreloads();
+  }, []);
 
   /**
    * Bind all eager clips through Drei's animation helper. The GLB idle clip
-   * targets the Knight FBX rig by bone names; using a separate manual mixer can
+   * targets the Knight rig by bone names; using a separate manual mixer can
    * leave the skinned mesh in bind pose on first paint / page deploys.
    */
-  const fbxClips = useMemo(() => [...fbx.animations, ...retargetedIdleAnims], [fbx, retargetedIdleAnims]);
-  const { actions, names, mixer } = useAnimations(fbxClips, fbx);
+  const fbxClips = useMemo(() => [...knightAnimations, ...retargetedIdleAnims], [knightAnimations, retargetedIdleAnims]);
+  const { actions, names, mixer } = useAnimations(fbxClips, knightScene);
 
   useLayoutEffect(() => {
     const skin = new THREE.Color(appearance.skin);
     const outfit = new THREE.Color(appearance.outfit);
     const pants = new THREE.Color(appearance.pants);
-    fbx.traverse((child) => {
+    knightScene.traverse((child) => {
       if (!(child instanceof THREE.Mesh)) return;
       const childData = child.userData as { fbxTintMaterialsCloned?: boolean };
       if (!childData.fbxTintMaterialsCloned) {
@@ -1230,7 +1261,7 @@ function FBXCharacterInner({
         mat.color.copy(base).lerp(target, FBX_TINT_BLEND);
       }
     });
-  }, [fbx, appearance.skin, appearance.outfit, appearance.pants]);
+  }, [knightScene, appearance.skin, appearance.outfit, appearance.pants]);
 
   const lazyActionsRef = useRef<LazyAnimActions>({ walk: null, death: null });
   /** Once per HP≤0 spell — avoids restarting death every frame after the clip finishes, and avoids parent/child `useFrame` ordering issues with a ref. */
@@ -1256,11 +1287,11 @@ function FBXCharacterInner({
     ];
     const next: typeof lowerBodyPoseRef.current = {};
     for (const [key, boneName] of byKey) {
-      const bone = fbx.getObjectByName(boneName);
+      const bone = knightScene.getObjectByName(boneName);
       if (bone) next[key] = { bone, base: bone.quaternion.clone() };
     }
     lowerBodyPoseRef.current = next;
-  }, [fbx]);
+  }, [knightScene]);
 
   /**
    * Idle clip: `idle.glb` ships `Idle_No_Loop`; the Knight mesh FBX may only
@@ -1271,7 +1302,7 @@ function FBXCharacterInner({
     const glbIdle = retargetedIdleAnims.find(
       (a) => /idle|Idl|breathe|standing|neutral/i.test(a.name) && a.name.length > 0,
     );
-    const fbxIdle = fbx.animations.find(
+    const fbxIdle = knightAnimations.find(
       (a) =>
         a.duration > 0.2 &&
         !/^mixamo\.com$/i.test(a.name.trim()) &&
@@ -1283,7 +1314,7 @@ function FBXCharacterInner({
       fbxIdle?.name ??
       names.find((n) => /idle/i.test(n) && !/^mixamo\.com$/i.test(n.trim())) ??
       "";
-  }, [fbx, retargetedIdleAnims, names]);
+  }, [knightAnimations, retargetedIdleAnims, names]);
 
   useFrame((_, delta) => {
     const idleAnimName = idleNameRef.current;
@@ -1356,13 +1387,13 @@ function FBXCharacterInner({
   });
 
   useEffect(() => {
-    fbx.traverse((child) => {
+    knightScene.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         child.castShadow = true;
         child.receiveShadow = true;
       }
     });
-  }, [fbx]);
+  }, [knightScene]);
 
   return (
     <group>
@@ -1370,11 +1401,11 @@ function FBXCharacterInner({
         If the hero still looks ~90°/180° off after Player3D facing fixes, add rotation.y on
         this inner group (e.g. Math.PI) — FBX forward axes vary by export. */}
       <group scale={[0.01, 0.01, 0.01]} position={[0, 0, 0]}>
-        <primitive object={fbx} />
+        <primitive object={knightScene} />
       </group>
       {/* Walk animation — loads lazily, doesn't block first paint */}
       <Suspense fallback={null}>
-        <WalkAnimLoader fbx={fbx} mixer={mixer} lazyRef={lazyActionsRef} />
+        <WalkAnimLoader embeddedAnimations={knightAnimations} mixer={mixer} lazyRef={lazyActionsRef} />
       </Suspense>
       {/* Death animation — loads lazily, only needed when character dies */}
       <Suspense fallback={null}>
