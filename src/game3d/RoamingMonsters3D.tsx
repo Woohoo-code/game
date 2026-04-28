@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { ENEMIES } from "../game/data";
 import { gameStore } from "../game/state";
 import type { EnemyState, RoamingMonster } from "../game/types";
-import { useGameStore } from "../game/useGameStore";
+import { useGameStoreSelector } from "../game/useGameStore";
 import { MAP_H, MAP_W, TILE, isBlocked, isTownTile } from "../game/worldMap";
 import { MonsterModel } from "./MonsterModels";
 
@@ -80,6 +80,9 @@ function RoamerMob3D({ row, worldVersion }: { row: RoamingMonster; worldVersion:
   const wanderPhase = useRef(0);
   const ph0 = useMemo(() => phaseSeed(row.id, 1), [row.id]);
   const ph1 = useMemo(() => phaseSeed(row.id, 2), [row.id]);
+  /** Cached snapshot ref — updated via subscription, never read inside useFrame via function call. */
+  const snapRef = useRef(gameStore.getSnapshot());
+  useEffect(() => gameStore.subscribe(() => { snapRef.current = gameStore.getSnapshot(); }), []);
 
   useEffect(() => {
     resetRoamerPos(row.id, row.tx, row.ty, pos.current, wanderPhase, ph0);
@@ -87,7 +90,7 @@ function RoamerMob3D({ row, worldVersion }: { row: RoamingMonster; worldVersion:
   }, [row.id, row.tx, row.ty, worldVersion, ph0]);
 
   useFrame((_, delta) => {
-    const snap = gameStore.getSnapshot();
+    const snap = snapRef.current;
     if (snap.battle.inBattle) return;
 
     const pTx = snap.player.x / TILE;
@@ -153,10 +156,15 @@ function RoamerMob3D({ row, worldVersion }: { row: RoamingMonster; worldVersion:
 
 /** Visible overworld foes (random-encounter species stay hidden until a fight rolls). */
 export function RoamingMonsters3D() {
-  const snapshot = useGameStore();
-  const rows = snapshot.world.roamingMonsters ?? [];
-  const worldVersion = snapshot.world.worldVersion;
-  if (snapshot.battle.inBattle || rows.length === 0) return null;
+  const { roamingMonsters, worldVersion, inBattle } = useGameStoreSelector(
+    (s) => ({
+      roamingMonsters: s.world.roamingMonsters,
+      worldVersion: s.world.worldVersion,
+      inBattle: s.battle.inBattle,
+    })
+  );
+  const rows = roamingMonsters ?? [];
+  if (inBattle || rows.length === 0) return null;
 
   return (
     <group name="roaming-monsters">

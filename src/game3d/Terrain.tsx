@@ -9,7 +9,7 @@ import {
   biomeAt,
   terrainAt,
 } from "../game/worldMap";
-import { useGameStore } from "../game/useGameStore";
+import { useGameStoreSelector } from "../game/useGameStore";
 import { biomeTerrainTint, getBiomeGroundTexture, getTerrainTexture } from "./textures";
 
 /** Each terrain kind sits at a slightly different height so water dips and road rides slightly above grass. */
@@ -197,9 +197,11 @@ function buildTerrainGroups(): TerrainGroup[] {
 }
 
 export function Terrain() {
-  const snapshot = useGameStore();
-  const worldVersion = snapshot.world.worldVersion;
-  const realmTier = Math.max(1, Math.floor(snapshot.world.realmTier ?? 1));
+  const { worldVersion, realmTier: rawRealmTier } = useGameStoreSelector((s) => ({
+    worldVersion: s.world.worldVersion,
+    realmTier: s.world.realmTier,
+  }));
+  const realmTier = Math.max(1, Math.floor(rawRealmTier ?? 1));
 
   const terrainGroups = useMemo(buildTerrainGroups, [worldVersion]);
   const waterMats = useRef<THREE.MeshStandardMaterial[]>([]);
@@ -420,9 +422,11 @@ function BiomeTrees({ biomeTrees, palette, treeGeometries }: BiomeTreesProps) {
 
 /** Decorative tree clusters rendered on forest tiles with slight variation + biome palette. */
 export function Forests() {
-  const snapshot = useGameStore();
-  const worldVersion = snapshot.world.worldVersion;
-  const realmTier = Math.max(1, Math.floor(snapshot.world.realmTier ?? 1));
+  const { worldVersion, realmTier: rawRealmTier } = useGameStoreSelector((s) => ({
+    worldVersion: s.world.worldVersion,
+    realmTier: s.world.realmTier,
+  }));
+  const realmTier = Math.max(1, Math.floor(rawRealmTier ?? 1));
 
   const trees = useMemo(() => {
     const list: {
