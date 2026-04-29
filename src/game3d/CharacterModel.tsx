@@ -1,4 +1,4 @@
-import { useRef, useMemo, type MutableRefObject, useEffect, useLayoutEffect, Suspense } from "react";
+import { memo, useRef, useMemo, type MutableRefObject, useEffect, useLayoutEffect, Suspense } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { useAnimations, useFBX, useGLTF } from "@react-three/drei";
@@ -1417,7 +1417,7 @@ function FBXCharacterInner({
 
 /* ── Root model ────────────────────────────────────────────────────────── */
 
-export function CharacterModel({
+export const CharacterModel = memo(function CharacterModel({
   appearance,
   omitContactShadow = false,
   hideLoadingFallback = false,
@@ -1463,4 +1463,4 @@ export function CharacterModel({
       </group>
     </group>
   );
-}
+});

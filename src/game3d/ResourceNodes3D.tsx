@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { RESOURCES, type ResourceDefinition, type ResourceShape } from "../game/data";
 import type { ResourceNode } from "../game/types";
 import { MAP_H, MAP_W } from "../game/worldMap";
@@ -60,7 +60,7 @@ function hashInt(v: number): number {
   return (h ^ (h >>> 16)) >>> 0;
 }
 
-function ResourcePropModel({
+const ResourcePropModel = memo(function ResourcePropModel({
   shape,
   def
 }: {
@@ -176,4 +176,4 @@ function ResourcePropModel({
       </mesh>
     </group>
   );
-}
+});

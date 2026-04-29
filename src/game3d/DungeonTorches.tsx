@@ -1,5 +1,5 @@
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { TerrainKind } from "../game/worldMap";
 import { MAP_H, MAP_W, biomeAt, terrainAt } from "../game/worldMap";
@@ -78,23 +78,34 @@ function gatherSwampTorchCandidates(): TorchPlacement[] {
   return chosen;
 }
 
+/**
+ * Stateless torch mesh — no per-torch useFrame.
+ * The parent DungeonTorches batches all light updates in a single useFrame.
+ */
 function Torch({
   x,
   y,
   z,
-  phase,
-  nightBlend
-}: TorchPlacement & { nightBlend: number }) {
+  nightBlend,
+  index,
+  lightsRef,
+}: TorchPlacement & {
+  nightBlend: number;
+  index: number;
+  lightsRef: React.MutableRefObject<(THREE.PointLight | null)[]>;
+}) {
   const lightRef = useRef<THREE.PointLight>(null);
   const baseIntensity = THREE.MathUtils.lerp(1.15, 1.75, nightBlend);
   const distance = THREE.MathUtils.lerp(6.2, 8.8, nightBlend);
 
-  useFrame(({ clock }) => {
-    const L = lightRef.current;
-    if (!L) return;
-    const flicker = 0.88 + 0.12 * Math.sin(clock.elapsedTime * 6.2 + phase);
-    L.intensity = baseIntensity * flicker;
-  });
+  // Register this torch's point-light into the parent's flat array so the
+  // single parent useFrame can update all intensities in one loop.
+  useLayoutEffect(() => {
+    lightsRef.current[index] = lightRef.current;
+    return () => {
+      lightsRef.current[index] = null;
+    };
+  }, [lightsRef, index]);
 
   return (
     <group position={[x, y, z]}>
@@ -128,6 +139,9 @@ function Torch({
 /**
  * Swamp regions read as dungeon-like wilds: scattered torches with warm point lights
  * so mud and paths fall into pockets of light between darker stretches.
+ *
+ * All per-torch animation is batched into a single useFrame here instead of
+ * one useFrame per Torch component (saves up to 30 subscriber registrations).
  */
 export function DungeonTorches() {
   const { worldVersion, worldTimeRaw } = useGameStoreSelector((s) => ({
@@ -138,12 +152,40 @@ export function DungeonTorches() {
   const nightBlend = useMemo(() => nightVisualBlend(worldTime), [worldTime]);
   const placements = useMemo(() => gatherSwampTorchCandidates(), [worldVersion]);
 
+  // Flat array of point light refs; updated by each Torch via useLayoutEffect.
+  const lightsRef = useRef<(THREE.PointLight | null)[]>([]);
+
+  // Keep nightBlend accessible inside useFrame without capturing stale closure.
+  const nightBlendRef = useRef(nightBlend);
+  useEffect(() => {
+    nightBlendRef.current = nightBlend;
+  }, [nightBlend]);
+
+  // Single batched frame loop for all torch flicker — replaces up to 30 individual hooks.
+  useFrame(({ clock }) => {
+    const count = placements.length;
+    if (count === 0) return;
+    const t = clock.elapsedTime;
+    const base = THREE.MathUtils.lerp(1.15, 1.75, nightBlendRef.current);
+    for (let i = 0; i < count; i++) {
+      const L = lightsRef.current[i];
+      if (!L) continue;
+      L.intensity = base * (0.88 + 0.12 * Math.sin(t * 6.2 + placements[i].phase));
+    }
+  });
+
   if (placements.length === 0) return null;
 
   return (
     <group name="dungeonTorches">
       {placements.map((p, i) => (
-        <Torch key={`torch-${worldVersion}-${i}-${p.x}-${p.z}`} {...p} nightBlend={nightBlend} />
+        <Torch
+          key={`torch-${worldVersion}-${i}-${p.x}-${p.z}`}
+          {...p}
+          nightBlend={nightBlend}
+          index={i}
+          lightsRef={lightsRef}
+        />
       ))}
     </group>
   );

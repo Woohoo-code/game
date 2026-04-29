@@ -397,6 +397,7 @@ function Rocks({ items }: { items: Placement[] }) {
 
 function LilyPads({ items }: { items: Placement[] }) {
   if (items.length === 0) return null;
+  const blossomItems = items.filter((_, i) => i % 4 === 0);
   return (
     <>
       <Instances limit={Math.max(items.length, 1)}>
@@ -411,14 +412,15 @@ function LilyPads({ items }: { items: Placement[] }) {
           />
         ))}
       </Instances>
-      {items
-        .filter((_, i) => i % 4 === 0)
-        .map((p, i) => (
-          <mesh key={i} position={[p.x, -0.12, p.z]} rotation={[0, p.rot, 0]}>
-            <sphereGeometry args={[0.08 * p.scale, 8, 6]} />
-            <meshStandardMaterial color="#f6e6ef" emissive="#e6b7cf" emissiveIntensity={0.2} roughness={0.6} />
-          </mesh>
-        ))}
+      {blossomItems.length > 0 && (
+        <Instances limit={blossomItems.length}>
+          <sphereGeometry args={[0.08, 8, 6]} />
+          <meshStandardMaterial color="#f6e6ef" emissive="#e6b7cf" emissiveIntensity={0.2} roughness={0.6} />
+          {blossomItems.map((p, i) => (
+            <Instance key={i} position={[p.x, -0.12, p.z]} rotation={[0, p.rot, 0]} scale={p.scale} />
+          ))}
+        </Instances>
+      )}
     </>
   );
 }
@@ -426,6 +428,7 @@ function LilyPads({ items }: { items: Placement[] }) {
 function Cacti({ items }: { items: Placement[] }) {
   if (items.length === 0) return null;
   const green = "#3e7a48";
+  const blossomItems = items.filter((p) => p.variant === 2);
   return (
     <>
       {/* Tall body */}
@@ -454,13 +457,14 @@ function Cacti({ items }: { items: Placement[] }) {
         })}
       </Instances>
       {/* Small blossoms on top */}
-      {items.map((p, i) =>
-        p.variant === 2 ? (
-          <mesh key={i} position={[p.x, 0.74 * p.scale, p.z]}>
-            <sphereGeometry args={[0.06 * p.scale, 8, 6]} />
-            <meshStandardMaterial color="#ffb080" emissive="#ff7844" emissiveIntensity={0.2} />
-          </mesh>
-        ) : null
+      {blossomItems.length > 0 && (
+        <Instances limit={blossomItems.length}>
+          <sphereGeometry args={[0.06, 8, 6]} />
+          <meshStandardMaterial color="#ffb080" emissive="#ff7844" emissiveIntensity={0.2} />
+          {blossomItems.map((p, i) => (
+            <Instance key={i} position={[p.x, 0.74 * p.scale, p.z]} scale={p.scale} />
+          ))}
+        </Instances>
       )}
     </>
   );

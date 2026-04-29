@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { memo, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { EnemyState, MonsterBodyShape } from "../game/types";
@@ -10,20 +10,34 @@ interface ShapeProps {
   accent?: string;
 }
 
-/** Slow passive rotation + subtle bob for a "turntable" feel. */
-function useIdleTurntable(speed = 0.45) {
-  const group = useRef<THREE.Group>(null);
-  useFrame((_, dt) => {
-    if (!group.current) return;
-    group.current.rotation.y += dt * speed;
-  });
-  return group;
-}
+// ── Module-level constants to avoid per-render allocations ──────────────────
+
+/** Spider: eye Z offsets */
+const SPIDER_EYE_Z = [-0.06, -0.02, 0.02, 0.06] as const;
+/** Spider: leg spread angles */
+const SPIDER_LEG_ANGLES = [-0.9, -0.4, 0.4, 0.9] as const;
+/** Scorpion: abdomen segment X positions */
+const SCORPION_SEG_X = [-0.05, -0.2, -0.35] as const;
+/** Scorpion: pincer side signs */
+const SCORPION_PINCER_SIGNS = [1, -1] as const;
+/** DireWolf: leg [x, z] positions */
+const DIREWOLF_LEG_XZ: [number, number][] = [
+  [0.25, 0.13], [0.25, -0.13], [-0.22, 0.13], [-0.22, -0.13],
+];
+/** CinderRegent: vent X positions */
+const CINDER_VENT_X = [-0.12, 0, 0.12] as const;
+/** CinderRegent: shard/ember indices 0-5 */
+const CINDER_6_INDICES = [0, 1, 2, 3, 4, 5] as const;
+/** CinderRegent: crown shard indices 0-3 */
+const CINDER_4_INDICES = [0, 1, 2, 3] as const;
+
+// ── Monster components ───────────────────────────────────────────────────────
 
 function Slime({ primary = "#52bcd0", accent = "#0d2b34" }: ShapeProps) {
-  const group = useIdleTurntable(0.35);
+  const group = useRef<THREE.Group>(null);
   const body = useRef<THREE.Mesh>(null);
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, dt) => {
+    if (group.current) group.current.rotation.y += dt * 0.35;
     if (!body.current) return;
     const t = clock.getElapsedTime();
     const s = 1 + Math.sin(t * 2.2) * 0.06;
@@ -68,11 +82,12 @@ function Slime({ primary = "#52bcd0", accent = "#0d2b34" }: ShapeProps) {
 }
 
 function Bat({ primary = "#554a68", accent = "#3f3651" }: ShapeProps) {
-  const group = useIdleTurntable(0.35);
+  const group = useRef<THREE.Group>(null);
   const leftWing = useRef<THREE.Group>(null);
   const rightWing = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, dt) => {
+    if (group.current) group.current.rotation.y += dt * 0.35;
     const t = clock.getElapsedTime();
     const flap = Math.sin(t * 9) * 0.8;
     if (leftWing.current) leftWing.current.rotation.z = 0.2 + flap;
@@ -136,9 +151,10 @@ function Bat({ primary = "#554a68", accent = "#3f3651" }: ShapeProps) {
  * simple face. Intentionally unlike goblin / slime / any other silhouette.
  */
 function MangoMan({ primary = "#f4a020", accent = "#1e6b32" }: ShapeProps) {
-  const group = useIdleTurntable(0.28);
+  const group = useRef<THREE.Group>(null);
   const fruit = useRef<THREE.Group>(null);
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, dt) => {
+    if (group.current) group.current.rotation.y += dt * 0.28;
     if (!fruit.current) return;
     const t = clock.getElapsedTime();
     fruit.current.position.y = 0.42 + Math.sin(t * 3.1) * 0.035;
@@ -162,7 +178,7 @@ function MangoMan({ primary = "#f4a020", accent = "#1e6b32" }: ShapeProps) {
             emissiveIntensity={0.08}
           />
         </mesh>
-        {/* Cheek ridges (mango “shoulders”) */}
+        {/* Cheek ridges (mango "shoulders") */}
         <mesh position={[-0.38, 0.06, 0.18]} rotation={[0, 0.5, 0.25]} castShadow>
           <sphereGeometry args={[0.16, 14, 12]} />
           <meshStandardMaterial color={primary} roughness={0.7} />
@@ -208,7 +224,7 @@ function MangoMan({ primary = "#f4a020", accent = "#1e6b32" }: ShapeProps) {
           <meshStandardMaterial color="#c8a060" roughness={0.75} />
         </mesh>
       </group>
-      {/* Tripod “roots” — three stumps, not two legs */}
+      {/* Tripod "roots" — three stumps, not two legs */}
       <mesh position={[-0.22, 0.1, -0.08]} rotation={[0.2, 0, 0.35]} castShadow>
         <cylinderGeometry args={[0.07, 0.09, 0.26, 8]} />
         <meshStandardMaterial color="#5a3a22" roughness={0.92} />
@@ -226,9 +242,10 @@ function MangoMan({ primary = "#f4a020", accent = "#1e6b32" }: ShapeProps) {
 }
 
 function Goblin({ primary = "#6eaa4f", accent = "#4f7a3a" }: ShapeProps) {
-  const group = useIdleTurntable(0.35);
+  const group = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, dt) => {
+    if (group.current) group.current.rotation.y += dt * 0.35;
     if (!body.current) return;
     const t = clock.getElapsedTime();
     body.current.rotation.z = Math.sin(t * 2.5) * 0.04;
@@ -300,9 +317,10 @@ function Goblin({ primary = "#6eaa4f", accent = "#4f7a3a" }: ShapeProps) {
 }
 
 function DireWolf({ primary = "#6a6f76", accent = "#44464a" }: ShapeProps) {
-  const group = useIdleTurntable(0.35);
+  const group = useRef<THREE.Group>(null);
   const tail = useRef<THREE.Mesh>(null);
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, dt) => {
+    if (group.current) group.current.rotation.y += dt * 0.35;
     if (!tail.current) return;
     tail.current.rotation.y = Math.sin(clock.getElapsedTime() * 3) * 0.3;
   });
@@ -336,12 +354,7 @@ function DireWolf({ primary = "#6a6f76", accent = "#44464a" }: ShapeProps) {
         <sphereGeometry args={[0.03, 10, 8]} />
         <meshBasicMaterial color="#f7c24a" />
       </mesh>
-      {[
-        [0.25, 0.13],
-        [0.25, -0.13],
-        [-0.22, 0.13],
-        [-0.22, -0.13]
-      ].map(([x, z], i) => (
+      {DIREWOLF_LEG_XZ.map(([x, z], i) => (
         <mesh key={i} position={[x, 0.18, z]} castShadow>
           <cylinderGeometry args={[0.05, 0.06, 0.32, 8]} />
           <meshStandardMaterial color={accent} />
@@ -356,9 +369,10 @@ function DireWolf({ primary = "#6a6f76", accent = "#44464a" }: ShapeProps) {
 }
 
 function Wraith({ primary = "#3a2a4a", accent = "#b15dff" }: ShapeProps) {
-  const group = useIdleTurntable(0.25);
+  const group = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, dt) => {
+    if (group.current) group.current.rotation.y += dt * 0.25;
     if (!body.current) return;
     const t = clock.getElapsedTime();
     body.current.position.y = 0.3 + Math.sin(t * 1.4) * 0.07;
@@ -398,10 +412,11 @@ function Wraith({ primary = "#3a2a4a", accent = "#b15dff" }: ShapeProps) {
 }
 
 function YoungDrake({ primary = "#a5342a", accent = "#d9a85a" }: ShapeProps) {
-  const group = useIdleTurntable(0.35);
+  const group = useRef<THREE.Group>(null);
   const leftWing = useRef<THREE.Group>(null);
   const rightWing = useRef<THREE.Group>(null);
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, dt) => {
+    if (group.current) group.current.rotation.y += dt * 0.35;
     const t = clock.getElapsedTime();
     const flap = Math.sin(t * 3.5) * 0.4;
     if (leftWing.current) leftWing.current.rotation.z = 0.3 + flap;
@@ -479,15 +494,14 @@ function YoungDrake({ primary = "#a5342a", accent = "#d9a85a" }: ShapeProps) {
 }
 
 function Spider({ primary = "#3a2a1e", accent = "#9a2e2a" }: ShapeProps) {
-  const group = useIdleTurntable(0.3);
+  const group = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, dt) => {
+    if (group.current) group.current.rotation.y += dt * 0.3;
     if (!body.current) return;
     const t = clock.getElapsedTime();
     body.current.position.y = 0.24 + Math.abs(Math.sin(t * 4)) * 0.04;
   });
-  // Eight legs rendered symmetrically
-  const legAngles = [-0.9, -0.4, 0.4, 0.9];
   return (
     <group ref={group}>
       <group ref={body}>
@@ -507,7 +521,7 @@ function Spider({ primary = "#3a2a1e", accent = "#9a2e2a" }: ShapeProps) {
           <meshStandardMaterial color={primary} roughness={0.85} />
         </mesh>
         {/* Row of eyes */}
-        {[-0.06, -0.02, 0.02, 0.06].map((oz, i) => (
+        {SPIDER_EYE_Z.map((oz, i) => (
           <mesh key={i} position={[0.28, 0.28, oz]}>
             <sphereGeometry args={[0.025, 10, 8]} />
             <meshBasicMaterial color="#ffe16a" />
@@ -523,7 +537,7 @@ function Spider({ primary = "#3a2a1e", accent = "#9a2e2a" }: ShapeProps) {
           <meshStandardMaterial color="#f2e9d1" />
         </mesh>
         {/* Legs — four on each side */}
-        {legAngles.map((ang, i) => (
+        {SPIDER_LEG_ANGLES.map((ang, i) => (
           <group key={`L${i}`} position={[0.05, 0.22, 0.12]} rotation={[0, ang, 0]}>
             <mesh position={[0.18, -0.02, 0]} rotation={[0, 0, -0.5]} castShadow>
               <cylinderGeometry args={[0.02, 0.02, 0.32, 6]} />
@@ -535,7 +549,7 @@ function Spider({ primary = "#3a2a1e", accent = "#9a2e2a" }: ShapeProps) {
             </mesh>
           </group>
         ))}
-        {legAngles.map((ang, i) => (
+        {SPIDER_LEG_ANGLES.map((ang, i) => (
           <group key={`R${i}`} position={[0.05, 0.22, -0.12]} rotation={[0, -ang, 0]}>
             <mesh position={[0.18, -0.02, 0]} rotation={[0, 0, -0.5]} castShadow>
               <cylinderGeometry args={[0.02, 0.02, 0.32, 6]} />
@@ -553,9 +567,10 @@ function Spider({ primary = "#3a2a1e", accent = "#9a2e2a" }: ShapeProps) {
 }
 
 function Scorpion({ primary = "#d6a64c", accent = "#6f3a1a" }: ShapeProps) {
-  const group = useIdleTurntable(0.3);
+  const group = useRef<THREE.Group>(null);
   const tail = useRef<THREE.Group>(null);
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, dt) => {
+    if (group.current) group.current.rotation.y += dt * 0.3;
     if (!tail.current) return;
     const t = clock.getElapsedTime();
     tail.current.rotation.x = -0.4 + Math.sin(t * 2.5) * 0.15;
@@ -568,7 +583,7 @@ function Scorpion({ primary = "#d6a64c", accent = "#6f3a1a" }: ShapeProps) {
         <meshStandardMaterial color={primary} roughness={0.55} metalness={0.2} />
       </mesh>
       {/* Segment ridges */}
-      {[-0.05, -0.2, -0.35].map((xz, i) => (
+      {SCORPION_SEG_X.map((xz, i) => (
         <mesh key={i} position={[xz, 0.24, 0]}>
           <torusGeometry args={[0.14, 0.02, 8, 14]} />
           <meshStandardMaterial color={accent} />
@@ -589,7 +604,7 @@ function Scorpion({ primary = "#d6a64c", accent = "#6f3a1a" }: ShapeProps) {
         <meshBasicMaterial color="#0a0a0a" />
       </mesh>
       {/* Pincers — arm + claw tips each side */}
-      {[1, -1].map((sign) => (
+      {SCORPION_PINCER_SIGNS.map((sign) => (
         <group key={sign} position={[0.28, 0.18, 0.18 * sign]} rotation={[0, 0.4 * sign, 0]}>
           <mesh castShadow>
             <cylinderGeometry args={[0.035, 0.04, 0.22, 8]} />
@@ -610,8 +625,8 @@ function Scorpion({ primary = "#d6a64c", accent = "#6f3a1a" }: ShapeProps) {
         </group>
       ))}
       {/* Legs — three per side */}
-      {[0.05, -0.1, -0.25].map((ox, idx) =>
-        [1, -1].map((sign) => (
+      {SCORPION_SEG_X.map((ox, idx) =>
+        SCORPION_PINCER_SIGNS.map((sign) => (
           <mesh
             key={`leg-${idx}-${sign}`}
             position={[ox, 0.08, 0.16 * sign]}
@@ -648,9 +663,10 @@ function Scorpion({ primary = "#d6a64c", accent = "#6f3a1a" }: ShapeProps) {
 }
 
 function VoidTitan() {
-  const group = useIdleTurntable(0.22);
+  const group = useRef<THREE.Group>(null);
   const core = useRef<THREE.Mesh>(null);
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, dt) => {
+    if (group.current) group.current.rotation.y += dt * 0.22;
     if (!core.current) return;
     const t = clock.getElapsedTime();
     const p = 0.9 + Math.sin(t * 2.5) * 0.1;
@@ -713,10 +729,11 @@ function VoidTitan() {
  * Realm 2+ arena guardian — ember furnace colossus with shard crown (not Void Titan geometry).
  */
 function CinderRegent() {
-  const group = useIdleTurntable(0.16);
+  const group = useRef<THREE.Group>(null);
   const core = useRef<THREE.Group>(null);
   const embers = useRef<THREE.Group>(null);
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, dt) => {
+    if (group.current) group.current.rotation.y += dt * 0.16;
     const t = clock.getElapsedTime();
     if (core.current) core.current.rotation.y = t * 0.55;
     if (embers.current) embers.current.rotation.y = t * 0.9;
@@ -730,7 +747,7 @@ function CinderRegent() {
         <cylinderGeometry args={[0.75, 0.82, 0.1, 12]} />
         <meshStandardMaterial color="#3a3228" roughness={0.92} />
       </mesh>
-      {Array.from({ length: 6 }, (_, i) => {
+      {CINDER_6_INDICES.map((i) => {
         const a = (i / 6) * Math.PI * 2;
         return (
           <mesh
@@ -754,7 +771,7 @@ function CinderRegent() {
           emissiveIntensity={0.45}
         />
       </mesh>
-      {[-0.12, 0, 0.12].map((x, i) => (
+      {CINDER_VENT_X.map((x, i) => (
         <mesh key={`vent-${i}`} position={[x, 0.86, 0.38]}>
           <boxGeometry args={[0.04, 0.48, 0.035]} />
           <meshStandardMaterial color={hot} emissive={hot} emissiveIntensity={1.6} toneMapped={false} />
@@ -767,7 +784,7 @@ function CinderRegent() {
         </mesh>
       </group>
       <group ref={embers} position={[0, 1.05, 0]}>
-        {[0, 1, 2, 3, 4, 5].map((i) => {
+        {CINDER_6_INDICES.map((i) => {
           const a = (i / 6) * Math.PI * 2;
           return (
             <mesh key={`em-${i}`} position={[Math.sin(a) * 0.55, Math.sin(i * 1.7) * 0.08, Math.cos(a) * 0.55]}>
@@ -778,7 +795,7 @@ function CinderRegent() {
         })}
       </group>
       <group position={[0, 1.48, 0]}>
-        {[0, 1, 2, 3].map((i) => {
+        {CINDER_4_INDICES.map((i) => {
           const a = (i / 4) * Math.PI * 2 + 0.4;
           return (
             <mesh key={`cr-${i}`} position={[Math.sin(a) * 0.28, 0, Math.cos(a) * 0.28]} rotation={[0.35, a, -0.2]}>
@@ -798,7 +815,7 @@ function CinderRegent() {
 }
 
 /** Render a body shape with optional color overrides; used for both built-in and UGC monsters. */
-export function MonsterByShape({ shape, primary, accent }: { shape: MonsterBodyShape; primary?: string; accent?: string }) {
+export const MonsterByShape = memo(function MonsterByShape({ shape, primary, accent }: { shape: MonsterBodyShape; primary?: string; accent?: string }) {
   switch (shape) {
     case "slime":
       return <Slime primary={primary} accent={accent} />;
@@ -821,7 +838,7 @@ export function MonsterByShape({ shape, primary, accent }: { shape: MonsterBodyS
     default:
       return <Goblin primary={primary} accent={accent} />;
   }
-}
+});
 
 const BUILTIN_SHAPE_BY_ID: Record<string, MonsterBodyShape> = {
   slime: "slime",
@@ -832,7 +849,7 @@ const BUILTIN_SHAPE_BY_ID: Record<string, MonsterBodyShape> = {
   drake: "drake"
 };
 
-export function MonsterModel({ enemy }: { enemy: EnemyState }) {
+export const MonsterModel = memo(function MonsterModel({ enemy }: { enemy: EnemyState }) {
   if (enemy.id === "voidTitan") return <VoidTitan />;
   if (enemy.id === "cinderRegent") return <CinderRegent />;
   if (enemy.id === "mangoMan") {
@@ -847,4 +864,4 @@ export function MonsterModel({ enemy }: { enemy: EnemyState }) {
       accent={enemy.customColors?.accent}
     />
   );
-}
+});

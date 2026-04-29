@@ -98,11 +98,6 @@ function SunDirectionalLightWithTarget({
     const playerZ = player.y ?? 0;
     light.position.set(playerX + 10, 15, playerZ + 10);
     light.target.position.set(playerX, 0, playerZ);
-    light.shadow.camera.left = -25;
-    light.shadow.camera.right = 25;
-    light.shadow.camera.top = 25;
-    light.shadow.camera.bottom = -25;
-    light.shadow.camera.updateProjectionMatrix();
     light.target.updateMatrixWorld();
   });
 

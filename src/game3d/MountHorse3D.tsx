@@ -1,4 +1,4 @@
-import { useRef, type MutableRefObject } from "react";
+import { memo, useRef, type MutableRefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { HorseKey } from "../game/types";
@@ -24,7 +24,7 @@ function coatForMount(k: HorseKey): { body: string; mane: string; hoof: string }
  * Simple mount under the hero: body, neck, head, four legs with a walk cycle when `movingRef` is true.
  * Faces local −Z (matches CharacterModel / player facing).
  */
-export function MountHorse3D({
+export const MountHorse3D = memo(function MountHorse3D({
   mountKey,
   movingRef
 }: {
@@ -129,4 +129,4 @@ export function MountHorse3D({
       </group>
     </group>
   );
-}
+});
